@@ -1,0 +1,67 @@
+# ============================================
+# Shortsyt — .gitignore
+# ============================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv*/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# ============================================
+# SECRETS & TOKENS — NEVER COMMIT THESE
+# ============================================
+client_secret.json
+*.pickle
+accounts/*_token.pickle
+token*.pickle
+cookies.txt
+.env
+
+# ============================================
+# GENERATED MEDIA — too large for git
+# ============================================
+temp_videos/
+videos/
+music/
+*.mp4
+*.mp3
+*.wav
+*.avi
+*.mkv
+*.gif
+
+# ML models
+*.pkl
+*.h5
+*.pt
+*.pth
+
+# Logs
+*.log
+logs/
+
+# Data files
+*.csv
+*.xlsx
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Run-Time Databases
+publish_report.json
+topic_history.json
+accounts/*.json

@@ -1,0 +1,102 @@
+import cv2
+import numpy as np
+from moviepy.editor import VideoFileClip
+
+# --- POPRAWKA ---
+# Zmieniamy import na bardziej bezpośredni, aby PyCharm go zrozumiał.
+# To rozwiązuje błąd "Cannot find reference".
+from moviepy.video.fx.crop import crop
+from moviepy.video.fx.resize import resize
+# --- KONIEC POPRAWKI ---
+
+
+def analyze_clip_features(clip):
+    """Analizuje cechy (ruch, kolor, dźwięk) dla danego klipu MoviePy."""
+    features = {}
+
+    # Analiza ruchu (zoptymalizowana)
+    motion_scores = []
+    prev_frame_gray = None
+
+    for frame in clip.iter_frames(fps=10):
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        if prev_frame_gray is not None:
+            flow = cv2.calcOpticalFlowFarneback(prev_frame_gray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+            motion_scores.append(np.mean(np.abs(flow)))
+        prev_frame_gray = gray
+
+    features['avg_motion'] = np.mean(motion_scores) if motion_scores else 0
+
+    # Analiza kolorów
+    avg_color_frame = clip.get_frame(clip.duration / 2)
+    features['avg_color_r'] = np.mean(avg_color_frame[:, :, 0])
+    features['avg_color_g'] = np.mean(avg_color_frame[:, :, 1])
+    features['avg_color_b'] = np.mean(avg_color_frame[:, :, 2])
+
+    # Analiza audio
+    if clip.audio:
+        audio_samples = clip.audio.to_soundarray()
+        features['avg_volume'] = np.sqrt(np.mean(audio_samples ** 2))
+    else:
+        features['avg_volume'] = 0
+
+    return features
+
+
+def zmontuj_shorta_z_ai(sciezka_wejsciowa, model, sciezka_wyjsciowa, dlugosc_shorta=15):
+    """
+    Generuje kandydatów, ocenia ich za pomocą modelu AI, wybiera najlepszego,
+    konwertuje go do formatu 9:16 i zapisuje.
+    """
+    print("🤖 Rozpoczynam inteligentny montaż z użyciem spersonalizowanego modelu AI...")
+    with VideoFileClip(sciezka_wejsciowa) as video:
+        kandydaci = [video.subclip(start, start + dlugosc_shorta)
+                     for start in np.arange(0, video.duration - dlugosc_shorta, 5)]
+
+        if not kandydaci:
+            print("⚠️ Film jest za krótki, aby go ciąć. Biorę cały klip.")
+            kandydaci.append(video)
+
+        print(f"🎬 Wygenerowano {len(kandydaci)} kandydatów na shorta. Rozpoczynam ocenę...")
+        najlepszy_kandydat, najwyzszy_wynik = None, -1
+
+        for i, kandydat in enumerate(kandydaci):
+            print(f"🕵️  Analizuję kandydata {i + 1}/{len(kandydaci)}...")
+            cechy = analyze_clip_features(kandydat)
+            dane_do_modelu = np.array([[
+                cechy['avg_motion'],
+                cechy['avg_color_r'],
+                cechy['avg_color_g'],
+                cechy['avg_color_b'],
+                cechy['avg_volume']
+            ]])
+
+            prawdopodobienstwo_sukcesu = model.predict_proba(dane_do_modelu)[0][1]
+            print(f"   > Ocena (szansa na sukces): {prawdopodobienstwo_sukcesu * 100:.2f}%")
+
+            if prawdopodobienstwo_sukcesu > najwyzszy_wynik:
+                najwyzszy_wynik = prawdopodobienstwo_sukcesu
+                najlepszy_kandydat = kandydat
+
+        print(f"\n🏆 Wybrano najlepszego kandydata z oceną {najwyzszy_wynik * 100:.2f}%!")
+        print("📱 Konwertuję klip do formatu pionowego (9:16)...")
+
+        final_clip_to_render = najlepszy_kandydat.copy()
+
+    (w, h) = final_clip_to_render.size
+    crop_width = h * 9 / 16
+
+    if crop_width > w:
+        crop_width = w
+
+    cropped_clip = crop(final_clip_to_render, width=crop_width, x_center=w / 2)
+    resized_clip = resize(cropped_clip, newsize=(1080, 1920))
+
+    resized_clip.write_videofile(sciezka_wyjsciowa, codec="libx264", logger=None, threads=4)
+
+    final_clip_to_render.close()
+    cropped_clip.close()
+    resized_clip.close()
+
+    print(f"✅ Zmontowano i zapisano ostateczny klip: {sciezka_wyjsciowa}")
+    return sciezka_wyjsciowa
