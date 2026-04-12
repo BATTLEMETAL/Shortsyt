@@ -61,7 +61,36 @@ logs/
 Thumbs.db
 .DS_Store
 
-# Run-Time Databases
+# Run-Time Databases & Generated Analysis Data
 publish_report.json
 topic_history.json
+audit_report.json
+adaptation_directive.json
 accounts/*.json
+
+# Daily analysis/trend JSON outputs (runtime data, not source code)
+smart_analysis_*.json
+trend_report_*.json
+shorts_analysis_*.json
+
+# Backup files
+*.bak
+*.bak_full
+accounts/*.json.bak
+
+# Internal one-off debug / utility scripts (not portfolio material)
+_check_status.py
+_check_token_scopes.py
+_patch_synapsa_bridge.py
+_run_film2_now.py
+_run_film2_only.py
+_run_today_2shorts.py
+_test_micro_shorts.py
+check_syntax.py
+custom_analysis.py
+fix_prehook.py
+
+# Config / runtime files
+yt-dlp.conf
+update_schedule_19h.ps1
+accounts/adaptation_directive.txt

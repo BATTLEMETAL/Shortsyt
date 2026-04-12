@@ -4,7 +4,7 @@ $workingDir = "C:\Users\mz100\PycharmProjects\shortsyt"
 
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
-$trigger = New-ScheduledTaskTrigger -Daily -At 5:00PM
+$trigger = New-ScheduledTaskTrigger -Daily -At 10:00PM
 
 # Używamy ścieżki bezpośredniej do bat jako komendy
 $action = New-ScheduledTaskAction -Execute $actionScript -WorkingDirectory $workingDir
@@ -17,4 +17,5 @@ $task = New-ScheduledTask -Action $action -Principal $principal -Trigger $trigge
 Register-ScheduledTask -TaskName $taskName -InputObject $task
 
 Write-Host "✅ Pomyślnie dodano zadanie do Harmonogramu Zadań Windows."
-Write-Host "🕒 Skrypt będzie uruchamiał się codziennie o 17:00 i generował 2 shortsy."
+Write-Host "🕒 Skrypt będzie uruchamiał się codziennie o 22:00 PL i generował 2 shortsy (peak: 14:00, 19:00 PL na jutro)."
+

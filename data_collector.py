@@ -24,7 +24,11 @@ if not hasattr(importlib.metadata, "packages_distributions"):
 
 # --- USTAWIENIA ---
 CLIENT_SECRETS_FILE = "client_secret.json"
-SCOPES = ['https://www.googleapis.com/auth/youtube.readonly', 'https://www.googleapis.com/auth/youtube.upload']
+SCOPES = [
+    'https://www.googleapis.com/auth/youtube.readonly',
+    'https://www.googleapis.com/auth/youtube.upload',
+    'https://www.googleapis.com/auth/youtube.force-ssl',  # wymagany do komentarzy CTA
+]
 API_SERVICE_NAME = 'youtube'
 API_VERSION = 'v3'
 ANALYSIS_TIMEOUT = 1200  # Maksymalny czas analizy jednego filmu w sekundach (20 minut)

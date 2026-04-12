@@ -12,7 +12,8 @@ CLIENT_SECRETS_FILE = "client_secret.json"
 SCOPES = [
     'https://www.googleapis.com/auth/youtube.upload', 
     'https://www.googleapis.com/auth/youtube.readonly',
-    'https://www.googleapis.com/auth/yt-analytics.readonly'
+    'https://www.googleapis.com/auth/yt-analytics.readonly',
+    'https://www.googleapis.com/auth/youtube.force-ssl',  # wymagany do komentarzy CTA
 ]
 API_SERVICE_NAME = 'youtube'
 API_VERSION = 'v3'
@@ -133,15 +134,21 @@ def upload_video(
 
         # KLUCZOWE ULEPSZENIE: Wysyłanie miniaturki, jeśli została podana
         if thumbnail_path and os.path.exists(thumbnail_path):
-            print(f"🖼️ Wysyłam niestandardową miniaturkę: {os.path.basename(thumbnail_path)}...")
-            print("✅ Miniaturka została pomyślnie ustawiona.")
+            try:
+                print(f"🖼️ Wysyłam niestandardową miniaturkę: {os.path.basename(thumbnail_path)}...")
+                youtube.thumbnails().set(
+                    videoId=video_id,
+                    media_body=MediaFileUpload(thumbnail_path)
+                ).execute()
+                print("✅ Miniaturka została pomyślnie ustawiona.")
+            except Exception as thumb_err:
+                print(f"⚠️ Nie udało się ustawić miniaturki: {thumb_err}")
             
         return video_id
 
     except Exception as e:
         print(f"❌ Wystąpił krytyczny błąd podczas wysyłania na YouTube: {e}")
         return None
-        print(f"❌ Wystąpił krytyczny błąd podczas wysyłania na YouTube: {e}")
 
 # Ten plik jest modułem, więc nie potrzebuje bloku if __name__ == '__main__'
 # Jest on przeznaczony do importowania i używania przez inne skrypty, takie jak `smart_uploader.py`.

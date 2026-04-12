@@ -3,6 +3,12 @@ import sys
 import json
 import subprocess
 import argparse
+import re
+import logging
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env for API keys
+logger = logging.getLogger("synapsa_bridge")
 
 # Środowisko bogate z AI po stronie Synapsy
 SYNAPSA_PYTHON = r"C:\Users\mz100\PycharmProjects\Synapsa\venv\Scripts\python.exe"
@@ -11,11 +17,37 @@ SYNAPSA_ROOT = r"C:\Users\mz100\PycharmProjects\Synapsa"
 # ==============================================================================
 # === 1. ZEGAR STERUJĄCY - IPC (Metody do importowania w the Cash Cow)
 # ==============================================================================
+def _check_vram_available(min_gb: float = 4.0) -> bool:
+    """Sprawdza czy GPU ma wystarczająco wolnego VRAM. Zwraca False jeśli gra/inna aplikacja zajmuje kartę."""
+    try:
+        import subprocess as _sp
+        # Używamy nvidia-smi zamiast torch (torch nie jest dostępny w shortsyt venv)
+        result = _sp.run(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            free_mb = int(result.stdout.strip().split("\n")[0].strip())
+            free_gb = free_mb / 1024
+            if free_gb < min_gb:
+                print(f"⚠️  [SYNAPSA] Za mało VRAM! Wolne: {free_gb:.1f}GB (potrzeba {min_gb}GB).")
+                print(f"   Zamknij gry/aplikacje GPU i spróbuj ponownie.")
+                return False
+            print(f"✅ [SYNAPSA] VRAM OK: {free_gb:.1f}GB wolne — startuje model AI.")
+            return True
+    except Exception:
+        pass  # nvidia-smi niedostępne — kontynuuj bez check
+    return True
+
 def _run_synapsa_subprocess(command_args):
     """Wywołuje ten sam plik, ale używając ciężkiego środowiska Pytorch Synapsy i odczytując odpowiedź JSON z wyjścia."""
+    # GUARD: sprawdź VRAM przed uruchomieniem modelu AI
+    if not _check_vram_available(min_gb=4.5):
+        return None
+
     script_path = os.path.abspath(__file__)
     cmd = [SYNAPSA_PYTHON, script_path] + command_args
-    
+
     try:
         # Kodowanie cp1250 może łamać się na Windowsie dla Polskich znaków w STDOUT
         run_env = os.environ.copy()
@@ -33,7 +65,7 @@ def _run_synapsa_subprocess(command_args):
             try:
                 data = json.loads(line)
                 return data
-            except:
+            except (json.JSONDecodeError, ValueError):
                 continue
                 
         print(f"❌ [SYNAPSA BRIDGE] Nie odnaleziono poprawnego wyjścia w STDOUT. Treść:\n{result.stdout}")
@@ -45,25 +77,41 @@ def _run_synapsa_subprocess(command_args):
         print(f"❌ [SYNAPSA BRIDGE] Błąd komunikacji wywołania podprocesu Python: {e}")
         return None
 
+def _gemini_fallback(niche_topic: str, forbidden_topics: list = None, viral_context: list = None) -> dict:
+    """Gemini 2.0 Flash fallback — WYŁĄCZONY (brak quota na free tier)."""
+    return None
+
+
 def generate_viral_script_with_synapsa(viral_context, niche_topic, channel_rule="", forbidden_topics=None):
-    """Metoda wołana z The Cash Cow. Prosi podproces by skompilował LORA Model."""
-    context_str = "||".join(viral_context) # Używamy delimiterów do wysłania komend w CLI
-    
-    # [BUG FIX] Omijamy limit argumentów w Windowsie (8191 zn.) używając Env Vars for Payload
+    """Metoda wołana z The Cash Cow.
+    Priorytet:
+      1. Lokalny model Qwen/Synapsa (gdy VRAM ≥ 4.5GB)
+      2. Gemini 2.0 Flash API     (gdy Synapsa failuje — 1 req/dzień max)
+      3. Statyczne skrypty       (w agent_dark_psychology.py — last resort)
+    """
+    context_str = "||".join(viral_context)
+
+    # [BUG FIX] omijamy limit arg Windowsa używając Env Vars for Payload
     os.environ["SYNAPSA_CONTEXT_PAYLOAD"] = context_str
     os.environ["SYNAPSA_RULE_PAYLOAD"] = channel_rule
-    
+
     cmd_args = ["--action", "script", "--niche", niche_topic]
     if forbidden_topics:
         os.environ["SYNAPSA_FORBIDDEN_PAYLOAD"] = "||".join(forbidden_topics)
     else:
-        # Clear it just in case of environment bleed
         if "SYNAPSA_FORBIDDEN_PAYLOAD" in os.environ:
             os.environ.pop("SYNAPSA_FORBIDDEN_PAYLOAD")
-        
+
+    # ── ETAP 1: Sprawdź VRAM przed uruchomieniem lokalnego modelu ─────────
+    if not _check_vram_available(min_gb=4.5):
+        print("🤖 [SYNAPSA BRIDGE] VRAM niewystarczający — zamknij gry/aplikacje GPU!")
+        return {"error": f"[VRAM] Za mało VRAM dla Synapsy. Zamknij gry. (Nisza: {niche_topic})"}
+
+    # ── ETAP 2: Uruchom lokalny model ─────────────────────────────────────
     data = _run_synapsa_subprocess(cmd_args)
     if data:
-        return data  # Teraz zwracamy całościowy słownik reżysera
+        return data  # Zwracamy pełny słownik reżysera
+
     return {"error": f"Synapsa nie dała rady obsłużyć żądania podprocesu. (Nisza: {niche_topic})"}
 
 def generate_metadata_with_synapsa(topic: str):
@@ -119,33 +167,96 @@ if __name__ == "__main__":
         if env_forbidden:
             f_list = [f"- {t}" for t in env_forbidden.split("||") if t.strip()]
             if f_list:
-                forbidden_str = "\nNEVER USE THE FOLLOWING TOPICS (THEY WERE ALREADY USED):\n" + "\n".join(f_list) + "\n"
+                forbidden_str = "\nCRITICAL RULE - NEVER USE THESE TOPICS (THEY WERE ALREADY USED):\n" + "\n".join(f_list) + "\nYOU MUST SELECT A COMPLETELY DIFFERENT, OBSCURE FACT.\n"
 
         niche_lower = args.niche.lower()
         is_dark = any(k in niche_lower for k in ["psychology", "dark", "mindset", "manipulation"])
         
         persona = "Dark Psychology and Mindset expert" if is_dark else "Gen-Z internet culture expert"
         tone = "Cold, analytical, and objective. Use dark psychology terms." if is_dark else "Energetic, using modern slang like brainrot, ohio, sigma."
-        vibe = "liminal space, dark rainy city, noir" if is_dark else "Roblox parkour, Minecraft gameplay, Subway Surfers"
+        vibe = "Peaky Blinders, American Psycho, mysterious figure in suit, wolves, dark city at night, dark red/navy colors" if is_dark else "Minecraft parkour daytime, clear blue sky, minimal chaos"
         
         env_adaptation = os.getenv("SYNAPSA_ADAPTATION_DIRECTIVE", "").strip()
-        adaptation_str = f"\n\n{env_adaptation}\n" if env_adaptation else ""
+        adaptation_str = f"\n\nDATA-DRIVEN DIRECTIVES FROM CHANNEL ANALYTICS (FOLLOW STRICTLY):\n{env_adaptation}\n" if env_adaptation else ""
+
+        env_trend_today = os.getenv("SYNAPSA_TREND_TODAY", "").strip()
+        trend_str = f"\n\n{env_trend_today}\n" if env_trend_today else ""
+
+        # Curated facts from facts_database.py — 3 specific psychology facts per video
+        env_facts = os.getenv("SYNAPSA_FACTS_PAYLOAD", "").strip()
+        facts_str = f"\n{env_facts}\n" if env_facts else ""
         
-        prompt = f"""You are a professional YouTube Shorts scriptwriter. 
-Your task is to write a highly viral, ultra-short script about: "{args.niche}".
+        prompt = f"""You are an elite YouTube Shorts scriptwriter specializing in viral dark psychology content.
+Your task: Write a SHORT (11-20 second) ultra-viral script about a SPECIFIC, OBSCURE sub-topic of: "{args.niche}".
 
-TRENDING TITLES FOR INSPIRATION (Do not copy them):
-{context_str}
-{forbidden_str}
-YOUR PERSONA: {persona}
-TONE: {tone}
-VISUAL VIBE: {vibe}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 TITLE FORMAT RULES (DATA-PROVEN — VIOLATION = FAILURE):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ USE ONE OF THESE TWO PROVEN FORMATS (alternate between them):
 
-{env_rule}{adaptation_str}
+FORMAT A — QUESTION (personal, curiosity-triggering):
+   - "Have you ever felt someone draining your energy? 🧠 #shorts"
+   - "Can you spot the dark psychology tactic used on you? 👁️ #shorts"
+   - "Have you noticed how some people command respect effortlessly? 🧠 #shorts"
 
-EXTREMELY IMPORTANT: DO NOT YAP. DO NOT WRITE ANYTHING ELSE OR ANY INTRODUCTIONS. JUST GIVE ME THE SCRIPT.
+FORMAT B — NUMBERED LIST (highest global views, 90K+ confirmed):
+   - "5 Dark Psychology Tricks to Control Anyone 🧠 #shorts"
+   - "3 Signs Someone Is Manipulating You Right Now 👁️ #shorts"
+   - "2 Dark Body Language Signals Most People Miss 💀 #shorts"
 
-RESPOND EXACTLY MATCHING THE FORMAT SHOWN IN THE EXAMPLE ABOVE. DO NOT USE JSON. DO NOT YAP.
+🚫 ABSOLUTELY FORBIDDEN title formats:
+   - NEVER start with [Name's ...] or any [WORD] bracket prefix
+   - NEVER use: 'revealed', 'disappears', 'save', 'unveiled', 'behind'
+   - Those patterns get ZERO views. Algorithmically punished.
+
+{facts_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔬 MANDATORY FACTS — BUILD YOUR SCRIPT AROUND THESE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+If curated psychology facts are provided above — you MUST use them as the core of your 3 reveals.
+Each fact = 1-2 sentences max. Fact 1 shocks, Fact 2 deepens, Fact 3 gives viewer a weapon.
+If NO facts provided — invent an equally specific, obscure, sourced psychological mechanism.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📜 MANDATORY SCRIPT STRUCTURE (FOLLOW EXACTLY — ALL 7 LINES REQUIRED):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Line 1: PRE-HOOK (4-6 words, pattern interrupt). Choose ONE:
+  • "Most people don't know this."
+  • "Stop. Don't scroll."
+  • "They removed this from textbooks."
+  • "Nobody talks about this."
+  • "You're being controlled right now."
+
+Line 2: QUESTION HOOK (curiosity trigger, makes viewer stay):
+  • "Have you noticed how some people..."
+  • "Have you ever felt..."
+  • "Can you spot when someone..."
+
+Lines 3-5: CORE CONTENT (specific scenario + psychology fact + named mechanism):
+  • Name the EXACT psychological mechanism (e.g. "tactical mirroring", "status anchoring", "intermittent reinforcement")
+  • Give a SPECIFIC real-world scenario (not generic advice)
+  • Include ONE statistic or researcher name (e.g. "Paul Ekman", "93 percent accuracy", "Festinger 1957")
+
+Line 6: RE-HOOK (dramatic pivot before the payoff):
+  • "But here's the dark part —"
+  • "But here's what nobody tells you —"
+  • "And here's why this matters —"
+
+Line 7: PAYOFF + CTA (actionable takeaway + engagement trigger):
+  • End with: "Follow for more." or "Can you spot who uses this on you?"
+
+🚨 CRITICAL: Your script MUST contain ALL 7 elements above. If PRE-HOOK, RE-HOOK, or CTA is missing, the script will be REJECTED. Total length: 40-65 words.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESPOND ONLY IN THIS EXACT FORMAT (no preamble, no explanations):
+[TITLE]
+Your viral YouTube Shorts title here 🧠 #shorts
+[SCRIPT]
+Your 40-65 word script here. Cold. Analytical. MUST include PRE-HOOK + QUESTION HOOK + CORE + RE-HOOK + CTA.
+[TAGS]
+darkpsychology, manipulation, psychology, mindset, sigma, power, secrets, viral
+
+DO NOT ADD INTRODUCTIONS. DO NOT YAP. RESPOND ONLY WITH THE FORMAT ABOVE.
 """
         response = local_agent.ask_brain(prompt, max_new_tokens=1500, mode="precise")
         import re
@@ -182,52 +293,99 @@ RESPOND EXACTLY MATCHING THE FORMAT SHOWN IN THE EXAMPLE ABOVE. DO NOT USE JSON.
             tag_lines = []
             title_candidate = None
 
-            # First, try to find text explicitly under [TITLE]
+            # PRIORITY 1: Extract text explicitly from [TITLE] block
             if "[TITLE]" in clean_text:
                 parts = clean_text.split("[TITLE]")
                 if len(parts) > 1:
                     t_lines = [l.strip() for l in parts[1].splitlines() if l.strip() and not l.strip().startswith('[')]
                     if t_lines:
-                        title_candidate = t_lines[0].replace('"', '')
+                        # Take only what's before [SCRIPT] or [TAGS] — i.e. just the title text
+                        raw_title = t_lines[0]
+                        # Strip structural tags like [SCRIPT], [TAGS] if they sneak in
+                        raw_title = re.sub(r'\[\w+\]', '', raw_title).strip()
+                        if raw_title:
+                            title_candidate = raw_title.replace('"', '')
 
-            for line in lines:
-                # Remove common hallucinated stop strings
-                if '[--' in line or '--]' in line:
-                    continue
-                # Skip lines that are clearly structural tags like [Prompt] [Title] [SCRIPT]
-                if re.match(r'^\[\w[\w\s]*\]$', line):
-                    continue
-                # Skip lines that look like metadata labels (e.g. 'Description: ...')
-                if re.match(r'^(Description|Script|Tags|Title|Warning|Trick|Hook|Prompt):', line, re.IGNORECASE):
-                    continue
-                # Collect inline tags like [tag1=...] or #hashtag
-                if re.match(r'^(\[tag|#)', line):
-                    tag_lines.append(line)
-                    continue
-                
-                word_count = len(line.split())
-                
-                # If we still don't have a title, grab the first short line
-                if title_candidate is None and word_count <= 10 and not any(c in line for c in ['.', '!', '?']):
-                    title_candidate = line
-                    continue
-                
-                # Script-like lines: real sentences (skip the title repeat)
-                if 3 <= word_count <= 300 and line != title_candidate:
-                    script_lines.append(line)
+            # ── BLOCK-BASED EXTRACTION (Priority fix: prevents tags from leaking into TTS) ──
+            # Extract script ONLY from between [SCRIPT] and [TAGS]/[TAG] markers
+            _block_extracted = False
+            if "[SCRIPT]" in clean_text:
+                script_block = clean_text.split("[SCRIPT]", 1)[1]
+                # Cut at [TAGS] or [TAG] if present
+                for tag_marker in ["[TAGS]", "[TAG]", "[Tags]", "[Tag]"]:
+                    if tag_marker in script_block:
+                        _tag_part = script_block.split(tag_marker, 1)[1]
+                        tag_lines = [l.strip() for l in _tag_part.splitlines() if l.strip()]
+                        script_block = script_block.split(tag_marker, 1)[0]
+                        break
+                block_lines = [l.strip() for l in script_block.splitlines()
+                               if l.strip() and not re.match(r'^\[\w+\]$', l.strip())]
+                if block_lines:
+                    script_lines = block_lines
+                    _block_extracted = True
+
+            # Fallback: line-by-line heuristic (only if block extraction failed)
+            if not _block_extracted:
+                for line in lines:
+                    if '[--' in line or '--]' in line:
+                        continue
+                    if re.match(r'^\[\w[\w\s]*\]$', line):
+                        continue
+                    if re.match(r'^(Description|Script|Tags|Title|Warning|Trick|Hook|Prompt):', line, re.IGNORECASE):
+                        continue
+                    if re.match(r'^(\[tag|#)', line):
+                        tag_lines.append(line)
+                        continue
+                    word_count = len(line.split())
+                    if 3 <= word_count <= 300 and line != title_candidate:
+                        script_lines.append(line)
 
             if not script_lines:
                 raise ValueError("Nie udalo sie wyodrebnic skryptu z odpowiedzi modelu.")
 
-            # The AI prompt should enforce conciseness; do NOT arbitrarily truncate the text, 
-            # because that destroys the CTA and loop mechanics.
+            # Join and clean script text
             raw_script = ' '.join(script_lines)
+
+            # Strip leaked comma-separated tag lists at the end of script
+            # Pattern: "...follow for more. darkpsychology, manipulation, psychology, viral"
+            raw_script = re.sub(r',\s*(?:dark\w+|psychology\w*|manipulation\w*|mindset\w*|sigma\w*|viral\w*|shorts?\w*|power\w*|secrets?\w*|stoic\w*|brain\w*|behavior\w*|social\w*|cognitive\w*|hidden\w*|trick\w*|persuasion\w*|respect\w*|body\w*|language\w*)(?:\s*,\s*(?:dark\w*|psychology\w*|manipulation\w*|mindset\w*|sigma\w*|viral\w*|shorts?\w*|power\w*|secrets?\w*|stoic\w*|brain\w*|behavior\w*|social\w*|cognitive\w*|hidden\w*|trick\w*|persuasion\w*|respect\w*|body\w*|language\w*))+\s*$', '', raw_script, flags=re.IGNORECASE).strip()
+
+            # Strip standalone "short" or "#short" leaked from title parsing
+            raw_script = re.sub(r'^\s*#?short\s+', '', raw_script, flags=re.IGNORECASE).strip()
+
+            # ── AGGRESSIVE TAG CLEANUP (Priority fix: tags leaking into TTS audio) ──
+            # 1. Strip any #hashtags from script text entirely
+            raw_script = re.sub(r'#\w+', '', raw_script).strip()
+            # 2. Strip trailing tag-like words (no comma, just space-separated at the end)
+            #    Pattern: "...Follow for more. darkpsychology manipulation psychology viral shorts"
+            TAG_WORDS = r'(?:dark(?:psychology)?|psychology(?:facts)?|manipulation|mindset|sigma|viral|shorts?|power|secrets?|stoic(?:ism)?|brain(?:rot)?|behavior|social|cognitive|hidden|tricks?|persuasion|respect|body|language|trending|fyp|psychologyfacts|humanbehavior|subconscious|psychologyshorts)'
+            raw_script = re.sub(rf'(?:,?\s+{TAG_WORDS})+\s*$', '', raw_script, flags=re.IGNORECASE).strip()
+            # 3. Strip trailing lone punctuation or whitespace
+            raw_script = raw_script.rstrip(' ,;.')
+            # 4. Ensure script doesn't end mid-sentence weirdly — re-add period if needed
+            if raw_script and raw_script[-1] not in '.!?':
+                raw_script += '.'
+
             script_str = raw_script
+
+            # PRIORITY 2 FALLBACK: If no [TITLE] found, extract the Hook sentence from the script
+            if title_candidate is None or len(title_candidate.split()) < 3:
+                # Take the first sentence (up to first ., !, or ?) from the script
+                hook_match = re.match(r'^([^.!?]{15,120}[.!?])', script_str.strip())
+                if hook_match:
+                    title_candidate = hook_match.group(1).strip()
+                else:
+                    # Last-resort: take first 8 words
+                    title_candidate = ' '.join(script_str.split()[:8]) + '...'
+
             if title_candidate is not None:
                 # Clean colons and weird trailing chars
                 title_str = str(title_candidate).rstrip(':,- ')
-                # Ensure it has a viral vibe
-                if not any(emoji in title_str for emoji in ['🚨', '🧠', '👁️', '💀', '⚠️']):
+                # Cap length at 80 chars (YouTube Shorts title best practice)
+                if len(title_str) > 80:
+                    title_str = title_str[:77] + '...'
+                # Ensure it has a viral vibe emoji
+                if not any(emoji in title_str for emoji in ['🚨', '🧠', '👁️', '💀', '⚠️', '🔥', '❗']):
                     title_str += " 🧠"
             else:
                  title_str = f"Dark Truth About {args.niche} 🧠"
@@ -239,7 +397,25 @@ RESPOND EXACTLY MATCHING THE FORMAT SHOWN IN THE EXAMPLE ABOVE. DO NOT USE JSON.
             if not extracted_tags:
                 extracted_tags = ["darkpsychology", "manipulation", "psychology", "mindset", "sigma", "viral", "shorts"]
             
-            desc_str = f"Watch until the end. This changes everything. \n\n#{' #'.join(extracted_tags[:8])} #shorts #viral"
+            # Generate a UNIQUE description based on script content (identical desc = YouTube spam penalty)
+            script_preview = script_str[:120].strip().rstrip('.,!?')
+            hook_angle = script_str.split('.')[0][:80].strip() if '.' in script_str else script_preview[:60]
+            hashtag_str = ' #'.join(extracted_tags[:8])
+            # Rotate through 5 description templates — ensures every video has unique metadata (Priority 5)
+            desc_templates = [
+                # Template 1: Curiosity gap
+                f"{hook_angle}... Most people never realize this is happening to them every single day.\n\nFollow for more dark psychology insights that change how you see people.\n\n#{hashtag_str} #shorts #viral #darkpsychology",
+                # Template 2: Warning / urgency
+                f"WARNING: {hook_angle}... If you can't spot this, you're already vulnerable to it.\n\nFollow before this gets too uncomfortable to watch.\n\n#{hashtag_str} #shorts #viral #darkpsychology",
+                # Template 3: Social proof
+                f"{hook_angle}... Thousands of people have recognized this pattern in someone close to them.\n\nComment below if this hit different for you. 👇\n\n#{hashtag_str} #shorts #viral #darkpsychology",
+                # Template 4: Transformation / revelation
+                f"{hook_angle}... Once you understand this, you can never unsee it in people around you.\n\nFollow for more secrets about the hidden mechanics of human behavior.\n\n#{hashtag_str} #shorts #viral #darkpsychology",
+                # Template 5: Authority
+                f"{hook_angle}... Dark psychology researchers have studied this pattern for decades — and it explains almost everything.\n\nSave this. You'll need it.\n\n#{hashtag_str} #shorts #viral #darkpsychology",
+            ]
+            desc_idx = abs(hash(script_str[:40])) % len(desc_templates)
+            desc_str = desc_templates[desc_idx]
 
             parsed = {
                 "viral_score": 9,

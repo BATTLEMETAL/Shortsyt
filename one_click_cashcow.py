@@ -66,7 +66,7 @@ def generate_viral_script(viral_context, niche_topic, channel_rule, forbidden_to
 
 TOPIC_HISTORY_FILE = "accounts/topic_history.json"
 
-def get_forbidden_topics(profile_name: str, limit: int = 15) -> list:
+def get_forbidden_topics(profile_name: str, limit: int = 50) -> list:
     if not os.path.exists(TOPIC_HISTORY_FILE):
         return []
     try:
@@ -99,10 +99,47 @@ def add_to_history(profile_name: str, title: str):
     with open(TOPIC_HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
+def inject_analytics_directive():
+    """
+    Injects SYNAPSA_ADAPTATION_DIRECTIVE based on real Dark Mindset channel data.
+    This is the missing link — without this, Synapsa has no idea the channel is losing reach.
+    """
+    directive_file = "accounts/adaptation_directive.txt"
+    if os.path.exists(directive_file):
+        try:
+            with open(directive_file, "r", encoding="utf-8") as f:
+                directive = f.read().strip()
+            if directive:
+                os.environ["SYNAPSA_ADAPTATION_DIRECTIVE"] = directive
+                print(f"🧠 [ADAPTATION DIRECTIVE] Załadowano dyrektywy analityczne ({len(directive)} znaków).")
+                return
+        except Exception as e:
+            print(f"⚠️ [ADAPTATION DIRECTIVE] Błąd ładowania: {e}")
+    
+    # Fallback: hardcoded directive from YT Studio analysis (30.03.2026)
+    # CTR: 1.1%, Skip rate: 69.1%, best performer: 'Have you ever felt dominated' (1251 views, 8.3% CTR)
+    fallback_directive = (
+        "CHANNEL ANALYTICS (Dark Mindset, 30.03.2026): "
+        "CTR=1.1% (target: 3%+), Skip rate=69.1% (target: <40%), Views=14.3K/28days. "
+        "TOP PERFORMERS: Numbered lists ('5 tricks', '3 signs') get 90K+ globally. "
+        "Question format best on OUR channel: 'Have you ever felt dominated' got 1251 views with 8.3% CTR. "
+        "WORST: Abstract/vague hooks get 0-5 views. Latest videos (29 Mar) got 0 views — algo stopped distributing. "
+        "RULES: 1) Hook must stop scroll in 0.5s using concrete scenario, NOT abstract concept. "
+        "2) NEVER use same description template — YouTube detects as spam. "
+        "3) Mid-video loop anchor at 13-16s is MANDATORY to prevent drop-off. "
+        "4) End with comment bait question to boost engagement signal. "
+        "5) Alternate between QUESTION titles and NUMBERED LIST titles every video."
+    )
+    os.environ["SYNAPSA_ADAPTATION_DIRECTIVE"] = fallback_directive
+    print("🧠 [ADAPTATION DIRECTIVE] Używam fallback directive z analizy YT Studio (30.03.2026).")
+
 def run_one_click_agent(niche: str, profile_name: str):
     print("===============================================================")
     print(f"🚀 ONE-CLICK CASH COW AGENT: ROZPOCZYNAM AUTOMATYZACJĘ ({niche})")
     print("===============================================================")
+    
+    # 0. Inject analytics directive FIRST — Synapsa needs to know channel performance
+    inject_analytics_directive()
     
     # 1. Połączenie z YouTube
     youtube = get_authenticated_service(profile_name)
@@ -120,15 +157,21 @@ def run_one_click_agent(niche: str, profile_name: str):
             try:
                 with open(live_ctx_file, "r", encoding="utf-8") as f:
                     saved_ctx = json.load(f)
-                if saved_ctx.get("analyzed_shorts"):
+                # FIX: Support both 'analyzed_shorts' (new) and 'videos' (legacy) keys
+                shorts_list = saved_ctx.get("analyzed_shorts") or saved_ctx.get("videos", [])
+                if shorts_list:
                     print(f"🧠 Ładuję potężną the Pamięć TRENDÓW (Live Context) dla '{profile_name}'...")
-                    for item in saved_ctx.get("analyzed_shorts", [])[:5]:
+                    for item in shorts_list[:5]:
                         t_title = item.get("title", "")
-                        hook = item.get("ai_analysis", {}).get("hook_pattern", item.get("ai_analysis", {}).get("hook_strategy", ""))
+                        # Support both formats: analyzed_shorts has ai_analysis, videos just has title+views
+                        hook = ""
+                        if isinstance(item.get("ai_analysis"), dict):
+                            hook = item["ai_analysis"].get("hook_pattern") or item["ai_analysis"].get("hook_strategy", "")
+                        views = item.get("views", 0)
                         if t_title:
-                            viral_context.append(f"ZŁOTY WZÓR: '{t_title}' | Uderzenie (Hook): {hook}")
+                            viral_context.append(f"ZŁOTY WZÓR ({views} views): '{t_title}' | Hook: {hook}")
             except Exception as e:
-                pass
+                print(f"⚠️ Błąd ładowania Live Context: {e}")
         
     # Pobranie wytycznych dla nastroju i konta
     niche_rule = "Bądź kontrowersyjny i stanowczy."
@@ -151,10 +194,10 @@ def run_one_click_agent(niche: str, profile_name: str):
         if "error" in director_json:
             print(f"🔴 BŁĄD PODSYSTEMU SYNAPSA: {director_json['error']}")
         script_len = len(director_json.get('script_text', '').split())
-        if script_len >= 45: 
-            print(f"✅ Skrypt wystarczająco gęsty ({script_len} słów).")
+        if 25 <= script_len <= 60: 
+            print(f"✅ Skrypt idealny ({script_len} słów).")
             break
-        print(f"⚠️  Skrypt za krótki ({script_len} słów). Regeneracja! (Synapsa zgubiła wenę)")
+        print(f"⚠️  Skrypt ma {script_len} słów. Czasem to dobrze, ale wymuszamy regenerację w celu optymalizacji pod 10-14s! (Max 60 słów)")
 
     # Odczyt dyrektyw z JSONa Reżysera (z fallback'ami)
     script_text       = director_json.get('script_text', '')

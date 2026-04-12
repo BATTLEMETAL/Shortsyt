@@ -1,7 +1,7 @@
 # setup_tasks.ps1
 # Uruchom JAKO ADMINISTRATOR: Prawy click -> "Uruchom jako administrator"
 # Rejestruje 2 zadania Windows Task Scheduler:
-#   1. ShortsytDaily  - codziennie o 10:00
+#   1. ShortsytDaily  - codziennie o 19:00 (peak hour PL — dane z analytics)
 #   2. ShortsytWeekly - co poniedzialek o 09:00 (analiza kanalu)
 
 $ProjectDir = "c:\Users\mz100\PycharmProjects\shortsyt"
@@ -16,7 +16,7 @@ Write-Host ""
 Write-Host "=== SHORTSYT - Windows Task Scheduler Setup ===" -ForegroundColor Cyan
 Write-Host ""
 
-# ── TASK 1: Codzienne shortsy o 10:00 ─────────────────────────
+# ── TASK 1: Codzienne shortsy o 22:00 ─────────────────────────
 $TaskName1 = "ShortsytDaily"
 if (Get-ScheduledTask -TaskName $TaskName1 -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $TaskName1 -Confirm:$false
@@ -26,7 +26,7 @@ if (Get-ScheduledTask -TaskName $TaskName1 -ErrorAction SilentlyContinue) {
 $Action1   = New-ScheduledTaskAction `
     -Execute "cmd.exe" `
     -Argument "/c `"$DailyBat`" >> `"$LogDir\daily.log`" 2>&1"
-$Trigger1  = New-ScheduledTaskTrigger -Daily -At "10:00"
+$Trigger1  = New-ScheduledTaskTrigger -Daily -At "19:00"
 $Settings1 = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Hours 2) `
     -StartWhenAvailable `
@@ -39,9 +39,9 @@ Register-ScheduledTask `
     -Trigger     $Trigger1 `
     -Settings    $Settings1 `
     -RunLevel    Highest `
-    -Description "Shortsyt: 2 Dark Psychology shorts dziennie o 10:00" | Out-Null
+    -Description "Shortsyt: 2 Dark Psychology shorts dziennie o 19:00 PL (peak hour z analytics, public natychmiast)" | Out-Null
 
-Write-Host "[OK] '$TaskName1' -> codziennie o 10:00" -ForegroundColor Green
+Write-Host "[OK] '$TaskName1' -> codziennie o 19:00" -ForegroundColor Green
 
 # ── TASK 2: Tygodniowa analiza kanaalu (poniedzialek 09:00) ───
 $TaskName2 = "ShortsytWeekly"

@@ -8,21 +8,21 @@ viral_context = ""
 search_topic = NICHE_BASE
 forbidden_topics = get_forbidden_topics(PROFILE_NAME)
 
-niche_rule = """CREATE A VIRAL PSYCHOLOGY YOUTUBE SHORT (40-70 WORDS)
+niche_rule = """CREATE A VIRAL PSYCHOLOGY YOUTUBE SHORT (50-70 WORDS)
 
-CRITICAL RULES:
-1. STRONG HOOK (First 2 seconds): Start with a direct question or a powerful, shocking statement directed at the viewer to grab attention instantly.
-2. NATURAL TITLE: The [TITLE] MUST be a natural, intriguing question or strong statement. ABSOLUTELY NO keyword stuffing (do not use "secrets facts manipulation").
-3. STORYTELLING & FACTS: Blend historical facts or storytelling with practical psychology lessons.
-4. CALL TO ACTION (COMMENTS): Ask the viewers a specific question to drive comments right before the loop. (e.g., "Have you experienced this? Tell me in the comments.").
-5. YOU MUST USE A PERFECT LOOP: The last word of your script MUST connect seamlessly into the first word of your script.
-6. NEVER use the word 'forehead'. Choose a completely fresh, NEW concept each time.
+CRITICAL VIRAL RULES (MERGED WITH PREVIOUS OPTIMIZATIONS):
+1. EXTREME NOVELTY: You MUST select a rare, highly obscure psychological trick, bias, or social dynamic. DO NOT repeat common facts. It must be unique and different from the listed forbidden topics.
+2. ACCOUNT SAFETY (LOOPHOLE): Frame ALL manipulation or dark psychology tactics as "Defense against manipulation". Example: "Watch out for people who use this on you..." instead of "Here is how to manipulate". This is critical to avoid bans.
+3. POTENT HOOK (First 3s): MUST contain elements of "forbidden knowledge" or explicitly tell the user to "Save this video before it's deleted".
+4. SCRIPT STRUCTURE (15-30s lengths): Hook -> Value 1 -> Value 2 -> CTA/Loop. Every single word counts. Pack it with 'meat'.
+5. ALGORITHM PSYCHOLOGY & LOOPING: The last word MUST connect seamlessly into the first word of your script to create a Perfect Loop.
+6. VISUAL DIRECTIVE (For AI): Aim for a visual background description like "Peaky Blinders, American Psycho, mysterious figure in suit, wolves, dark city at night, dark red/navy colors".
 
-EXAMPLE SCRIPT STRUCTURE (Follow this exact style):
+EXAMPLE SCRIPT STRUCTURE (Use this exact format in ENGLISH):
 [TITLE]
-Have you ever fallen for the Benjamin Franklin effect? 🧠
+The most toxic manipulation technique narcissists use. (Save this) 🧠
 [SCRIPT]
-Have you ever fallen for the Benjamin Franklin effect? It's a dark truth about making people like you. Instead of doing favors for them, ask them to do a small favor for you. Their brain will subconsciously convince them they like you. Has this ever worked on you? Tell me in the comments if you...
+Save this video before they take it down. Here is how to spot if someone is secretly trying to control you. When someone tries to dominate you, maintain absolute silence and stare directly at the center of their forehead for four seconds. This will completely destroy their confidence, forcing them into submission. Want to learn more ways to defend yourself? Watch this video and...
 [TAGS]
 darkpsychology, manipulation, psychology, mindset, viral"""
 
