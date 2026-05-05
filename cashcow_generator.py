@@ -170,7 +170,7 @@ def generate_speech_and_subs(text: str, output_audio: str, output_subs_ass: str,
     temp_trimmed = output_audio.replace(".mp3", "_trimmed.mp3")
     trim_cmd = [
         "ffmpeg", "-y", "-nostdin", "-i", output_audio,
-        "-af", "silenceremove=start_periods=1:start_threshold=-50dB:stop_periods=1:stop_threshold=-50dB:stop_duration=0.3",
+        "-af", "silenceremove=start_periods=1:start_threshold=-55dB:start_duration=0.1:stop_periods=-1:stop_threshold=-55dB:stop_duration=0.5",
         "-b:a", "320k",
         temp_trimmed
     ]
@@ -182,12 +182,13 @@ def generate_speech_and_subs(text: str, output_audio: str, output_subs_ass: str,
         if result_trim.returncode == 0 and os.path.exists(temp_trimmed) and os.path.getsize(temp_trimmed) > 1024:
             # GUARD: sprawdź czy trimmed audio nie jest krótsze niż 5s
             trimmed_dur = _get_audio_duration(temp_trimmed)
-            if trimmed_dur >= 5.0:
+            min_acceptable = max(5.0, audio_dur * 0.3)  # min 30% of original or 5s
+            if trimmed_dur >= min_acceptable:
                 import shutil
                 shutil.move(temp_trimmed, output_audio)
                 print(f"  ✅ Trimmed: {audio_dur:.1f}s → {trimmed_dur:.1f}s")
             else:
-                print(f"  ⚠️  silenceremove skróciło audio do {trimmed_dur:.1f}s — zachowuję oryginał ({audio_dur:.1f}s)")
+                print(f"  ⚠️  silenceremove skróciło audio do {trimmed_dur:.1f}s (< 30% oryginału {audio_dur:.1f}s) — zachowuję oryginał")
                 os.remove(temp_trimmed)
         else:
             # Fallback: audio zbyt krótkie lub błąd silenceremove — zostaw oryginał
@@ -436,7 +437,7 @@ def create_video(audio_path: str, subs_path: str, output_path: str, profile_name
             final_audio = CompositeAudioClip([audio_clip, bg_music])
             video_clip = video_clip.set_audio(final_audio)
 
-        video_clip.write_videofile(temp_no_subs, fps=30, codec="libx264", audio_codec="aac", audio_bitrate="320k", threads=6, logger=None)
+        video_clip.write_videofile(temp_no_subs, fps=30, codec="libx264", audio_codec="aac", audio_bitrate="192k", temp_audiofile="temp_audio_44k.m4a", remove_temp=True, threads=6, logger=None)
     finally:
         # MEMORY SAFETY: Zawsze zamykaj klipy — nawet przy wyjątku (Windows blokuje pliki!)
         if video_clip:
@@ -463,8 +464,14 @@ def create_video(audio_path: str, subs_path: str, output_path: str, profile_name
         cmd = [
             'ffmpeg', '-y', '-nostdin', '-i', temp_no_subs,
             '-vf', vf_filter,
-            '-af', 'loudnorm=I=-14:LRA=11:TP=-1.5',
-            '-c:v', 'libx264', '-crf', '18', '-c:a', 'aac', '-b:a', '320k',
+            '-af', 'loudnorm=I=-14:LRA=11:TP=-1.5,aresample=44100',
+            '-c:v', 'libx264', '-crf', '18', '-preset', 'medium',
+            '-profile:v', 'high', '-level', '4.1',
+            '-c:a', 'aac', '-b:a', '192k',
+            '-ar', '44100',        # KRYTYCZNE: standard YT (nie 96kHz!)
+            '-r', '30',            # 30fps standard Shorts
+            '-pix_fmt', 'yuv420p', # Kompatybilność YT
+            '-movflags', '+faststart',
             output_path
         ]
         subprocess.run(cmd, check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
