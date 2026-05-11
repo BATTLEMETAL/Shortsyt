@@ -2,11 +2,18 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](.)
 [![Status](https://img.shields.io/badge/Status-Production%20Active-brightgreen)](.)
-[![Channel](https://img.shields.io/badge/YouTube-Dark%20Mindset-FF0000?logo=youtube)](https://youtube.com/channel/UCp6u29DiETQta-9WoUmPjJw)
-[![Videos](https://img.shields.io/badge/Videos%20Published-75%2B-orange)](.)
+[![Channel](https://img.shields.io/badge/YouTube-Dark%20Mindset-FF0000?logo=youtube)](https://youtube.com/@ItsDarkMindset/shorts)
+[![Videos](https://img.shields.io/badge/Videos%20Published-87%2B-orange)](.)
 [![Views](https://img.shields.io/badge/Total%20Views-15%2C130%2B-blue)](.)
+[![Cost](https://img.shields.io/badge/Cost%20per%20Video-%240-brightgreen)](./)
 
 > **Production-grade autonomous content pipeline.** Researches YouTube trends, generates psychology scripts via local LLM (Qwen 2.5 7B), audits quality with an 8-dimensional NLP scorer, renders video with TTS narration, and publishes to YouTube — fully unattended, every day since March 2026.
+
+## 📊 Live Production Dashboard
+
+![Shortsyt Analytics Dashboard](docs/screenshots/dashboard.png)
+
+> Data source: YouTube Analytics API (verified) · May 5, 2026 · 95 videos published · 18,049 total views · $0/video
 
 ---
 
@@ -14,15 +21,16 @@
 
 | Metric | Value |
 |---|---|
-| Channel | [Dark Mindset](https://youtube.com/channel/UCp6u29DiETQta-9WoUmPjJw) |
+| Channel | [📺 Dark Mindset](https://youtube.com/@ItsDarkMindset/shorts) |
 | Production start | March 3, 2026 |
-| Videos published | 75+ (daily pipeline, Task Scheduler) |
+| Videos published | **87+** (daily pipeline, Task Scheduler, **2 published today**) |
 | Total views | **15,130+** |
 | Top video views | **1,251** — "Have you ever felt dominated by another person's body language?" |
 | Best avg. view duration | **85.4%** (12-second short — nearly complete watch) |
-| Optimal title format | QUESTION format: **287 avg views** vs [PREFIX] format: **42 avg views** (6.8× difference) |
+| Optimal title format | QUESTION format: **287 avg views** vs [PREFIX] format: **42 avg views** (**6.8× difference**) |
 | Optimal duration | 11–20s shorts: **222 avg views** (best performing bracket) |
 | Best publish time | Tuesday, ~19:00 UTC |
+| **Cost per video** | **$0** (Edge-TTS + local Qwen 2.5 + Whisper, fully offline) |
 
 ### Top 5 Videos (as of April 13, 2026)
 
@@ -170,20 +178,20 @@ Session-level dedup via env var `_SESSION_SCRIPTS_{PROFILE}` — Film 2 cannot r
 ## 📂 Project Structure
 
 ```
-shortsyt/                         133 files total
+shortsyt/                         174 files total
 ├── agent_dark_psychology.py      1,121 lines — main pipeline orchestrator
 ├── quality_auditor.py              718 lines — 8-dim NLP quality engine
 ├── synapsa_bridge.py               493 lines — IPC bridge to Qwen 2.5
-├── cashcow_generator.py          1,100 lines — video render engine
+├── cashcow_generator.py            555 lines — video render engine (FFmpeg + MoviePy)
 ├── real_time_monitor_agent.py      248 lines — YouTube Analytics scraper
 ├── dynamic_pattern_agent.py        213 lines — MicroEVS prompt injector
-├── smart_video_analyzer.py         ~29K      — channel intelligence engine
+├── smart_video_analyzer.py         ~38K      — channel intelligence engine
 ├── facts_database.py               ~40K      — curated psychology facts DB
 ├── accounts/
 │   ├── topic_history.json          Deduplication database
-│   └── smart_analysis_*.json       24 days of channel analytics
+│   └── smart_analysis_*.json       31 days of channel analytics
 ├── video_success_model.pkl         Trained sklearn classifier (376KB)
-└── publish_report.json             Full history of 75+ published videos
+└── publish_report.json             Full history of 87+ published videos
 ```
 
 ---
