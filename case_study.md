@@ -5,8 +5,8 @@
 | Metric | Value |
 |--------|-------|
 | **Pipeline live since** | March 3, 2026 |
-| **Days in production** | 58+ (March → April 2026) |
-| **Videos published (confirmed)** | 85+ public uploads |
+| **Days in production** | 73+ (March → May 2026) |
+| **Videos published (confirmed)** | 95+ public uploads |
 | **Publishing cadence** | 2 videos/day, fully autonomous |
 | **Human interventions** | 0 (pipeline runs via Windows Task Scheduler) |
 | **Cost per video** | $0 (100% local LLM — Qwen 2.5 7B NF4) |
@@ -125,7 +125,7 @@ shortsyt/
 │   ├── topic_history.json        Deduplication DB (50+ topics)
 │   └── smart_analysis_*.json    29 days of channel analytics
 ├── video_success_model.pkl       Trained sklearn classifier (376KB)
-└── publish_report.json           Full history of 85+ published videos
+└── publish_report.json           Full history of 95+ published videos
 ```
 
 Total: **174 files**, **~4,000+ lines** of production Python

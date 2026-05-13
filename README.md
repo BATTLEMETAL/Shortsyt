@@ -3,8 +3,8 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](.)
 [![Status](https://img.shields.io/badge/Status-Production%20Active-brightgreen)](.)
 [![Channel](https://img.shields.io/badge/YouTube-Dark%20Mindset-FF0000?logo=youtube)](https://youtube.com/@ItsDarkMindset/shorts)
-[![Videos](https://img.shields.io/badge/Videos%20Published-87%2B-orange)](.)
-[![Views](https://img.shields.io/badge/Total%20Views-15%2C130%2B-blue)](.)
+[![Videos](https://img.shields.io/badge/Videos%20Published-95%2B-orange)](.)
+[![Views](https://img.shields.io/badge/Total%20Views-18%2C049%2B-blue)](.)
 [![Cost](https://img.shields.io/badge/Cost%20per%20Video-%240-brightgreen)](./)
 
 > **Production-grade autonomous content pipeline.** Researches YouTube trends, generates psychology scripts via local LLM (Qwen 2.5 7B), audits quality with an 8-dimensional NLP scorer, renders video with TTS narration, and publishes to YouTube — fully unattended, every day since March 2026.
@@ -23,8 +23,8 @@
 |---|---|
 | Channel | [📺 Dark Mindset](https://youtube.com/@ItsDarkMindset/shorts) |
 | Production start | March 3, 2026 |
-| Videos published | **87+** (daily pipeline, Task Scheduler, **2 published today**) |
-| Total views | **15,130+** |
+| Videos published | **95+** (daily pipeline, Task Scheduler, **2 published today**) |
+| Total views | **18,049+** |
 | Top video views | **1,251** — "Have you ever felt dominated by another person's body language?" |
 | Best avg. view duration | **85.4%** (12-second short — nearly complete watch) |
 | Optimal title format | QUESTION format: **287 avg views** vs [PREFIX] format: **42 avg views** (**6.8× difference**) |
