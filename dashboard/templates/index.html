@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Shortsyt — Panel Zarządzania YouTube</title>
+  <meta name="description" content="Panel zarządzania wieloma kontami YouTube — Shortsyt"/>
+  <link rel="stylesheet" href="/static/style.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+</head>
+<body>
+
+<div class="app-layout">
+
+  <!-- ── Sidebar ─────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">🎬</div>
+      <h1>Shortsyt</h1>
+      <span>YouTube Manager v2</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-label">Zarządzanie</div>
+      <button class="nav-item active" id="nav-accounts" onclick="showPage('accounts')">
+        <span class="nav-icon">📺</span> Konta klientów
+      </button>
+      <button class="nav-item" id="nav-pipeline" onclick="showPage('pipeline')">
+        <span class="nav-icon">⚡</span> Pipeline
+      </button>
+      <button class="nav-item" id="nav-scanner" onclick="showPage('scanner')">
+        <span class="nav-icon">📡</span> Skaner treści
+      </button>
+      <button class="nav-item" id="nav-profiles" onclick="showPage('profiles')">
+        <span class="nav-icon">🎯</span> Profile kanałów
+      </button>
+      <button class="nav-item" id="nav-connections" onclick="showPage('connections')">
+        <span class="nav-icon">🔗</span> Połącz konta
+      </button>
+      <button class="nav-item" id="nav-client" onclick="showPage('client')">
+        <span class="nav-icon">👤</span> Konto klienta
+      </button>
+
+      <div class="nav-label" style="margin-top:16px">Narzędzia</div>
+      <button class="nav-item" onclick="openAddModal()">
+        <span class="nav-icon">➕</span> Nowy klient
+      </button>
+      <button class="nav-item" onclick="refreshAll()">
+        <span class="nav-icon">🔄</span> Odśwież
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="status-badge">
+        <div class="status-dot" id="server-dot"></div>
+        <span id="server-status">Panel online</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <main class="main-content">
+    <div class="topbar">
+      <div class="topbar-title" id="topbar-title">📊 Dashboard</div>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary" onclick="showPage('pipeline')">⚡ Pipeline</button>
+        <button class="btn btn-primary btn-large" onclick="openAddModal()">➕ Nowy klient</button>
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <!-- ── Stats ───────────────────────────────────────── -->
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Konta klientów</div>
+          <div class="stat-value accent" id="stat-accounts">—</div>
+          <div class="stat-sub">Zarządzane kanały</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Aktywne tokeny</div>
+          <div class="stat-value green" id="stat-tokens">—</div>
+          <div class="stat-sub">Gotowe do publikacji</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Wideo łącznie</div>
+          <div class="stat-value" id="stat-videos">—</div>
+          <div class="stat-sub">We wszystkich kanałach</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Aktywne automaty</div>
+          <div class="stat-value yellow" id="stat-running">—</div>
+          <div class="stat-sub">Uruchomione teraz</div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <!-- PAGE: ACCOUNTS -->
+      <!-- ════════════════════════════════════════════════════ -->
+      <div id="page-accounts">
+        <div class="section-header">
+          <div class="section-title">📺 Konta klientów YouTube</div>
+          <div id="accounts-count" style="font-size:12px;color:var(--text-dim)"></div>
+        </div>
+        <div class="accounts-grid" id="accounts-grid">
+          <div class="page-loader"><div class="spinner" style="width:18px;height:18px"></div> Ładowanie...</div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <!-- PAGE: PIPELINE -->
+      <!-- ════════════════════════════════════════════════════ -->
+      <div id="page-pipeline" class="hidden">
+        <div class="section-header">
+          <div class="section-title">⚡ Zarządzaj Pipeline</div>
+          <div style="font-size:12px;color:var(--text-dim)">Uruchamiaj kroki automatu ręcznie</div>
+        </div>
+
+        <!-- Account selector for pipeline -->
+        <div class="pipeline-account-selector" id="pipeline-account-selector">
+          <label class="form-label">Konto docelowe (opcjonalne)</label>
+          <select class="form-input" id="pipeline-account-select" style="max-width:320px">
+            <option value="">— Wszystkie konta —</option>
+          </select>
+        </div>
+
+        <div class="pipeline-grid" id="pipeline-grid">
+          <div class="page-loader"><div class="spinner"></div> Ładowanie kroków...</div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <!-- PAGE: CONTENT SCANNER -->
+      <!-- ════════════════════════════════════════════════════ -->
+      <div id="page-scanner" class="hidden">
+        <div class="section-header">
+          <div class="section-title">📡 Skaner treści YouTube</div>
+          <div style="font-size:12px;color:var(--text-dim)">Analizuj trendy dla danego kanału</div>
+        </div>
+
+        <div class="scanner-controls">
+          <div class="form-group" style="max-width:340px">
+            <label class="form-label">Wybierz konto</label>
+            <select class="form-input" id="scanner-account-select">
+              <option value="">— wybierz —</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-large" id="scan-btn" onclick="runContentScan()">
+            📡 Skanuj trendy
+          </button>
+        </div>
+
+        <!-- Trend results -->
+        <div id="trend-results" class="trend-results hidden">
+          <div class="trend-header">
+            <div class="trend-meta" id="trend-meta"></div>
+          </div>
+          <div class="trend-body" id="trend-body"></div>
+        </div>
+
+        <!-- Live scan log -->
+        <div id="scan-live-log" class="inline-log hidden">
+          <div class="inline-log-header">
+            <span>📡 Live log skanowania</span>
+            <div class="spinner" id="scan-spinner" style="display:none"></div>
+          </div>
+          <div class="inline-log-body" id="scan-log-body"></div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <!-- PAGE: CHANNEL PROFILES -->
+      <!-- ════════════════════════════════════════════════════ -->
+      <div id="page-profiles" class="hidden">
+        <div class="section-header">
+          <div class="section-title">🎯 Profile kanałów</div>
+          <div style="font-size:12px;color:var(--text-dim)">Wartości uniwersalne i gatunkowe per konto</div>
+        </div>
+        <div id="profiles-list">
+          <div class="page-loader"><div class="spinner"></div> Ładowanie...</div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <!-- PAGE: CONNECTIONS -->
+      <!-- ════════════════════════════════════════════════════ -->
+      <div id="page-connections" class="hidden">
+        <div class="section-header">
+          <div class="section-title">🔗 Połącz konta</div>
+          <div style="font-size:12px;color:var(--text-dim)">Autoryzacja OAuth dla YT + bank referencji TikTok/IG/FB</div>
+        </div>
+
+        <!-- ── SEKCJA 1: OAuth YouTube per konto ── -->
+        <div class="conn-section-label">🎬 Konta YouTube — Autoryzacja OAuth (pozwolenie na ingerencję skryptu)</div>
+        <div class="connections-info" style="margin-bottom:16px">
+          <span>🔐</span>
+          <span>Kliknij <strong>Autoryzuj YT</strong> przy koncie — otworzy się przeglądarka, zaloguj na właściwe konto Google. Po autoryzacji skrypt może: wgrywać filmy, czytać statystyki, publikować komentarze CTA i analizować kanał.</span>
+        </div>
+        <div id="oauth-accounts-list">
+          <div class="page-loader"><div class="spinner"></div> Ładowanie kont...</div>
+        </div>
+
+        <!-- ── SEKCJA 2: Bank Referencji (TikTok/IG/FB/YT) ── -->
+        <div class="conn-section-label" style="margin-top:32px">📌 Bank Referencji — filmy do wzorowania</div>
+        <div class="connections-info" style="margin-bottom:16px">
+          <span>💡</span>
+          <span>Wklej linki do najlepszych filmów z dowolnej platformy. AI analizuje wzorce (hook, długość, format) i wstrzykuje je do <strong>adaptation_directive</strong> przy każdym generowaniu.</span>
+        </div>
+        <div class="connections-add-panel">
+          <div class="form-group" style="flex:1">
+            <label class="form-label">Link do filmu</label>
+            <input class="form-input" id="conn-url" placeholder="https://youtube.com/shorts/... lub https://tiktok.com/..."/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Platforma</label>
+            <select class="form-input" id="conn-platform">
+              <option value="youtube">🎬 YouTube</option>
+              <option value="tiktok">🎵 TikTok</option>
+              <option value="instagram">📸 Instagram</option>
+              <option value="facebook">📘 Facebook</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Konto docelowe</label>
+            <select class="form-input" id="conn-account">
+              <option value="">— globalne —</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-large" onclick="addConnection()">➕ Dodaj</button>
+        </div>
+        <div id="connections-list" style="margin-top:16px">
+          <div class="page-loader"><div class="spinner"></div> Ładowanie...</div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════ -->
+      <!-- PAGE: CLIENT ACCOUNT -->
+      <!-- ════════════════════════════════════════════════════ -->
+      <div id="page-client" class="hidden">
+        <div class="section-header">
+          <div class="section-title">👤 Konto klienta — Product Review</div>
+          <div style="font-size:12px;color:var(--text-dim)">Dodaj klientkę z nieszą produktową — AI rozumie gatunek i tworzy odpowiedni content</div>
+        </div>
+
+        <div class="client-info-box">
+          <div class="client-info-icon">🛍️</div>
+          <div>
+            <div class="client-info-title">Jak działa konto klientki?</div>
+            <div class="client-info-desc">AI dostaje gatunek <code>product_review</code> i definiuje wartości specyficzne: uczciwa recenzja, nie sprzedażowy ton, porównania produktów, oszczędzanie pieniędzy klientów. Nie skopiuje stylu dark_psychology — każdy kanał ma własny głos.</div>
+          </div>
+        </div>
+
+        <div class="client-values-grid">
+          <div class="client-value-card">
+            <div class="client-value-icon">✅</div>
+            <div class="client-value-title">Wartości Uniwersalne</div>
+            <div class="client-value-list">
+              <div class="client-value-item">⏱️ Hook zatrzymuje w 0.5s</div>
+              <div class="client-value-item">🔄 Bez powtórzeń tematów</div>
+              <div class="client-value-item">📣 CTA na końcu</div>
+              <div class="client-value-item">📊 Max 60 słów skryptu</div>
+            </div>
+          </div>
+          <div class="client-value-card">
+            <div class="client-value-icon">🛍️</div>
+            <div class="client-value-title">Wartości Gatunkowe (product_review)</div>
+            <div class="client-value-list">
+              <div class="client-value-item">💬 Ton: szczery, nie sprzedażowy</div>
+              <div class="client-value-item">🔍 Porównania produktów</div>
+              <div class="client-value-item">💰 Oszczędzanie klientów</div>
+              <div class="client-value-item">⚠️ Zakaz: clickbait bez pokrycia</div>
+            </div>
+          </div>
+          <div class="client-value-card">
+            <div class="client-value-icon">🚫</div>
+            <div class="client-value-title">Czego AI nie zrobi</div>
+            <div class="client-value-list">
+              <div class="client-value-item">❌ Nie skopiuje dark psychology</div>
+              <div class="client-value-item">❌ Nie użyje manipulacji</div>
+              <div class="client-value-item">❌ Nie użyje shock tactics</div>
+              <div class="client-value-item">❌ Nie powtórzy recenzji</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:32px">
+          <div class="section-title" style="margin-bottom:16px">➕ Dodaj konto klientki</div>
+          <button class="btn btn-primary btn-large" onclick="openClientAddModal()">🛍️ Utwórz konto product review</button>
+        </div>
+      </div>
+
+    </div><!-- /page-content -->
+  </main>
+</div>
+
+<!-- ── Log Panel (slide-in) ──────────────────────────── -->
+<div class="log-panel" id="log-panel">
+  <div class="log-header">
+    <div class="log-title">
+      <div class="spinner" id="log-spinner" style="display:none"></div>
+      <span id="log-title-text">Log operacji</span>
+    </div>
+    <button class="modal-close" onclick="closeLogPanel()">✕</button>
+  </div>
+  <div class="log-body" id="log-body"></div>
+  <div class="log-footer">
+    <button class="btn btn-secondary" onclick="clearLog()" style="width:100%">🗑️ Wyczyść</button>
+  </div>
+</div>
+
+<!-- ── Add Account Modal ─────────────────────────────── -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title">➕ Nowe konto klienta</div>
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
+    </div>
+    <form id="add-form" onsubmit="submitAddAccount(event)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group">
+          <label class="form-label" for="input-client-name">Nazwa klienta</label>
+          <input class="form-input" type="text" id="input-client-name" placeholder="np. Jan Kowalski" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="input-display-name">Nazwa kanału YT</label>
+          <input class="form-input" type="text" id="input-display-name" placeholder="np. EcoProducts PL" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="input-id">ID profilu (slug)</label>
+          <input class="form-input" type="text" id="input-id" placeholder="np. eco_products_pl" required/>
+          <div class="form-hint">Tylko małe litery i podkreślniki</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="input-language">Język kanału</label>
+          <select class="form-input" id="input-language">
+            <option value="pl">🇵🇱 Polski</option>
+            <option value="en">🇬🇧 English</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label" for="input-niche">Nisza / Tematyka</label>
+          <input class="form-input" type="text" id="input-niche" placeholder="np. eco products sustainable lifestyle reviews" required/>
+          <div class="form-hint">Słowa kluczowe opisujące kanał — AI będzie to rozumieć</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="input-genre">Gatunek contentu</label>
+          <select class="form-input" id="input-genre">
+            <option value="product_review">📦 Product Review</option>
+            <option value="psychology_education">🧠 Psychology / Education</option>
+            <option value="gaming_entertainment">🎮 Gaming / Entertainment</option>
+            <option value="lifestyle">✨ Lifestyle</option>
+            <option value="finance">💰 Finance / Business</option>
+            <option value="fitness">💪 Fitness / Health</option>
+            <option value="comedy">😂 Comedy / Humor</option>
+            <option value="general">📺 Ogólny</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="input-target-age">Grupa docelowa</label>
+          <select class="form-input" id="input-target-age">
+            <option value="13-18">13–18 lat</option>
+            <option value="18-25">18–25 lat</option>
+            <option value="25-35" selected>25–35 lat</option>
+            <option value="35-50">35–50 lat</option>
+            <option value="all">Wszystkie grupy</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label" for="input-persona">Persona / Styl eksperta</label>
+          <input class="form-input" type="text" id="input-persona" placeholder="np. Honest product reviewer who saves people money"/>
+          <div class="form-hint">Jak AI ma się przedstawiać w skryptach</div>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label" for="input-tone">Ton komunikacji</label>
+          <input class="form-input" type="text" id="input-tone" placeholder="np. Friendly, honest, direct. Never pushy or salesy."/>
+          <div class="form-hint">Styl pisania AI dla tego kanału</div>
+        </div>
+      </div>
+
+      <!-- Universal Values Preview -->
+      <div class="profile-values-preview">
+        <div class="pv-title">✅ Wartości Uniwersalne (automatyczne)</div>
+        <div class="pv-grid">
+          <div class="pv-item"><span>⏱️ Hook w 0.5s</span><span class="pv-check">✓</span></div>
+          <div class="pv-item"><span>🔄 Deduplikacja tematów</span><span class="pv-check">✓</span></div>
+          <div class="pv-item"><span>📣 CTA na końcu</span><span class="pv-check">✓</span></div>
+          <div class="pv-item"><span>📊 Max 60 słów</span><span class="pv-check">✓</span></div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeAddModal()">Anuluj</button>
+        <button type="submit" class="btn btn-primary">✅ Dodaj konto</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── History Modal ─────────────────────────────────── -->
+<div class="modal-overlay" id="history-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="history-modal-title">Historia wideo</div>
+      <button class="modal-close" onclick="closeHistoryModal()">✕</button>
+    </div>
+    <div id="history-modal-body"></div>
+  </div>
+</div>
+
+<!-- ── Profile Edit Modal ─────────────────────────────── -->
+<div class="modal-overlay" id="profile-modal">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <div class="modal-title" id="profile-modal-title">🎯 Edytuj profil kanału</div>
+      <button class="modal-close" onclick="closeProfileModal()">✕</button>
+    </div>
+    <div id="profile-modal-body"></div>
+  </div>
+</div>
+
+<!-- ── Toast container ───────────────────────────────── -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ── Client Add Modal ─────────────────────────────── -->
+<div class="modal-overlay" id="client-add-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title">🛍️ Nowe konto klientki</div>
+      <button class="modal-close" onclick="closeClientAddModal()">✕</button>
+    </div>
+    <form id="client-add-form" onsubmit="submitClientAccount(event)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group">
+          <label class="form-label" for="ci-client-name">Nazwa klientki</label>
+          <input class="form-input" type="text" id="ci-client-name" placeholder="np. Anna Kowalska" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ci-display-name">Nazwa kanału YT</label>
+          <input class="form-input" type="text" id="ci-display-name" placeholder="np. Anna Reviews" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ci-id">ID profilu</label>
+          <input class="form-input" type="text" id="ci-id" placeholder="np. anna_reviews" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ci-language">Język</label>
+          <select class="form-input" id="ci-language">
+            <option value="pl">🇵🇱 Polski</option>
+            <option value="en">🇬🇧 English</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label" for="ci-niche">Kategoria produktów</label>
+          <input class="form-input" type="text" id="ci-niche" placeholder="np. skincare beauty products honest reviews" required/>
+          <div class="form-hint">Opisz jakie produkty recenzuje klientka</div>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label" for="ci-persona">Persona / styl recenzenta</label>
+          <input class="form-input" type="text" id="ci-persona" placeholder="np. Honest reviewer who saves people money, no fluff"/>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label" for="ci-tone">Ton komunikacji</label>
+          <input class="form-input" type="text" id="ci-tone" placeholder="np. Friendly, direct, honest. Never pushy."/>
+        </div>
+      </div>
+      <div class="profile-values-preview">
+        <div class="pv-title">🛍️ Wartości gatunkowe (product_review) — auto</div>
+        <div class="pv-grid">
+          <div class="pv-item"><span>💬 Szczery ton, nie sprzedażowy</span><span class="pv-check">✓</span></div>
+          <div class="pv-item"><span>🔍 Porównania produktów</span><span class="pv-check">✓</span></div>
+          <div class="pv-item"><span>💰 Nacisk na oszczędność</span><span class="pv-check">✓</span></div>
+          <div class="pv-item"><span>⚠️ Zakaz: clickbait</span><span class="pv-check">✓</span></div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeClientAddModal()">Anuluj</button>
+        <button type="submit" class="btn btn-primary">✅ Utwórz konto</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

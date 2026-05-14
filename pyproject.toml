@@ -10,8 +10,9 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Shortsyt Team"},
+    {name = "Michał Zalewski", email = "mz10062001@gmail.com"},
 ]
+
 keywords = ["youtube", "shorts", "ai", "automation", "tts", "video-generation"]
 classifiers = [
     "Development Status :: 4 - Beta",

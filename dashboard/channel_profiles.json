@@ -1,0 +1,168 @@
+{
+  "brainrot": {
+    "id": "brainrot",
+    "display_name": "Brainrot PL",
+    "niche": "roblox brainrot stories polska",
+    "client_name": "Klient #1",
+    "added": "2026-04-01",
+    "channel_profile": {
+      "language": "pl",
+      "voice": "pl-PL-MarekNeural",
+      "genre": "gaming_entertainment",
+      "persona": "Gen-Z internet culture expert",
+      "tone": "Energetic, chaotic, fun. Use modern Polish internet slang (sigma, ohio, brainrot).",
+      "hook_style": "Pattern interrupt + absurd scenario",
+      "subtitle_style": "PopWordBrainrot",
+      "music_style": "phonk no copyright",
+      "background_style": "Minecraft parkour daytime, clear sky, colorful gameplay",
+      "universal_values": {
+        "hook_must_stop_scroll_in_seconds": 0.5,
+        "avoid_repeat_topics": true,
+        "max_words_in_script": 60,
+        "use_loop_ending": true,
+        "engagement_cta_at_end": true
+      },
+      "genre_values": {
+        "target_audience_age": "12-18",
+        "forbidden_topics": [
+          "violence",
+          "dark themes",
+          "manipulation"
+        ],
+        "required_keywords_pool": [
+          "sigma",
+          "ohio",
+          "Roblox",
+          "brainrot",
+          "NPC"
+        ],
+        "content_safe_for_kids": true,
+        "title_format_rules": "Use funny questions or absurd statements",
+        "description_template": "Funny {genre} video about {topic}! Watch till the end 😂 #shorts #roblox #brainrot"
+      },
+      "seo_tags": [
+        "roblox",
+        "brainrot",
+        "shorts",
+        "polska",
+        "sigma",
+        "ohio",
+        "viral",
+        "gaming"
+      ]
+    }
+  },
+  "dark_mindset": {
+    "id": "dark_mindset",
+    "display_name": "Dark Mindset",
+    "niche": "dark psychology manipulation secrets",
+    "client_name": "Klient #2",
+    "added": "2026-04-01",
+    "channel_profile": {
+      "language": "en",
+      "voice": "en-US-ChristopherNeural",
+      "genre": "psychology_education",
+      "persona": "Dark Psychology and Mindset expert",
+      "tone": "Cold, analytical, authoritative. Use precise psychological terminology.",
+      "hook_style": "Curiosity gap + shock fact",
+      "subtitle_style": "CinematicDark",
+      "music_style": "dark synthwave phonk slowed reverb no copyright",
+      "background_style": "Peaky Blinders city at night, dark rainy streets, wolves, dark red navy colors",
+      "universal_values": {
+        "hook_must_stop_scroll_in_seconds": 0.5,
+        "avoid_repeat_topics": true,
+        "max_words_in_script": 65,
+        "use_loop_ending": false,
+        "engagement_cta_at_end": true
+      },
+      "genre_values": {
+        "target_audience_age": "18-35",
+        "forbidden_topics": [
+          "illegal advice",
+          "harmful manipulation against vulnerable people"
+        ],
+        "required_keywords_pool": [
+          "psychology",
+          "manipulation",
+          "body language",
+          "mindset",
+          "power",
+          "control"
+        ],
+        "content_safe_for_kids": false,
+        "title_format_rules": "Alternate QUESTION format and NUMBERED LIST format",
+        "description_template": "WARNING: {hook_angle}... Most people never realize this. Follow for more dark psychology insights.\n\n#darkpsychology #manipulation #shorts #viral"
+      },
+      "seo_tags": [
+        "darkpsychology",
+        "manipulation",
+        "psychology",
+        "mindset",
+        "sigma",
+        "power",
+        "secrets",
+        "viral",
+        "shorts"
+      ]
+    }
+  },
+  "pretty_woman": {
+    "id": "pretty_woman",
+    "display_name": "Afroloki Widnica",
+    "niche": "afroloki warkoczyki panda kucyki salon beauty",
+    "client_name": "Sandra PrettyWoman",
+    "added": "2026-04-24",
+    "channel_profile": {
+      "language": "pl",
+      "voice": "pl-PL-MarekNeural",
+      "genre": "product_review",
+      "persona": "Ciepla profesjonalna stylistka afrolokow",
+      "tone": "Przyjazny kobiecy inspirujacy",
+      "hook_style": "Problem-solution hook",
+      "subtitle_style": "Clean",
+      "music_style": "soft background no copyright",
+      "background_style": "clean white studio product shots",
+      "universal_values": {
+        "hook_must_stop_scroll_in_seconds": 0.5,
+        "avoid_repeat_topics": true,
+        "max_words_in_script": 60,
+        "use_loop_ending": false,
+        "engagement_cta_at_end": true
+      },
+      "genre_values": {
+        "target_audience_age": "35-54",
+        "forbidden_topics": [
+          "fake reviews",
+          "paid promotion without disclosure",
+          "clickbait"
+        ],
+        "required_keywords_pool": [
+          "afroloki",
+          "warkoczyki",
+          "panda",
+          "kucyki",
+          "salon"
+        ],
+        "content_safe_for_kids": false,
+        "title_format_rules": "Problem or question format — 'Is X worth it?', 'X vs Y', 'Don't buy X until...'",
+        "description_template": "Honest review: {topic}. Saving you money! #shorts #{acc_id} #review",
+        "content_principles": [
+          "Always give honest verdict",
+          "Compare alternatives when relevant",
+          "Mention price-to-value ratio",
+          "Never recommend products you haven't verified"
+        ]
+      },
+      "seo_tags": [
+        "afroloki",
+        "warkoczyki",
+        "panda",
+        "kucyki",
+        "salon",
+        "beauty",
+        "shorts",
+        "viral"
+      ]
+    }
+  }
+}

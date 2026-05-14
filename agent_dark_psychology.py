@@ -51,14 +51,25 @@ PUBLISH_REPORT_FILE = "publish_report.json"
 # ===== DIVERSE SUB-NICHE ROTATION POOL (Priority 3 — Content Variety) =====
 # Rotuje co film, zapobiegając content fatigue (wszystkie filmy to były body language)
 TOPIC_ROTATION_POOL = [
-    "dark psychology body language social dominance",        # Core niche
-    "neuropsychology decision making cognitive biases",       # NEW: neuro
-    "dark psychology respect social influence power",         # Core variant
-    "persuasion techniques negotiation covert influence",     # NEW: persuasion
-    "narcissist manipulation red flags covert emotional abuse", # NEW: red flags
-    "self mastery self discipline stoic philosophy sigma mindset", # NEW: self-mastery
-    "social intelligence reading people microexpressions emotions", # NEW: social intel
-    "covert communication nonverbal secrets psychological power",   # Core + new angle
+    # ★ CORE (TOP 5 filmow — wszystkie o body language dominance)
+    "dark psychology body language social dominance",         # #1: 1,252 views
+    "dark psychology body language command respect",           # #2: 1,181 views
+    "dark psychology body language effortlessly powerful",     # #3: 1,049 views
+    "covert communication nonverbal secrets psychological power",    # Core + new angle
+    # ★ SECONDARY (sprawdzone, blisko niszy)
+    "neuropsychology decision making cognitive biases",        # Widoczny w top 10
+    "persuasion techniques negotiation covert influence",      # Blisko core
+    "dark psychology respect social influence power",          # Core variant
+    "social intelligence reading people microexpressions",     # Blisko body lang
+    # ★ EXPANDED (nowe tematy — unikamy content fatigue po 4 dniach)
+    "dark triad narcissism manipulation detection",            # Silny: narcissist content
+    "cognitive bias anchoring sunk cost decision trap",        # Brain tricks
+    "attachment theory intermittent reinforcement addiction",  # Relacje/toksyczne
+    "power dynamics status signaling authority cues",          # Dominacja w grupie
+    "tactical empathy negotiation FBI hostage techniques",     # FBI angle
+    "gaslighting reality distortion covert control tactics",   # Dark triad ops
+    "behavioral economics psychology pricing scarcity",        # Ekonomia zachowan
+    "micro-expressions deception detection Paul Ekman lie",    # Ekspresje twarzy
 ]
 DRY_RUN = False  # ustawiane przez --dry-run flag
 AUDIT_REPORT_FILE = "audit_report.json"
@@ -112,12 +123,13 @@ def log_publish_report(title: str, video_index: int, tagi: list, privacy: str, v
     print(f"📋 [PUBLISH REPORT] Wpis dodany do {PUBLISH_REPORT_FILE}.")
 
 def search_viral_shorts(youtube, query: str, count: int = 5):
-    """Skanuje trendy i szuka zapytania by dostarczyć kontekst z ostatnich 7 dni."""
-    print(f"\n🌍 [DARK PSYCHOLOGY AGENT] Skanowanie trendów na świecie: '{query}'...")
+    """Skanuje trendy, pobiera statystyki i analizuje wzorce z top filmów (hook, format, długość)."""
+    print(f"\n🌍 [DARK PSYCHOLOGY AGENT] Skanowanie trendów: '{query}'...")
     try:
+        import re as _re_ref
         search_query = f"{query} #shorts"
         ostatni_tydzien = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%SZ')
-        
+
         search_response = youtube.search().list(
             q=search_query,
             part="snippet",
@@ -128,17 +140,56 @@ def search_viral_shorts(youtube, query: str, count: int = 5):
             publishedAfter=ostatni_tydzien
         ).execute()
 
+        video_ids = [item["id"]["videoId"] for item in search_response.get("items", []) if "videoId" in item.get("id", {})]
         viral_data = []
-        for item in search_response.get("items", []):
-            title = item["snippet"]["title"]
-            desc = item["snippet"]["description"]
-            viral_data.append(f"TYTUŁ: {title} | OPIS: {desc[:100]}...")
-            
-        print(f"✅ Znaleziono {len(viral_data)} hitów nakręcających wyświetlenia w przeciągu ostatnich 7 dni.")
+
+        if video_ids:
+            # Pobierz pełne statystyki i długość w jednym batchu
+            details_resp = youtube.videos().list(
+                part="snippet,statistics,contentDetails",
+                id=",".join(video_ids)
+            ).execute()
+
+            for v in details_resp.get("items", []):
+                title = v["snippet"].get("title", "")
+                desc  = v["snippet"].get("description", "")[:80]
+                views = int(v["statistics"].get("viewCount", 0))
+                likes = int(v["statistics"].get("likeCount", 0))
+                dur_iso = v["contentDetails"].get("duration", "PT0S")
+                # parse duration
+                dur_m = _re_ref.search(r"PT(?:(\d+)M)?(?:(\d+)S)?", dur_iso)
+                dur_s = int(dur_m.group(1) or 0)*60 + int(dur_m.group(2) or 0) if dur_m else 0
+
+                # Detect title format
+                stripped = title.strip()
+                if stripped.endswith("?") or _re_ref.match(r"^(have|can|are|do|does|is|why|how|what|when|who)\b", stripped.lower()):
+                    fmt = "QUESTION"
+                elif _re_ref.match(r"^\d+\s", stripped):
+                    fmt = "NUMBERED_LIST"
+                else:
+                    fmt = "STATEMENT"
+
+                # Extract first 6 words as hook pattern
+                hook_words = " ".join(stripped.split()[:6])
+
+                line = (
+                    f"[{views:,}v | {likes:,}L | {dur_s}s | {fmt}] "
+                    f"TITLE: {title} | HOOK: '{hook_words}...' | DESC: {desc}"
+                )
+                viral_data.append(line)
+
+            # Inject summary as REFERENCE_PATTERNS env
+            patterns_summary = " || ".join(viral_data)
+            os.environ["SYNAPSA_REFERENCE_PATTERNS"] = patterns_summary[:2000]
+            print(f"✅ [REFERENCJE] Analizuję {len(viral_data)} filmów — wzorce wstrzyknięte do Synapsy.")
+        else:
+            viral_data = ["Brak wyników z YouTube — improwizuj z własnej wiedzy."]
+
         return viral_data
     except Exception as e:
         print(f"❌ Błąd skanowania API YouTube: {e}")
-        return ["Brak danych z YouTube, przejdź do improwizacji z mrocznej psychologii."]
+        return ["Brak danych z YouTube, przejdź do improwizacji."]
+
 
 def _get_next_topic(video_index: int) -> str:
     """Rotuje przez 8 pod-nisz dark psychology — zapobiega content fatigue (Priority 3)."""
@@ -163,13 +214,25 @@ def _get_next_topic(video_index: int) -> str:
 
 
 def _post_cta_comment(youtube, video_id: str, script_text: str):
-    """Auto-postuje zróżnicowany komentarz CTA po uploadzie — boost engagement signals (Priority 4)."""
+    """Auto-postuje komentarz CTA po uploadzie — boost engagement signals.
+    UWAGA: YouTube API blokuje komentarze dla kanalów z < ~100 subskrybentów.
+    """
     import random
+
+    # Sprawdź liczbę subskrybentów — nie próbuj dla małych kanałów
+    try:
+        ch = youtube.channels().list(part="statistics", mine=True).execute()
+        subs = int(ch["items"][0]["statistics"].get("subscriberCount", 0))
+        if subs < 100:
+            print(f"⏭️  [CTA COMMENT] Pomijam — kanał ma {subs} subs (min 100 dla API komentarzy)")
+            return
+    except Exception:
+        pass  # Jeśli nie można sprawdzić — próbuj
+
     cta_options = [
         "Which of these dark psychology tactics have you caught someone using on you? 🧠👇",
         "Comment '1' if you recognized this in someone you know 👇🧠",
         "Have you ever felt this being used on you? Tell me below 👇",
-        "Share this with someone who does this to you 👇 They need to see it.",
         "Which number: 1 = this happened to me, 2 = I've done this to someone 👇🧠",
         "Have you ever caught someone doing this to you in real life? 👇🧠",
     ]
@@ -188,8 +251,7 @@ def _post_cta_comment(youtube, video_id: str, script_text: str):
         ).execute()
         print(f"💬 [CTA COMMENT] ✅ Opublikowano: '{comment_text}'")
     except Exception as e:
-        # Brak scope 'youtube.force-ssl' w tokenie — dodaj go w authorize_channel.py jeśli chcesz komentarze
-        print(f"⚠️  [CTA COMMENT] Pominięto (brak scope lub błąd API): {e}")
+        print(f"⏭️  [CTA COMMENT] API odmowa (normalnie dla małych kanałów): {type(e).__name__}")
 
 
 def _validate_title(title: str) -> bool:
@@ -235,11 +297,11 @@ _PRE_HOOKS = [
     "Most people don't know this.",
     "Stop. Don't scroll.",
     "They removed this from textbooks.",
-    "This changes everything.",
     "Nobody talks about this.",
     "Here's what they hide from you.",
     "Pay attention to this.",
     "99% of people miss this.",
+    "You're being controlled right now.",
 ]
 _RE_HOOKS = [
     "But here's the dark part —",
@@ -813,6 +875,8 @@ darkpsychology, manipulation, psychology, mindset, viral"""
     audit_result = None
     try:
         audit_result = audit_short(tytul, script_text, video_path=output_video)
+        # Zapisz wynik audytu na funkcji (dla feedback loop po uploadzie)
+        run_dark_agent_cycle._last_audit_result = audit_result
         # Zapisz raport audytu
         audit_log = []
         if os.path.exists(AUDIT_REPORT_FILE):
@@ -928,53 +992,123 @@ darkpsychology, manipulation, psychology, mindset, viral"""
     if youtube and output_video:
         from upload_youtube import upload_video
         print("\n--- ETAP 5: Autopublikacja na kanale YouTube (PUBLIC natychmiast) ---")
-        try:
-            # ── ETAP 4.8: Generacja miniaturki (Custom Thumbnail) ──────────────
-            thumbnail_path = None
-            try:
-                from generate_thumbnail import create_thumbnail
-                # Tytuł bez #shorts i emoji dla czytelności miniaturki
-                import re as _re_thumb
-                clean_title_for_thumb = _re_thumb.sub(r'#\w+', '', tytul).strip()
-                clean_title_for_thumb = _re_thumb.sub(r'[🧠👁️💀⚠️🔥❗🔋]', '', clean_title_for_thumb).strip()
-                thumb_filename = f"thumb_{PROFILE_NAME}_{video_index}.jpg"
-                thumbnail_path = create_thumbnail(output_video, clean_title_for_thumb, output_filename=thumb_filename)
-                if thumbnail_path:
-                    print(f"🖼️ [THUMBNAIL] ✅ Miniaturka wygenerowana: {thumbnail_path}")
-                else:
-                    print("⚠️ [THUMBNAIL] Generacja nie powiodła się — upload bez miniaturki.")
-            except Exception as thumb_err:
-                print(f"⚠️ [THUMBNAIL] Błąd generacji miniaturki: {thumb_err}")
 
-            # Pipeline uruchamiany o 13:30 PL (peak hour) → publikacja PUBLIC natychmiast
-            # Brak publishAt / schedulingu — eliminuje problem Draft/Private
-            now_pl = datetime.now(PL_TZ)
+        # ── ETAP 4.8: Generacja miniaturki ────────────────────────────────
+        thumbnail_path = None
+        try:
+            from generate_thumbnail import create_thumbnail
+            import re as _re_thumb
+            clean_title_for_thumb = _re_thumb.sub(r'#\w+', '', tytul).strip()
+            clean_title_for_thumb = _re_thumb.sub(r'[🧠👁️💀⚠️🔥❗🔋]', '', clean_title_for_thumb).strip()
+            thumb_filename = f"thumb_{PROFILE_NAME}_{video_index}.jpg"
+            thumbnail_path = create_thumbnail(output_video, clean_title_for_thumb, output_filename=thumb_filename)
+            if thumbnail_path:
+                print(f"🖼️ [THUMBNAIL] ✅ Miniaturka wygenerowana: {thumbnail_path}")
+            else:
+                print("⚠️ [THUMBNAIL] Generacja nie powiodła się — upload bez miniaturki.")
+        except Exception as thumb_err:
+            print(f"⚠️ [THUMBNAIL] Błąd generacji miniaturki: {thumb_err}")
+
+        now_utc = datetime.now(timezone.utc)
+        now_pl  = datetime.now(PL_TZ)
+
+        # ── SMART PEAK TIMING ────────────────────────────────────────────────
+        # Analiza: optimum = 19:00 UTC (21:00 PL CEST). Scheduler odpala o 19:00 PL = 17:00 UTC.
+        # Rozwiazanie: jesli jest miedzy 15:00-22:00 UTC, zaplanuj na najblizsza 19:00 UTC (jesli jeszcze nie minela)
+        _peak_hour_utc = 19
+        _today_peak = now_utc.replace(hour=_peak_hour_utc, minute=0, second=0, microsecond=0)
+        _use_scheduled = False
+        _publish_at_str = None
+        _privacy = "public"
+
+        if now_utc.hour < _peak_hour_utc and now_utc.hour >= 12:
+            # Jestesmy przed szczytem dzisiejszego dnia — zaplanuj na 19:00 UTC dzis
+            _use_scheduled = True
+            _publish_at_str = _today_peak.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+            _privacy = "private"
+            print(f"⏰ [SMART TIMING] Film zostanie zaplanowany na PEAK: 19:00 UTC ({_today_peak.strftime('%H:%M')} UTC = 21:00 PL)")
+        else:
             print(f"🕒 WIDEO {video_index}/{total_videos} — PUBLIKACJA NATYCHMIAST "
                   f"(teraz: {now_pl.strftime('%H:%M')} PL) → PUBLIC")
 
-            upload_result = upload_video(
-                youtube=youtube,
-                file_path=output_video,
-                title=tytul,
-                description=opis,
-                tags=tagi,
-                category_id="24",  # Entertainment
-                privacy_status="public",
-                thumbnail_path=thumbnail_path
-            )
+        # ── UPLOAD z RETRY (max 2 próby, przerwa 45 min) ─────────────────
+        UPLOAD_RETRY_WAIT_MIN = 45
+        upload_result = None
+        last_upload_error = None
+
+        for _attempt in range(1, 3):  # próba 1 i 2
+            try:
+                upload_result = upload_video(
+                    youtube=youtube,
+                    file_path=output_video,
+                    title=tytul,
+                    description=opis,
+                    tags=tagi,
+                    category_id="27",
+                    privacy_status=_privacy,
+                    thumbnail_path=thumbnail_path,
+                    publish_at=_publish_at_str
+                )
+                last_upload_error = None
+                break  # sukces — wyjdź z pętli
+
+            except Exception as upload_err:
+                last_upload_error = upload_err
+                if _attempt == 1:
+                    print(f"⚠️ [UPLOAD FAIL #{_attempt}] {upload_err}")
+                    print(f"   ↳ Czekam {UPLOAD_RETRY_WAIT_MIN} min i próbuję ponownie o innej godzinie...")
+                    time.sleep(UPLOAD_RETRY_WAIT_MIN * 60)
+                    # Odśwież token przed retry
+                    try:
+                        youtube = get_authenticated_service(PROFILE_NAME)
+                        print("   ↳ Token odświeżony — retry...")
+                    except Exception:
+                        print("   ↳ Token refresh nieudany — kontynuuję ze starym.")
+                else:
+                    print(f"❌ [UPLOAD FAIL #{_attempt}] Drugi retry nieudany: {upload_err}")
+
+        if upload_result:
             add_to_history(PROFILE_NAME, tytul, script_text=script_text)
             log_publish_report(tytul, video_index, tagi, privacy="public", video_id=upload_result)
             print(f"✅ [SUKCES] Film '{tytul}' — PUBLICZNY natychmiast (ID: {upload_result})!")
             print(f"   🏷️  Tagi: ({len(tagi)}) {', '.join(tagi[:6])}...")
             print(f"   📝 Opis (ostatnie 120 zn.): ...{opis[-120:]}")
-            # Auto-post CTA komentarz po uploadzie (Priority 4 — engagement signal boost)
             if upload_result:
                 _post_cta_comment(youtube, upload_result, script_text)
-        except Exception as e:
-            print(f"❌ [BŁĄD PUBLIKACJI] Wystąpił błąd przy wgrywaniu: {e}")
-            
+            # ── FEEDBACK: Zapis wyniku audytu przed porownaniem z realnymi wynikami ──
+            try:
+                from auditor_feedback import save_pre_audit
+                if hasattr(run_dark_agent_cycle, '_last_audit_result') and run_dark_agent_cycle._last_audit_result:
+                    save_pre_audit(upload_result, tytul, run_dark_agent_cycle._last_audit_result)
+            except Exception as fb_err:
+                print(f"   ⚠️  [FEEDBACK] Nie udało się zapisać wyniku audytu: {fb_err}")
+        else:
+            # ── FALLBACK: Dodaj do kolejki oczekujących ───────────────────
+            print(f"\n❌ [UPLOAD NIEUDANY] Wszystkie próby wyczerpane. Błąd: {last_upload_error}")
+            pending_file = "pending_uploads.json"
+            pending = []
+            if os.path.exists(pending_file):
+                try:
+                    with open(pending_file, "r", encoding="utf-8") as pf:
+                        pending = json.load(pf)
+                except Exception:
+                    pass
+            pending.append({
+                "timestamp": datetime.now(PL_TZ).isoformat(),
+                "video_path": output_video,
+                "title": tytul,
+                "description": opis,
+                "tags": tagi,
+                "thumbnail": thumbnail_path,
+                "error": str(last_upload_error),
+            })
+            with open(pending_file, "w", encoding="utf-8") as pf:
+                json.dump(pending, pf, indent=2, ensure_ascii=False)
+            print(f"   📋 Film zapisany do kolejki: {pending_file} (zostanie wrzucony przy następnym uruchomieniu)")
+
     print(f"\n🎉 Cykl {video_index}/{total_videos} dla Dark Psychology zakończony.")
-    return True
+    return True if upload_result else False
+
 
 def _wait_until(target_time_str: str):
     """Czeka do podanej godziny (HH:MM) w lokalnej strefie czasowej. Wypisuje odliczanie."""
@@ -1007,8 +1141,61 @@ def _wait_until(target_time_str: str):
     print(f"\n🟢 [{dt.now().strftime('%H:%M:%S')}] GODZINA SZCZYTU — startuje pipeline!\n")
 
 
-def _run_full_pipeline(youtube, dry_run: bool):
-    """Pełny pipeline: facts refresh → trend scout → 2 filmy (14:00, 19:00 PL) → audyt → upload → post-analiza."""
+def _run_full_pipeline(youtube, dry_run: bool, quota_override: int = 0):
+    """Pełny pipeline: pending flush → facts refresh → trend scout → filmy → audyt → upload → post-analiza."""
+    quota = quota_override if quota_override > 0 else DAILY_QUOTA
+
+    # ─── KROK 0: Wrzuć oczekujące filmy + sprawdź realne wyniki poprzednich ─────
+    pending_file = "pending_uploads.json"
+
+    # Sprawdź realne wyniki poprzednich filmow i przekalibruj wagi
+    if not dry_run:
+        try:
+            from auditor_feedback import update_real_results, recalculate_weights, get_calibration_report
+            updated = update_real_results(youtube)
+            if updated:
+                recalculate_weights()
+                print(get_calibration_report())
+        except Exception as fb_err:
+            print(f"   ⚠️  [FEEDBACK] Blad aktualizacji wynikow: {fb_err}")
+
+    if os.path.exists(pending_file) and not dry_run:
+        try:
+            with open(pending_file, "r", encoding="utf-8") as pf:
+                pending = json.load(pf)
+            if pending:
+                print(f"\n📋 [PENDING QUEUE] Znaleziono {len(pending)} film(y) czekające na upload.")
+                from upload_youtube import upload_video
+                still_pending = []
+                for item in pending:
+                    vid_path = item.get("video_path", "")
+                    if not os.path.exists(vid_path):
+                        print(f"   ⚠️ Plik nie istnieje: {vid_path} — pomijam.")
+                        continue
+                    try:
+                        r = upload_video(
+                            youtube=youtube,
+                            file_path=vid_path,
+                            title=item.get("title", "Dark Psychology"),
+                            description=item.get("description", ""),
+                            tags=item.get("tags", []),
+                            category_id="27",
+                            privacy_status="public",
+                            thumbnail_path=item.get("thumbnail"),
+                        )
+                        print(f"   ✅ [PENDING UPLOAD OK] '{item['title'][:50]}' → ID: {r}")
+                        log_publish_report(item["title"], 0, item.get("tags", []), privacy="public", video_id=r)
+                    except Exception as pe:
+                        print(f"   ❌ [PENDING UPLOAD FAIL] '{item['title'][:40]}': {pe}")
+                        still_pending.append(item)
+                # Zapisz tylko nieudane
+                with open(pending_file, "w", encoding="utf-8") as pf:
+                    json.dump(still_pending, pf, indent=2, ensure_ascii=False)
+                if not still_pending:
+                    print("   ✅ Kolejka oczekujących wyczyszczona.")
+        except Exception as pe_err:
+            print(f"   ⚠️ [PENDING] Błąd obsługi kolejki: {pe_err}")
+
     # ─── AUTO FACTS REFRESH (poniedziałek lub co 7 dni) ───────────────────
     print("\n🔄 [FACTS REFRESH] Sprawdzam czy wymagany tygodniowy reset faktów...")
     try:
@@ -1045,7 +1232,7 @@ def _run_full_pipeline(youtube, dry_run: bool):
 
     # ─── 2 FILMY DZIENNIE (PEAK HOURS: 14:00, 19:00 PL) ───────────
     generated = 0
-    for i in range(1, DAILY_QUOTA + 1):
+    for i in range(1, quota + 1):
         success = run_dark_agent_cycle(i, DAILY_QUOTA, youtube)
         if success:
             generated += 1
@@ -1053,7 +1240,7 @@ def _run_full_pipeline(youtube, dry_run: bool):
             print("⏳ Przerwa 30s przed kolejnym wideo...")
             time.sleep(30)
 
-    print(f"\n🏁 DZIENNY LIMIT ZAKOŃCZONY. Wygenerowano {generated}/{DAILY_QUOTA} filmów.")
+    print(f"\n🏁 DZIENNY LIMIT ZAKOŃCZONY. Wygenerowano {generated}/{quota} filmów.")
 
     # ─── POST-CYCLE ANALYSIS ──────────────────────────────────────────────
     print("\n🔬 [POST-CYCLE] Uruchamiam pełną analizę kanału...")
@@ -1091,6 +1278,9 @@ def main():
                         help="Generuj wideo i audytuj, ale NIE wrzucaj na YouTube")
     parser.add_argument("--schedule", default=None, metavar="HH:MM",
                         help="Czekaj do podanej godziny PL, potem odpal pipeline (np. 17:00)")
+    parser.add_argument("--quota", type=int, default=0, metavar="N",
+                        help="Ilu filmów wygenerować (0 = domyślny DAILY_QUOTA=2). "
+                             "Użyj 1 dla osobnych tasków porannego/wieczornego.")
     args = parser.parse_args()
     DRY_RUN = args.dry_run
 
@@ -1100,8 +1290,9 @@ def main():
     if DRY_RUN:
         print("🧪 TRYB DRY-RUN: pełna generacja + audyt BEZ wrzucania na YouTube")
     if args.schedule:
-        print(f"⏰ TRYB SCHEDULER: odpalenie o {args.schedule} PL "
-              f"(trend scout + 3 filmy + audyt + upload + analiza)")
+        print(f"⏰ TRYB SCHEDULER: odpalenie o {args.schedule} PL")
+    if args.quota:
+        print(f"🎯 QUOTA OVERRIDE: generuj tylko {args.quota} film(y) (domyślny: {DAILY_QUOTA})")
     print("================================================================\n")
 
     # Autoryzacja
@@ -1113,7 +1304,7 @@ def main():
     if args.schedule:
         _wait_until(args.schedule)
 
-    _run_full_pipeline(youtube, DRY_RUN)
+    _run_full_pipeline(youtube, DRY_RUN, quota_override=args.quota)
 
 
 if __name__ == "__main__":

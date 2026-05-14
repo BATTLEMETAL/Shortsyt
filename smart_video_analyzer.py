@@ -32,9 +32,9 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 
 # ─── Stałe ───────────────────────────────────────────────────────────────────
-PROFILE_NAME    = "dark_mindset"
-DIRECTIVE_FILE  = "adaptation_directive.json"
-REPORT_FILE     = f"smart_analysis_{datetime.now().strftime('%Y-%m-%d')}.json"
+PROFILE_NAME    = os.environ.get("SHORTSYT_PROFILE", "dark_mindset")
+DIRECTIVE_FILE  = f"accounts/{PROFILE_NAME}_adaptation_directive.json"
+REPORT_FILE     = f"accounts/{PROFILE_NAME}_smart_analysis_{datetime.now().strftime('%Y-%m-%d')}.json"
 MAX_VIDEOS      = 500
 TOKEN_FILE      = os.path.join("accounts", f"{PROFILE_NAME}_token.pickle")
 CLIENT_SECRETS  = "client_secret.json"
@@ -44,6 +44,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl",  # wymagany do CTA comments
 ]
 
 # CLI kolory
@@ -335,6 +336,103 @@ def analyze_hook_patterns(videos, n=5):
     return patterns
 
 
+# ─── 8b. Klasyfikacja wydajności wideo wg wieku + views ───────────────────────────────────────
+STATE_LABELS = {
+    "TOO_YOUNG":  "⏳ Za młody do analizy",
+    "WAIT":       "🔄 Zbyt mało danych (czekaj)",
+    "MISS":       "🔵 Nie wstrzelił się (miss)",
+    "SUPPRESSED": "🚨 Algorytm tłumi (suppressed)",
+    "NORMAL":     "✅ Normalny zasięg",
+    "HIT":        "📈 Hit",
+    "VIRAL":      "🔥 Viral",
+}
+
+def classify_video_performance(video: dict) -> dict:
+    """
+    Klasyfikuje wideo wg wieku + views.
+    Zwraca dict: {state, state_label, min_views_needed, analysis_valid, explanation}
+
+    Progi (oparte na typowym zachowaniu YT Shorts):
+      0-6h  → TOO_YOUNG    : za wcześnie na jakikolwiek wniosek
+      6-24h → WAIT         : <10 views = za mało danych; >=10 = można analizować
+      24-48h→ MISS         : <15 views = nie wstrzelił się w pierwsze 48h
+               NORMAL       : 15-200 views = normalna dystrybucja
+               HIT          : >200 views
+      48-72h→ SUPPRESSED   : <20 views i starszy niż 48h = algorytm tłumi
+               NORMAL/HIT/VIRAL jak wyżej
+      >72h  → SUPPRESSED   : <30 views
+               NORMAL       : 30-500
+               HIT          : 500-2000
+               VIRAL        : >2000
+    """
+    age_h  = video.get("age_hours", 999)
+    views  = video.get("views", 0)
+    title  = video.get("title", "")[:50]
+
+    if age_h < 6:
+        return {
+            "state": "TOO_YOUNG",
+            "state_label": STATE_LABELS["TOO_YOUNG"],
+            "analysis_valid": False,
+            "min_views_needed": 5,
+            "explanation": f"Film ma tylko {age_h:.0f}h — YT Shorts nie zdecydował jeszcze o dystrybucji.",
+        }
+    if age_h < 24:
+        if views < 10:
+            return {
+                "state": "WAIT",
+                "state_label": STATE_LABELS["WAIT"],
+                "analysis_valid": False,
+                "min_views_needed": 10,
+                "explanation": f"Film ({age_h:.0f}h stary, {views} views) — za mało danych. Analizuj po 24h.",
+            }
+        # >= 10 views w pierwszych 24h = już można wnioskować
+        state = "HIT" if views >= 100 else "NORMAL"
+        return {
+            "state": state,
+            "state_label": STATE_LABELS[state],
+            "analysis_valid": True,
+            "min_views_needed": 10,
+            "explanation": f"Film ({age_h:.0f}h stary, {views} views) — wczesne dane.",
+        }
+    if age_h < 48:
+        if views < 15:
+            return {
+                "state": "MISS",
+                "state_label": STATE_LABELS["MISS"],
+                "analysis_valid": True,
+                "min_views_needed": 15,
+                "explanation": (
+                    f"Film '{title}' ma tylko {views} views po {age_h:.0f}h. "
+                    f"Nie trafił w algorytm — zmień hook lub tytuł."
+                ),
+            }
+        state = "VIRAL" if views >= 2000 else ("HIT" if views >= 200 else "NORMAL")
+        return {
+            "state": state, "state_label": STATE_LABELS[state],
+            "analysis_valid": True, "min_views_needed": 15,
+            "explanation": f"{views} views po {age_h:.0f}h.",
+        }
+    # > 48h
+    if views < 20:
+        return {
+            "state": "SUPPRESSED",
+            "state_label": STATE_LABELS["SUPPRESSED"],
+            "analysis_valid": True,
+            "min_views_needed": 20,
+            "explanation": (
+                f"Film '{title}' ma {views} views po {age_h:.0f}h. "
+                f"Algorytm tłumi dystrybucję — możliwy shadow-limit lub przerwa w wysyłkach."
+            ),
+        }
+    state = "VIRAL" if views >= 2000 else ("HIT" if views >= 500 else "NORMAL")
+    return {
+        "state": state, "state_label": STATE_LABELS[state],
+        "analysis_valid": True, "min_views_needed": 20,
+        "explanation": f"{views} views po {age_h:.0f}h.",
+    }
+
+
 # ─── 9. Dyrektywa adaptacyjna ────────────────────────────────────────────────
 def generate_adaptation_directive(videos, top_kw, low_kw, dur_perf, best_pub_day,
                                    best_pub_hour, last_2, fmt_analysis, hour_activity,
@@ -343,24 +441,106 @@ def generate_adaptation_directive(videos, top_kw, low_kw, dur_perf, best_pub_day
     if not videos:
         return "BRAK DANYCH — kontynuuj dotychczasową strategię."
 
-    # ── Ostatnie 2 filmy ──
-    if len(last_2) >= 1:
-        v = last_2[0]
+    # ── Klasyfikuj ostatnie filmy (age-aware) ──
+    classified_last = [(v, classify_video_performance(v)) for v in last_2]
+
+    # ── Ostatnie 2 filmy z etykietą stanu ──
+    if classified_last:
+        v, cls = classified_last[0]
         ctr_str = f" | CTR: {v['ctr']}%" if v.get("ctr") is not None else ""
         avd_str = f" | AVD: {v['avg_view_s']}s ({v['avg_view_pct']}%)" if v.get("avg_view_s") is not None else ""
-        D.append(f"OSTATNI FILM: '{v['title']}' — {v['views']} views, {v['likes']} likes, "
-                 f"{v['engagement']}% eng, {v['velocity']} v/h{ctr_str}{avd_str}.")
-    if len(last_2) >= 2:
-        v = last_2[1]
-        D.append(f"PRZEDOSTATNI FILM: '{v['title']}' — {v['views']} views, {v['engagement']}% eng.")
+        D.append(
+            f"OSTATNI FILM [{cls['state_label']}]: '{v['title']}' — "
+            f"{v['views']} views, {v['likes']} likes, "
+            f"{v['engagement']}% eng, {v['velocity']} v/h{ctr_str}{avd_str}. "
+            f"{cls['explanation']}"
+        )
+    if len(classified_last) >= 2:
+        v, cls = classified_last[1]
+        D.append(
+            f"PRZEDOSTATNI FILM [{cls['state_label']}]: '{v['title']}' — "
+            f"{v['views']} views, {v['engagement']}% eng. {cls['explanation']}"
+        )
 
-    # ── Porównanie ostatnich 2 ──
-    if len(last_2) >= 2:
-        if last_2[0]["views"] > last_2[1]["views"] * 1.5:
-            D.append(f"WNIOSEK: Ostatni film LEPSZY o 50%+. Powiel styl tytułu: '{last_2[0]['title']}'.")
-        elif last_2[0]["views"] < last_2[1]["views"] * 0.6:
-            D.append(f"WNIOSEK: Ostatni film SŁABSZY. Unikaj stylu: '{last_2[0]['title']}'. "
-                     f"Wróć do sprawdzonych hooków.")
+    # ── Główny wniosek oparty na klasyfikacji ──
+    if classified_last:
+        v0, cls0 = classified_last[0]
+
+        if cls0["state"] == "TOO_YOUNG":
+            D.append(
+                "WNIOSEK [ZA MŁODY]: Film ma mniej niż 6h — "
+                "YT Shorts nie rozdał jeszcze dystrybucji. "
+                "NIE ZMIENIAJ strategii na podstawie tych danych. Sprawdź jutro."
+            )
+        elif cls0["state"] == "WAIT":
+            D.append(
+                "WNIOSEK [ZA MAŁO DANYCH]: Film ma mniej niż 24h i <10 views. "
+                "Brak wystarczających danych do wnioskowania. "
+                "Kontynuuj obecną strategię bez zmian."
+            )
+        elif cls0["state"] == "MISS":
+            D.append(
+                f"WNIOSEK [MISS — nie wstrzelił się]: '{v0['title'][:50]}' "
+                f"ma tylko {v0['views']} views po {v0['age_hours']:.0f}h. "
+                "Zmień hook — spróbuj formułę 'Have you ever felt...' lub 'Can you spot...'. "
+                "Tytuł musi być pytaniem. Unikaj słów z listy ZAKAZANYCH."
+            )
+        elif cls0["state"] == "SUPPRESSED":
+            D.append(
+                f"WNIOSEK [SUPPRESSED — algorytm tłumi]: "
+                f"{v0['views']} views po {v0['age_hours']:.0f}h. "
+                "Możliwe przyczyny: przerwa w publikacji, zmiana niszy, błąd techniczny. "
+                "STRATEGIA WYJŚCIA: 1) Wrzucaj codziennie bez przerwy. "
+                "2) Używaj wyłącznie QUESTION format. "
+                "3) Wróć do body language (najlepsza nisza kanału). "
+                "4) Sprawdź plik: codec H.264, audio 44100Hz, 1080x1920."
+            )
+        elif cls0["state"] in ("HIT", "VIRAL"):
+            D.append(
+                f"WNIOSEK [HIT]: '{v0['title'][:50]}' osiągnął "
+                f"{v0['views']} views po {v0['age_hours']:.0f}h. "
+                "Powiel format tytułu, hook i styl narracji tego wideo."
+            )
+            if len(classified_last) >= 2:
+                v1, cls1 = classified_last[1]
+                if cls1["analysis_valid"] and v1["views"] >= cls1["min_views_needed"]:
+                    if v0["views"] > v1["views"] * 1.5:
+                        D.append(f"Poprawa o 50%+ względem poprzedniego ({v1['views']} views). Kontynuuj ten kierunek.")
+        else:  # NORMAL
+            if len(classified_last) >= 2:
+                v1, cls1 = classified_last[1]
+                if cls1["analysis_valid"] and v1["views"] >= cls1["min_views_needed"]:
+                    if v0["views"] > v1["views"] * 1.5:
+                        D.append(f"WNIOSEK: Ostatni film LEPSZY o 50%+. Powiel styl tytułu: '{v0['title']}'.")
+                    elif v0["views"] < v1["views"] * 0.6:
+                        D.append(f"WNIOSEK: Ostatni film SŁABSZY. Unikaj stylu: '{v0['title']}'.")
+                    else:
+                        D.append(f"WNIOSEK: Stabilna wydajność ({v0['views']} vs {v1['views']} views). Kontynuuj strategię.")
+                elif not cls1["analysis_valid"]:
+                    D.append(
+                        f"WNIOSEK: Brak danych porównawczych (poprzedni film: {cls1['state_label']}). "
+                        "Kontynuuj obecną strategię."
+                    )
+            else:
+                D.append(f"WNIOSEK: Film normalny ({v0['views']} views po {v0['age_hours']:.0f}h). Kontynuuj strategię.")
+
+    # ── DETEKCJA PRZERWY W PUBLIKACJI (gap alert) ──
+    try:
+        from datetime import timezone as _tz
+        if videos:
+            sorted_pub = sorted(videos, key=lambda x: x.get("published", ""), reverse=True)
+            last_pub = datetime.fromisoformat(
+                sorted_pub[0].get("published", "").replace("Z", "+00:00")
+            )
+            gap_h = (datetime.now(_tz.utc) - last_pub).total_seconds() / 3600
+            if gap_h > 48:
+                D.append(
+                    f"ALERT: Przerwa w publikacji wynosi {gap_h/24:.1f} dni! "
+                    f"YT Shorts algorytm karze przerwy >2 dni utratą momentum. "
+                    f"PRIORYTET: wrzucaj dziś!"
+                )
+    except Exception:
+        pass
 
     # ── Format tytułu ──
     if fmt_analysis:
@@ -397,10 +577,10 @@ def generate_adaptation_directive(videos, top_kw, low_kw, dur_perf, best_pub_day
     if hour_activity:
         peak_h = max(hour_activity, key=hour_activity.get)
         D.append(f"PEAK AKTYWNOŚCI WIDZÓW (ANALYTICS): {peak_h:02d}:00 UTC "
-                 f"= {peak_h+1:02d}:00 PL (CET). Wrzucaj wtedy!")
+                 f"= {peak_h+2:02d}:00 PL (CEST). Wrzucaj wtedy!")
     else:
         D.append(f"NAJLEPSZY CZAS PUBLIKACJI (z historii): {best_pub_day[0]} "
-                 f"o ~{best_pub_hour[0]:02d}:00 UTC = {best_pub_hour[0]+1:02d}:00 PL.")
+                 f"o ~{best_pub_hour[0]:02d}:00 UTC = {best_pub_hour[0]+2:02d}:00 PL (CEST).")
 
     # ── Hook patterns ──
     if hook_patterns:
@@ -613,6 +793,22 @@ def main():
     with open(REPORT_FILE, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=4, ensure_ascii=False)
     print(f"📄 Pełny raport: {REPORT_FILE}\n")
+
+    # ── AUTO-CLEANUP: Zachowaj tylko ostatnie 14 dni raportów ────────────────
+    import glob as _glob
+    from datetime import timedelta as _td
+    _cutoff = datetime.now(timezone.utc) - _td(days=14)
+    for _pattern in ["smart_analysis_*.json", "trend_report_*.json"]:
+        for _old in _glob.glob(_pattern):
+            try:
+                # Wyciągnij datę z nazwy pliku
+                _date_str = _old.split("_")[-1].replace(".json", "")
+                _file_dt = datetime.strptime(_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                if _file_dt < _cutoff and _old != REPORT_FILE:
+                    os.remove(_old)
+                    print(f"🗑️  [AUTO-CLEANUP] Usunięto stary raport: {_old}")
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

@@ -37,7 +37,15 @@ try:
 except Exception:
     pass
 
-APPROVE_THRESHOLD = 55  # obniżony z 68 — Synapsa z auto-inject daje 54-66
+# Wagi adaptacyjne (kalibrowane przez auditor_feedback.py)
+try:
+    from auditor_feedback import load_adaptive_weights
+except ImportError:
+    def load_adaptive_weights():
+        return {cat: 1.0 for cat in
+                ["title","script","hook","ending","uniqueness","technical","keywords","ai_sense"]}
+
+APPROVE_THRESHOLD = 62  # podwyzszony z 55 — filtruje slabe skrypty i duplikaty
 TOPIC_HISTORY_FILE = "accounts/topic_history.json"
 ADAPTATION_DIRECTIVE_FILE = "adaptation_directive.json"
 PROFILE_NAME = "dark_mindset"
@@ -70,6 +78,9 @@ PRE_HOOK_MARKERS = [
     "nobody talks about", "they don't want", "this will", "pay attention",
     "few people know", "99% of people", "they never teach", "they hide this",
     "before they delete", "nobody tells you", "they won't tell",
+    # QUESTION format hooks (najlepszy format: 224 avg views)
+    "have you ever", "have you noticed", "can you spot", "do you know",
+    "are you being", "you're being controlled", "why do some", "why does",
 ]
 RE_HOOK_MARKERS = [
     "but here's what", "but here is what", "the dark part", "but nobody",
@@ -103,12 +114,12 @@ def score_title(title: str) -> tuple[int, list[str]]:
         score -= 20
         notes.append("🚫 PREFIX_BRACKET ZAKAZANY! (-20 kara)")
 
-    # Zakazane słowa w tytule (-8 za każde)
+    # Zakazane słowa w tytule (-12 za każde — wyższy od poprzedniego -8)
     title_lower = title_clean.lower()
     for bw in BANNED_WORDS:
         if bw in title_lower:
-            score -= 8
-            notes.append(f"🚫 Zakazane słowo '{bw}' w tytule (-8)")
+            score -= 12
+            notes.append(f"🚫 Zakazane słowo '{bw}' w tytule (-12)")
 
     # Sprawdzone słowa kluczowe (+2 za każde, max +8)
     kw_hits = [k for k in PROVEN_KEYWORDS if k in title_lower]
@@ -226,6 +237,23 @@ def score_hook_quality(script: str) -> tuple[int, list[str]]:
     else:
         notes.append("❌ Zbyt ogólnikowy skrypt — brak konkretnego scenariusza")
 
+    # Numericze konkrety — researcher name, %, year (+5)
+    # Filmy z konkretnymi danymi maja wyzszy engagement (Paul Ekman, 93%, Festinger 1957)
+    import re as _re_hook
+    numeric_signals = [
+        r"\d+\s*(?:percent|%)",          # X% or X percent
+        r"\b(?:19|20)\d{2}\b",            # year: 1957, 2001 etc.
+        r"\b(?:ekman|navarro|cialdini|kahneman|festinger|milgram|aronson|voss|dunning|zajonc|pronin|freedman)\b",  # researchers
+        r"\d+\s*(?:seconds?|minutes?)",   # X seconds/minutes (specific)
+        r"\d+\s*(?:times?|x)\b",          # Xx more likely
+    ]
+    numeric_hits = [p for p in numeric_signals if _re_hook.search(p, script.lower())]
+    if numeric_hits:
+        score += 5
+        notes.append(f"✅ Numericze konkrety wykryte ({len(numeric_hits)}x) (+5) — badania/dane = wyższy engagement")
+    else:
+        notes.append("⚠️  Brak konkretnych liczb/nazwisk badaczy — dodaj np. 'Paul Ekman', '93%', '1957'")
+
     return score, notes
 
 
@@ -258,7 +286,9 @@ def score_uniqueness(title: str, script: str) -> tuple[int, list[str]]:
         # 1. Check title similarity
         if hist_title:
             t_ratio = difflib.SequenceMatcher(None, title.lower(), hist_title.lower()).ratio()
-            if t_ratio > 0.60:
+            # Prog 0.75 (poprz. 0.60 bylo za agresywne i dawalo false positives
+            # dla tematu dark psychology gdzie wiele slow sie powtarza)
+            if t_ratio > 0.75:
                 score -= 10
                 duplicates.append(f"Tytuł zbyt podobny ({int(t_ratio*100)}%) do: '{hist_title[:40]}'")
                 
@@ -283,34 +313,160 @@ def score_uniqueness(title: str, script: str) -> tuple[int, list[str]]:
     return max(score, -20), notes
 
 def check_ai_sense(script: str) -> tuple[int, list[str]]:
-    """Heurystyka wykrywająca bełkot sztucznej inteligencji i robotyczne zwroty. Zwraca KARĘ (0 do -20)."""
+    """Heurystyka wykrywajaca bełkot AI, robotyczne zwroty i KICZOWATE tresci. Zwraca KARE (0 do -30)."""
     penalty = 0
     notes = []
     text = script.lower()
-    
-    # 1. AI Hallucination / Filler phrases
-    bad_phrases = ["in conclusion", "it's important to", "it is crucial", "to summarize", 
-                   "delve into", "the dark truth is that", "additionally", "make sure to",
-                   "embark on", "testament to", "picture this", "let's dive"]
-    for bp in bad_phrases:
+
+    # 1. AI Hallucination / Generic filler phrases
+    ai_fillers = [
+        "in conclusion", "it's important to", "it is crucial", "to summarize",
+        "delve into", "additionally", "make sure to", "embark on",
+        "testament to", "picture this", "let's dive", "it goes without saying",
+        "needless to say", "at the end of the day", "think about it",
+    ]
+    for bp in ai_fillers:
         if bp in text:
             penalty -= 8
-            notes.append(f"🚫 Wykryto robotyczny zwrot AI: '{bp}' (-8)")
-            
-    # 2. Zbyt wiele powtórzeń tego samego słowa (zacięcie algorytmu The Loop)
+            notes.append(f"🚫 Robotyczny zwrot AI: '{bp}' (-8)")
+
+    # 2. KICZ — ciemna psychologia 'bro' clichés (te brzmia tandetnie)
+    kitchy_phrases = [
+        "knowledge is power",       # motywacyjny plakat, nie short
+        "the power is yours",       # brzmi jak reklama
+        "use this wisely",          # nachalnie moralizujace
+        "this changes everything",  # puste twierdzenie
+        "life-changing",
+        "jaw-dropping",
+        "mind-blowing",
+        "game-changer",
+        "game changer",
+        "alpha move",
+        "power move",
+        "sigma mindset",
+        "be the alpha",
+        "never be weak",
+        "become dominant",
+        "dominate them",
+        "use this on",              # zbyt nachalny CTA
+        "try this on your",
+        "do this to",
+        "before it disappears",
+        "before they delete",
+        "save this now",
+        "the dark truth is",        # przesadnie dramatyczne
+        "shocking truth",
+        "unbelievable trick",
+    ]
+    kitchy_hits = []
+    for kp in kitchy_phrases:
+        if kp in text:
+            penalty -= 6
+            kitchy_hits.append(kp)
+    if kitchy_hits:
+        notes.append(f"🚫 Kiczowate zwroty ({len(kitchy_hits)}x): {', '.join(kitchy_hits[:3])} (-{len(kitchy_hits)*6})")
+        notes.append("   ↳ Zamien na konkretny fakt lub scenariusz ('When someone does X, it means Y')")
+
+    # 3. Pusta dramatyzacja — superlatives bez substancji
+    superlative_count = sum(1 for w in ["incredible", "amazing", "unbelievable",
+                                         "powerful", "massive", "extreme", "ultimate"]
+                            if w in text)
+    if superlative_count >= 3:
+        penalty -= 5
+        notes.append(f"⚠️  Za dużo przesadnych przymiotnikow ({superlative_count}x) — brzmi jak clickbait (-5)")
+
+    # 4. Zbyt wiele powtórzen tego samego słowa (zacięcie)
     import collections
     words = [w.strip(".,!?\"'") for w in text.split() if w.strip(".,!?\"'") and len(w) > 3]
     if words:
         most_common = collections.Counter(words).most_common(1)[0]
-        # Uważajmy na pospolite słowa pominięte
-        if most_common[1] > 6 and most_common[0] not in ["that", "with", "this", "they", "your", "have", "some", "when"]:
+        stop = ["that", "with", "this", "they", "your", "have", "some", "when",
+                "what", "body", "people", "person", "their", "about", "from"]
+        if most_common[1] > 5 and most_common[0] not in stop:
             penalty -= 10
-            notes.append(f"🚫 Zacięcie skryptu? Słowo '{most_common[0]}' powtórzone aż {most_common[1]} razy (-10)")
-            
+            notes.append(f"🚫 Zacięcie skryptu: słowo '{most_common[0]}' powtórzone {most_common[1]}x (-10)")
+
     if penalty == 0:
-         notes.append("✅ Skrypt brzmi naturalnie, brak typowych 'wypełniaczy' AI i loopów")
-    
+        notes.append("✅ Skrypt brzmi naturalnie — brak kiczu, fillerów AI i powtórzeń")
+
     return penalty, notes
+
+
+def score_ending_quality(script: str) -> tuple[int, list[str]]:
+    """
+    Ocenia jakość ZAKOŃCZENIA skryptu (ostatnie 20 słów).
+    Dobre zakończenie: naturalne CTA + związane z hookiem + nie brzmi tandetnie.
+    Max: +8 punktów. Min: -10 (za złe zakończenie).
+    """
+    score = 0
+    notes = []
+    words = script.split()
+    if len(words) < 10:
+        return 0, ["ℹ️  Za krótki skrypt — nie mogę ocenić zakończenia"]
+
+    last_20 = " ".join(words[-20:]).lower()
+    last_8  = " ".join(words[-8:]).lower()
+
+    # Naturalne, dobre CTA (+5)
+    good_endings = [
+        "follow for more", "follow for", "like if you",
+        "part 2", "comment below", "want to know more",
+        "now you know",  # zamkniecie pętli wiedzy — naturalne
+    ]
+    has_good_cta = any(g in last_20 for g in good_endings)
+    if has_good_cta:
+        score += 5
+        notes.append("✅ Naturalne CTA na końcu (+5)")
+
+    # Połączenie zakończenia z hookiem — czy wraca do pytania (+3)
+    loop_back = [
+        "now you\'ll notice", "next time", "you\'ll spot", "you\'ll see",
+        "watch for this", "look for this", "notice this",
+    ]
+    has_loop = any(lb in last_20 for lb in loop_back)
+    if has_loop:
+        score += 3
+        notes.append("✅ Zakończenie zamyka pętlę z hookiem (+3) — silna retencja")
+
+    # KARA: Tandetne/nachalné zakończenia
+    bad_endings = [
+        ("use this wisely",          -6, "moralizujące"),
+        ("the power is yours",       -6, "motivational poster"),
+        ("knowledge is power",       -5, "kicz"),
+        ("use this on someone",      -5, "nachalny CTA"),
+        ("try this on",              -5, "nachalny CTA"),
+        ("do this today",            -4, "nachalny CTA"),
+        ("this changes everything",  -4, "puste twierdzenie"),
+        ("share this",               -3, "spam CTA"),
+        ("save this",                -3, "spam CTA — YT karze"),
+        ("start using",              -3, "nachalny"),
+        ("go use",                   -3, "nachalny"),
+    ]
+    bad_hits = []
+    for phrase, pen, reason in bad_endings:
+        if phrase in last_20:
+            score += pen
+            bad_hits.append(f"'{phrase}' ({reason})")
+    if bad_hits:
+        notes.append(f"🚫 Tandetne zakończenie: {', '.join(bad_hits[:2])}")
+        notes.append("   ↳ Zamień na: 'Next time you spot this, you'll know.' + 'Follow for more.'")
+
+    # Zbyt ogólne zakończenie (bez konkretnego powrotu do tematu)
+    generic_endings = [
+        "dark psychology secrets", "more psychology", "follow for more dark",
+        "follow for more psychology tricks",
+    ]
+    is_generic = any(g in last_20 for g in generic_endings)
+    if is_generic and not has_loop:
+        score -= 2
+        notes.append("⚠️  Zakończenie zbyt generyczne — dodaj konkretne odniesienie do tematu wideo")
+
+    if score >= 5:
+        notes.append("")
+    elif score == 0 and not bad_hits:
+        notes.append("⚠️  Neutralne zakończenie — brak wyraźnego CTA")
+
+    return max(score, -10), notes
 
 
 # ─── Ocena techniczna (czas wideo) ────────────────────────────────────────────
@@ -610,16 +766,38 @@ def audit_short(
     s_kw,      n_kw            = score_keywords(title, script)
     s_trend,   n_trend, t_data = score_trend_alignment(title, script)
     p_sense,   n_sense         = check_ai_sense(script)
+    s_ending,  n_ending        = score_ending_quality(script)
 
-    # Max 100 (6 kat.) + bonus trend do 10 - kara za brak logiki
-    raw_total = s_title + s_script + s_hook + s_unique + s_tech + s_kw + s_trend + p_sense
+    # Zaladuj wagi adaptacyjne (po kalibracji lub domyslne 1.0)
+    W = load_adaptive_weights()
+
+    # Zastosuj wagi do kazdej kategorii
+    ws_title   = round(s_title  * W.get("title",      1.0))
+    ws_script  = round(s_script * W.get("script",     1.0))
+    ws_hook    = round(s_hook   * W.get("hook",       1.0))
+    ws_unique  = round(s_unique * W.get("uniqueness", 1.0))
+    ws_tech    = round(s_tech   * W.get("technical",  1.0))
+    ws_kw      = round(s_kw    * W.get("keywords",   1.0))
+    ws_sense   = round(p_sense  * W.get("ai_sense",   1.0))
+    ws_ending  = round(s_ending * W.get("ending",     1.0))
+    # trend i ai_sense nie sa wazone (penalty/bonus nie kalkulowane w ten sam sposob)
+
+    # Max 100 (6 kat.) + bonus trend + ending - kara za kicz/brak logiki
+    raw_total = ws_title + ws_script + ws_hook + ws_unique + ws_tech + ws_kw + s_trend + ws_sense + ws_ending
     total = max(0, min(raw_total, 100))
 
-    # Reject naturally if AI hallucinated too much causing < 68, or force reject if penalty extreme
-    if p_sense <= -10:
-         decision = "REJECTED"
+    # Hard-reject: identyczny tytuł lub AI hallucination
+    if s_unique <= -10:  # 100% duplikat tytułu
+        decision = "REJECTED"
+    elif p_sense <= -10:
+        decision = "REJECTED"
     else:
-         decision = "APPROVED" if total >= APPROVE_THRESHOLD else "REJECTED"
+        decision = "APPROVED" if total >= APPROVE_THRESHOLD else "REJECTED"
+
+    # ai_sense to KARA (ujemna wartość 0 do -30).
+    # Dla kalibracji Pearsona przekształcamy do skali 0-15 (0 kara = 15 pkt, -30 kara = 0 pkt)
+    # Bez tego korelacja zawsze jest ujemna co sztucznie obniża wagę ai_sense.
+    ai_sense_calibration_score = max(0, 15 + p_sense)  # -15 kara -> 0; 0 kara -> 15
 
     breakdown = {
         "title":        {"score": s_title,  "max": 20, "notes": n_title},
@@ -629,7 +807,10 @@ def audit_short(
         "technical":    {"score": s_tech,   "max": 10, "notes": n_tech},
         "keywords":     {"score": s_kw,     "max": 10, "notes": n_kw},
         "trend_today":  {"score": s_trend,  "max": 10, "notes": n_trend},
-        "ai_sense":     {"score": p_sense,  "max": 0,  "notes": n_sense},
+        # ai_sense: raw penalty dla wyświetlania, calibration_score dla Pearsona
+        "ai_sense":     {"score": p_sense,  "max": 0,  "notes": n_sense,
+                         "calibration_score": ai_sense_calibration_score},
+        "ending":       {"score": s_ending, "max": 8,  "notes": n_ending},
     }
 
     fix_report = []
@@ -646,10 +827,11 @@ def audit_short(
             ("FORMAT TYTULU",        "title",       20),
             ("STRUKTURA SKRYPTU",    "script",      30),
             ("JAKOSC HOOKA",         "hook",        15),
+            ("JAKOSC ZAKONCZENIA",   "ending",       8),
             ("UNIKALNOSC (NLP)",     "uniqueness",  15),
             ("TECHNICZNE",           "technical",   10),
             ("SLOWA KLUCZOWE",       "keywords",    10),
-            ("SENS / AI FILLERY",    "ai_sense",     0),
+            ("KICZ / AI FILLERY",    "ai_sense",     0),
             ("TREND DNIA (BONUS)",   "trend_today", 10),
         ]
         for label, key, maxpts in sections:

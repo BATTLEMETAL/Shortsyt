@@ -217,8 +217,8 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: CinematicDark,Impact,165,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,3,0,1,10,4,5,30,30,0,1
-Style: CinematicDarkGold,Impact,165,&H0000E5FF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,3,0,1,10,4,5,30,30,0,1
+Style: CinematicDark,Impact,145,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,3,0,1,10,4,2,30,30,180,1
+Style: CinematicDarkGold,Impact,145,&H0000E5FF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,3,0,1,10,4,2,30,30,180,1
 Style: PopWordBrainrot,Impact,175,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,2,0,1,8,3,5,20,20,0,1
 
 [Events]
@@ -288,8 +288,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         color_tag = rotational_colors[i % len(rotational_colors)] if i % 3 == 0 else ""
 
                     anim_scale = "116" if is_dark else "122"
+                    # \an2 = dolna 1/3 ekranu (standard viral Shorts 2026)
+                    # \pos(540,1650) = wyśrodkowane X, Y=1650 na 1920px ekranie
                     line = (f"Dialogue: 0,{start},{end},{style},,0,0,0,,"
-                            f"{{\\an5\\t(0,70,\\fscx{anim_scale}\\fscy{anim_scale})}}"
+                            f"{{\\an2\\pos(540,1650)\\t(0,70,\\fscx{anim_scale}\\fscy{anim_scale})}}"
                             f"{color_tag}{word_text}\n") if is_dark else (
                             f"Dialogue: 0,{start},{end},{style},,0,0,0,,"
                             f"{{\\an5\\t(0,60,\\fscx{anim_scale}\\fscy{anim_scale})}}"

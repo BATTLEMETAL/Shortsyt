@@ -12,15 +12,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from multiprocessing import Process, Queue
 
-# --- PATCH dla Python 3.9 ---
-import importlib.metadata
 
-if not hasattr(importlib.metadata, "packages_distributions"):
-    def _fake_packages_distributions(): return {}
-
-
-    importlib.metadata.packages_distributions = _fake_packages_distributions
-# --- KONIEC PATCHA ---
 
 # --- USTAWIENIA ---
 CLIENT_SECRETS_FILE = "client_secret.json"
@@ -31,7 +23,7 @@ SCOPES = [
 ]
 API_SERVICE_NAME = 'youtube'
 API_VERSION = 'v3'
-ANALYSIS_TIMEOUT = 1200  # Maksymalny czas analizy jednego filmu w sekundach (20 minut)
+ANALYSIS_TIMEOUT = 300  # Maks. 5 min per film (poprz. 1200s = 20 min blokowalo pipeline)
 
 
 # ==============================================================================
@@ -171,7 +163,7 @@ def search_viral_shorts(youtube, query: str, max_results: int = 5) -> list:
             videoDuration="short",            # tylko shortsy
             order="viewCount",                 # sortuj po wyświetleniach
             maxResults=max_results,
-            relevanceLanguage="pl"
+            relevanceLanguage="en"             # dark_mindset = EN channel
         ).execute()
 
         for item in response.get('items', []):

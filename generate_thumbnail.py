@@ -26,16 +26,28 @@ def create_thumbnail(video_path: str, title: str, output_filename: str = "thumbn
         os.makedirs(OUTPUT_DIR)
 
     try:
-        # 1. Wyciągnij klatkę ze środka filmu
+        # 1. Wyciągnij klatkę z 15% czasu (bar dziej dynamiczna dla dark_mindset)
+        # Środkowa klatka (50%) to zazwyczaj statyczne ciemne tło — mało atrakcyjne
         with VideoFileClip(video_path) as clip:
-            frame_time = clip.duration / 2
+            frame_time = clip.duration * 0.15
             frame = clip.get_frame(frame_time)
             bg_image = Image.fromarray(frame)
 
+        # Resize do formatu 1280x720 (YouTube standard) — Shorts są 1080x1920 co nie pasuje YT
+        bg_image = bg_image.resize((1280, 720), Image.LANCZOS)
+
         # 2. Nałóż półprzezroczystą czarną warstwę dla lepszego kontrastu
-        overlay = Image.new('RGBA', bg_image.size, (0, 0, 0, 90))  # Zwiększono do 90 dla lepszego kontrastu
+        overlay = Image.new('RGBA', bg_image.size, (0, 0, 0, 90))
         bg_image_rgba = bg_image.convert('RGBA')
         bg_image = Image.alpha_composite(bg_image_rgba, overlay)
+
+        # 2B. Gradient od dołu (Hormozi/MrBeast style) — lepsza czytelność tekstu
+        gradient = Image.new('RGBA', bg_image.size, (0, 0, 0, 0))
+        for y_px in range(bg_image.size[1]):
+            alpha = int(180 * (y_px / bg_image.size[1]) ** 2)  # kwadratowy gradient
+            for x_px in range(bg_image.size[0]):
+                gradient.putpixel((x_px, y_px), (0, 0, 0, alpha))
+        bg_image = Image.alpha_composite(bg_image, gradient)
 
         draw = ImageDraw.Draw(bg_image)
 

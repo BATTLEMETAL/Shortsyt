@@ -10,9 +10,17 @@ from dotenv import load_dotenv
 load_dotenv()  # Load .env for API keys
 logger = logging.getLogger("synapsa_bridge")
 
-# Środowisko bogate z AI po stronie Synapsy
-SYNAPSA_PYTHON = r"C:\Users\mz100\PycharmProjects\Synapsa\venv\Scripts\python.exe"
-SYNAPSA_ROOT = r"C:\Users\mz100\PycharmProjects\Synapsa"
+# Ścieżki do środowiska Synapsy — konfiguruj przez zmienne środowiskowe
+# Skopiuj .env.example do .env i ustaw poprawne ścieżki
+SYNAPSA_PYTHON = os.environ.get(
+    "SYNAPSA_PYTHON",
+    r"C:\Users\mz100\PycharmProjects\Synapsa\venv\Scripts\python.exe"
+)
+SYNAPSA_ROOT = os.environ.get(
+    "SYNAPSA_ROOT",
+    r"C:\Users\mz100\PycharmProjects\Synapsa"
+)
+
 
 # ==============================================================================
 # === 1. ZEGAR STERUJĄCY - IPC (Metody do importowania w the Cash Cow)
@@ -154,10 +162,11 @@ if __name__ == "__main__":
     adapter_path = "unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit"
         
     local_agent = SmartAgent(
-            adapter_path=adapter_path, 
-            target_project=r"C:\Users\mz100\PycharmProjects\shortsyt", 
+            adapter_path=adapter_path,
+            target_project=os.environ.get("SYNAPSA_TARGET_PROJECT", r"C:\Users\mz100\PycharmProjects\shortsyt"),
             context_window=8192
     )
+
 
     if args.action == "script":
         context_list = env_context.split("||")
@@ -185,7 +194,21 @@ if __name__ == "__main__":
         # Curated facts from facts_database.py — 3 specific psychology facts per video
         env_facts = os.getenv("SYNAPSA_FACTS_PAYLOAD", "").strip()
         facts_str = f"\n{env_facts}\n" if env_facts else ""
-        
+
+        # REAL TOP-PERFORMING VIDEOS from YouTube search (previously unused!)
+        env_refs = os.getenv("SYNAPSA_REFERENCE_PATTERNS", "").strip()
+        if env_refs:
+            # Parse into readable format for the model
+            ref_lines = [r.strip() for r in env_refs.split(" || ") if r.strip()][:5]
+            ref_str = "\n\n━" * 1 + "\n🏆 TOP PERFORMING VIDEOS THIS WEEK (STUDY THESE PATTERNS):\n━" * 1
+            ref_str += "\nThese are the ACTUAL top-performing videos in your niche right now.\n"
+            ref_str += "Study their TITLE FORMAT, HOOK WORDS, and VIDEO LENGTH. Mirror what works:\n\n"
+            for i, ref in enumerate(ref_lines, 1):
+                ref_str += f"{i}. {ref}\n"
+            ref_str += "\nIMPORTANT: Do NOT copy these titles. Study their STRUCTURE and EMOTIONAL TRIGGER, then create something original that uses the same psychological mechanism.\n"
+        else:
+            ref_str = ""
+
         prompt = f"""You are an elite YouTube Shorts scriptwriter specializing in viral dark psychology content.
 Your task: Write a SHORT (11-20 second) ultra-viral script about a SPECIFIC, OBSCURE sub-topic of: "{args.niche}".
 
@@ -246,7 +269,7 @@ Line 7: PAYOFF + CTA (actionable takeaway + engagement trigger):
   • End with: "Follow for more." or "Can you spot who uses this on you?"
 
 🚨 CRITICAL: Your script MUST contain ALL 7 elements above. If PRE-HOOK, RE-HOOK, or CTA is missing, the script will be REJECTED. Total length: 40-65 words.
-
+{ref_str}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESPOND ONLY IN THIS EXACT FORMAT (no preamble, no explanations):
 [TITLE]
@@ -258,7 +281,8 @@ darkpsychology, manipulation, psychology, mindset, sigma, power, secrets, viral
 
 DO NOT ADD INTRODUCTIONS. DO NOT YAP. RESPOND ONLY WITH THE FORMAT ABOVE.
 """
-        response = local_agent.ask_brain(prompt, max_new_tokens=1500, mode="precise")
+        response = local_agent.ask_brain(prompt, max_new_tokens=1500, mode="code")
+
         import re
         
         # Loguj surową odpowiedź modelu dla DEBUG
@@ -412,7 +436,7 @@ DO NOT ADD INTRODUCTIONS. DO NOT YAP. RESPOND ONLY WITH THE FORMAT ABOVE.
                 # Template 4: Transformation / revelation
                 f"{hook_angle}... Once you understand this, you can never unsee it in people around you.\n\nFollow for more secrets about the hidden mechanics of human behavior.\n\n#{hashtag_str} #shorts #viral #darkpsychology",
                 # Template 5: Authority
-                f"{hook_angle}... Dark psychology researchers have studied this pattern for decades — and it explains almost everything.\n\nSave this. You'll need it.\n\n#{hashtag_str} #shorts #viral #darkpsychology",
+                f"{hook_angle}... Dark psychology researchers have studied this pattern for decades — and it explains almost everything.\n\nFollow for more secrets about the hidden mechanics of human behavior.\n\n#{hashtag_str} #shorts #viral #darkpsychology",
             ]
             desc_idx = abs(hash(script_str[:40])) % len(desc_templates)
             desc_str = desc_templates[desc_idx]
