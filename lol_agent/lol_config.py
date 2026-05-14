@@ -104,7 +104,10 @@ YT_BASE_TAGS = [
 # ==========================================
 # API KEYS
 # ==========================================
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyA328eJ9zfER5IvrKinX5jagrhQFLPWOYM")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+if not GEMINI_API_KEY:
+    raise EnvironmentError("GEMINI_API_KEY is not set. Add it to your .env file.")
+
 
 # ==========================================
 # WSPIERANE FORMATY WIDEO
