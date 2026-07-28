@@ -1,13 +1,13 @@
 # Shortsyt — Autonomous YouTube Shorts Factory
 
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](.)
-[![Status](https://img.shields.io/badge/Status-Production%20Active-brightgreen)](.)
+[![Status](https://img.shields.io/badge/Status-Completed%20Experiment-blue)](.)
 [![Channel](https://img.shields.io/badge/YouTube-Dark%20Mindset-FF0000?logo=youtube)](https://youtube.com/@ItsDarkMindset/shorts)
 [![Videos](https://img.shields.io/badge/Videos%20Published-95%2B-orange)](.)
 [![Views](https://img.shields.io/badge/Total%20Views-18%2C049%2B-blue)](.)
 [![Cost](https://img.shields.io/badge/Cost%20per%20Video-%240-brightgreen)](./)
 
-> **Production-grade autonomous content pipeline.** Researches YouTube trends, generates psychology scripts via local LLM (Qwen 2.5 7B), audits quality with an 8-dimensional NLP scorer, renders video with TTS narration, and publishes to YouTube — fully unattended, every day since March 2026.
+> **Autonomous content pipeline experiment.** Researched YouTube trends, generated psychology scripts via local LLM (Qwen 2.5 7B), audited quality with an 8-dimensional NLP scorer, rendered video with TTS narration, and published to YouTube — fully unattended. Ran for 73+ days producing 95 videos and 18,049 views at $0/video.
 
 ## 📊 Live Production Dashboard
 
