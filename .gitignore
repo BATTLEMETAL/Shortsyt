@@ -23,9 +23,9 @@ venv*/
 # ============================================
 # SECRETS & TOKENS — NEVER COMMIT THESE
 # ============================================
+accounts/
 client_secret.json
 *.pickle
-accounts/*_token.pickle
 token*.pickle
 cookies.txt
 .env
@@ -36,12 +36,26 @@ cookies.txt
 temp_videos/
 videos/
 music/
+thumbnails/
 *.mp4
 *.mp3
 *.wav
 *.avi
 *.mkv
 *.gif
+*.jpg
+*.jpeg
+*.png
+!shortsyt-desktop/public/*.png
+!shortsyt-desktop/src/assets/*.png
+
+# Node / Desktop / Mobile
+node_modules/
+shortsyt-desktop/node_modules/
+shortsyt-desktop/dist/
+shortsyt-desktop/release/
+shortsyt-app/node_modules/
+shortsyt-app/.expo/
 
 # ML models
 *.pkl
@@ -49,34 +63,48 @@ music/
 *.pt
 *.pth
 
-# Logs
+# Logs & Debug
 *.log
 logs/
+.last_track
+lol_agent/lol_music/.last_track
+scratch/
+lol_agent/debug_*/
+lol_agent/debug_frames/
+lol_agent/debug_jinx/
+lol_agent/debug_last_frag/
+lol_agent/lol_temp/
+lol_agent/clip_scan.txt
+lol_agent/debug_ocr.txt
 
-# Data files
+# Data files & runtime caches
 *.csv
 *.xlsx
+*.jsonl
+publish_report.json
+topic_history.json
+audit_report.json
+adaptation_directive.json
+smart_analysis_*.json
+trend_report_*.json
+shorts_analysis_*.json
+lol_agent/processed_hashes.json
+lol_agent/published_videos.jsonl
+lol_agent/yt_perf_cache.json
+lol_agent/pending_checks.json
+lol_agent/performance_log.jsonl
+lol_agent/quality_log.jsonl
+lol_agent/last_dry_run.json
+lol_agent/beat_drop_cache.json
+lol_agent/lol_pre_analysis.json
 
 # OS
 Thumbs.db
 .DS_Store
 
-# Run-Time Databases & Generated Analysis Data
-publish_report.json
-topic_history.json
-audit_report.json
-adaptation_directive.json
-accounts/*.json
-
-# Daily analysis/trend JSON outputs (runtime data, not source code)
-smart_analysis_*.json
-trend_report_*.json
-shorts_analysis_*.json
-
 # Backup files
 *.bak
 *.bak_full
-accounts/*.json.bak
 
 # Internal one-off debug / utility scripts (not portfolio material)
 _check_status.py
@@ -93,4 +121,4 @@ fix_prehook.py
 # Config / runtime files
 yt-dlp.conf
 update_schedule_19h.ps1
-accounts/adaptation_directive.txt
+
