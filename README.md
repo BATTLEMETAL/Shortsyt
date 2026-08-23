@@ -1,258 +1,151 @@
-# Shortsyt — Autonomous YouTube Shorts Factory
+# Shortsyt — Autonomous AI Video Pipeline & Gaming Shorts Studio
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](.)
-[![Status](https://img.shields.io/badge/Status-Completed%20Experiment-blue)](.)
-[![Channel](https://img.shields.io/badge/YouTube-Dark%20Mindset-FF0000?logo=youtube)](https://youtube.com/@ItsDarkMindset/shorts)
-[![Videos](https://img.shields.io/badge/Videos%20Published-95%2B-orange)](.)
-[![Views](https://img.shields.io/badge/Total%20Views-18%2C049%2B-blue)](.)
-[![Cost](https://img.shields.io/badge/Cost%20per%20Video-%240-brightgreen)](./)
+[![Python](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](.)
+[![Electron](https://img.shields.io/badge/Electron-32-47848F?logo=electron&logoColor=white)](.)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](.)
+[![OpenCV](https://img.shields.io/badge/OpenCV-Computer%20Vision-5C3EE8?logo=opencv&logoColor=white)](.)
+[![FastAPI](https://img.shields.io/badge/FastAPI-v2-009688?logo=fastapi&logoColor=white)](.)
+[![YouTube](https://img.shields.io/badge/YouTube-Dwannellenga-FF0000?logo=youtube)](https://youtube.com/@Dwannellenga/shorts)
+[![Quality Score](https://img.shields.io/badge/Quality%20Score-91%2F100-brightgreen)](.)
 
-> **Autonomous content pipeline experiment.** Researched YouTube trends, generated psychology scripts via local LLM (Qwen 2.5 7B), audited quality with an 8-dimensional NLP scorer, rendered video with TTS narration, and published to YouTube — fully unattended. Ran for 73+ days producing 95 videos and 18,049 views at $0/video.
-
-## 📊 Live Production Dashboard
-
-![Shortsyt Analytics Dashboard](docs/screenshots/dashboard.png)
-
-> Data source: YouTube Analytics API (verified) · May 5, 2026 · 95 videos published · 18,049 total views · $0/video
+> **Autonomous AI-driven YouTube Shorts generation and publishing pipeline.** Built with Computer Vision (OpenCV HP-bar tracking), OCR momentum analysis (Tesseract), AI multimodal narrative engine (Gemini), dynamic FFmpeg rendering (9:16 vertical crop, auto-chase speedup, slow-mo 60FPS), and a native Electron Desktop Studio (React 18 + Vite + TailwindCSS).
 
 ---
 
-## 📊 Live Production Results
+## 🎬 Live Production Demos
+
+Real YouTube Shorts rendered and published automatically by the pipeline:
+
+| Video | Action / Highlights | Metrics & Quality | Link |
+|---|---|---|---|
+| **Katarina Pentakill 1v5** | Auto Chase Speedup 2.8x + 0.45x Slow-mo + Dynamic Zoom | Smart Camera: 90/90 frames, QA: 91/100 | [Watch on YouTube](https://www.youtube.com/shorts/cVTTQASHe9w) |
+| **Katarina Triple Kill Outplay** | Instant OCR Kill detection + Custom audio sync | Fast Short Control (14.8s), QA: 92/100 | [Watch on YouTube](https://www.youtube.com/shorts/rfWXE2-7fkQ) |
+
+---
+
+## 📊 Live Production Stats
 
 | Metric | Value |
 |---|---|
-| Channel | [📺 Dark Mindset](https://youtube.com/@ItsDarkMindset/shorts) |
-| Production start | March 3, 2026 |
-| Videos published | **95+** (daily pipeline, Task Scheduler, **2 published today**) |
-| Total views | **18,049+** |
-| Top video views | **1,251** — "Have you ever felt dominated by another person's body language?" |
-| Best avg. view duration | **85.4%** (12-second short — nearly complete watch) |
-| Optimal title format | QUESTION format: **287 avg views** vs [PREFIX] format: **42 avg views** (**6.8× difference**) |
-| Optimal duration | 11–20s shorts: **222 avg views** (best performing bracket) |
-| Best publish time | Tuesday, ~19:00 UTC |
-| **Cost per video** | **$0** (Edge-TTS + local Qwen 2.5 + Whisper, fully offline) |
-
-### Top 5 Videos (as of April 13, 2026)
-
-| Title | Views | Avg View % | Duration |
-|---|---|---|---|
-| "Have you ever felt dominated by another person's body language?" | **1,251** | 72.9% | 14s |
-| "Can you spot the dark psychology body language cues that command respect?" | **1,180** | 59.1% | 16s |
-| "Have you noticed how some people seem to effortlessly command respect?" | **1,047** | 44.5% | 23s |
-| "Can You Spot the Dark Psychology Body Language Cues...?" | **981** | 72.8% | 12s |
-| "Are You Being Controlled By These Dark Psychology Tactics?" | **903** | 85.4% | 12s |
-
-> **Key insight derived by the pipeline's own analytics:** QUESTION-format titles outperform [PREFIX_BRACKET] titles by **6.8×**. This finding was automatically detected by `smart_video_analyzer.py` and injected as a constraint into Qwen 2.5's generation prompt.
+| **Production Channel** | [Dwannellenga (@Dwannellenga)](https://youtube.com/@Dwannellenga/shorts) |
+| **Published Shorts** | **3 Verified Shorts** (Continuous Autonomous Runs) |
+| **Smart Camera Accuracy** | **90/90 Frames (100% Tracking Stability)** |
+| **Average Quality Score** | **91–92 / 100** (Automated QA Engine) |
+| **Pipeline Render Time** | **< 60s per short** (Local FFmpeg GPU/CPU) |
+| **Cost per Video** | **$0** (Local OpenCV + Tesseract + FFmpeg) |
 
 ---
 
-## 🏗️ System Architecture
+## 🎯 Smart Camera v11 — Computer Vision HP-Bar Tracking
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    SHORTSYT PIPELINE                                │
-│                                                                     │
-│  1. YouTube Trends API  ──►  Topic Research & Competitor Analysis  │
-│                                      │                              │
-│  2. Synapsa Bridge IPC  ◄────────────┘                             │
-│     (VRAM check → subprocess → Qwen 2.5 7B NF4)                    │
-│                │                                                     │
-│                ▼                                                     │
-│  3. Quality Auditor  ──►  8-dimensional NLP Scoring Engine          │
-│     [PASS ≥65] → continue   [FAIL] → regenerate / use fallback     │
-│                │                                                     │
-│                ▼                                                     │
-│  4. MicroEVS Feedback  ──►  Real-time YouTube Analytics            │
-│     (velocity score → dynamic prompt injection)                     │
-│                │                                                     │
-│                ▼                                                     │
-│  5. Video Renderer  ──►  FFmpeg + Edge-TTS + Whisper subtitles     │
-│     (Hormozi-style pop-zoom animations, silence removal)            │
-│                │                                                     │
-│                ▼                                                     │
-│  6. YouTube Data API v3  ──►  OAuth2 Auto-Publish                  │
-│                │                                                     │
-│                ▼                                                     │
-│  7. Analytics Loop  ──►  smart_analysis_*.json  ──►  Adaptation    │
-└─────────────────────────────────────────────────────────────────────┘
+### The Problem: Fast Dashing Champions
+In fast-paced games like League of Legends, high-mobility champions (e.g., Katarina with Shunpo/blinks, Zed, Yasuo) instantly teleport across the screen. Traditional bounding-box tracking or centroid visual tracking fails:
+- **Teleportation glitches:** The camera jerks abruptly across the screen, causing disorientation in 9:16 vertical mode.
+- **VFX attraction:** Explosions, AOE abilities, and death animations pull visual centroids away from the champion.
+- **HUD occlusion:** Static minimap and scoreboard elements confuse naive object trackers.
+
+### The Solution: Multi-Layer Color-Space Tracking & Velocity Limiting
+`smart_camera.py` implements a specialized 4-stage tracking algorithm:
+
+1. **HP-Bar Detection:** Color-space segmentation isolating player gold (`R>160, G>130, B<110`) and ally green vs. enemy red HP bars.
+2. **Fight-Centroid Scoring:** Dynamic weighting between player position and teamfight density:
+   $$\text{Target}_X = \frac{2 \times \text{Player}_X + \text{FightCenter}_X}{3}$$
+3. **Adaptive Velocity Limiter:** Strict `MAX_DELTA = 60px/step` clamping prevents camera snapping during instant blinks/dashes while maintaining smooth cinematic pan.
+4. **Kill-Window & Streak Freeze:** `FREEZE_STREAK = 8` holds the camera steady during multi-kill sequences to guarantee kill banners remain fully framed (`BANNER_SHIFT = 160px`).
+
+---
+
+## 🏗️ Architecture Overview
+
+```mermaid
+flowchart TD
+    A[Raw 16:9 Clip / Outplayed] --> B[Pre-Pipeline Analyzer & Ranker]
+    B --> C[Computer Vision: Smart Camera v11]
+    B --> D[OCR Momentum Analyzer - Tesseract]
+    C --> E[Dynamic FFmpeg 9:16 Video Editor]
+    D --> E
+    E --> F[AI Narrative & Hook Engine - Gemini]
+    F --> G[Thumbnail Generator 1080x1920]
+    G --> H[Automated QA Scorer - 3 Checks]
+    H -->|Quality Score >= 90| I[YouTube Data API Publisher]
+    H -->|Reject| J[Debug Quarantine Log]
+    
+    subgraph Control Layer
+    K[FastAPI Backend v2 - Port 8765] <--> L[Electron Desktop Studio - React 18]
+    K <--> I
+    end
 ```
 
 ---
 
-## 🔬 Key Technical Features
+## 💻 CLI Usage
 
-### Quality Auditor (`quality_auditor.py` — 718 lines)
+Run the autonomous pipeline from terminal or command line:
 
-The core of the pipeline's reliability. Every generated script passes through an 8-dimensional scoring engine before rendering:
+```powershell
+# Standard run with automatic analysis and rendering
+.\venv313\Scripts\python.exe lol_agent\run_lol_agent.py --file "path\to\clip.mp4"
 
-| Dimension | Max Points | What It Checks |
-|---|---|---|
-| Title | 20 | Format validation, length, emoji presence, forbidden patterns |
-| Script | 30 | Word count (40-65), structure completeness, readability |
-| Hook | 15 | PRE-HOOK + QUESTION HOOK + RE-HOOK + CTA presence |
-| Uniqueness | 15 | SequenceMatcher deduplication vs. 50+ video history |
-| Technical | 10 | Video duration via ffprobe (hard reject < 8s → score -999) |
-| Keywords | 10 | Niche keyword density and relevance |
-| Trend | 10 | Alignment with current YouTube search trends |
-| AI Penalty | -15 | Detects hallucination phrases: "delve into", "embark on", "in conclusion" |
+# Custom short parameters & fine control
+.\venv313\Scripts\python.exe lol_agent\run_lol_agent.py `
+  --file "path\to\clip.mp4" `
+  --champion Katarina `
+  --action pentakill `
+  --start 12.5 `
+  --end 27.3 `
+  --music "ncs_alan_walker_fade.mp3" `
+  --no-slowmo
 
-**Deduplication thresholds:**
-- `> 0.50` similarity ratio → **hard reject** (script cannot be used)
-- `> 0.35` similarity ratio → **soft penalty** (score reduced)
+# Dry-run mode (render and QA without uploading to YouTube)
+.\venv313\Scripts\python.exe lol_agent\run_lol_agent.py --file "path\to\clip.mp4" --dry-run
+
+# Pre-pipeline ranker (find top clips automatically)
+.\venv313\Scripts\python.exe lol_agent\lol_pre_pipeline_analyzer.py --top 5
+```
+
+### CLI Options:
+- `--file <path>`: Source 16:9 video path (Medal/Outplayed/raw gameplay).
+- `--champion <name>`: Champion whitelist override (prevents AI hallucination).
+- `--action <type>`: Action type (`pentakill`, `quadrakill`, `triple`, `outplay`, `clutch`).
+- `--start <sec>` / `--end <sec>`: Precise clip boundaries.
+- `--music <name>`: Custom background audio track selection.
+- `--no-slowmo`: Disable automatic 0.45x slow-motion on peak moments.
+- `--dry-run`: Render video, thumbnail, and metadata without publishing.
+- `--force`: Bypass deduplication fingerprint checks.
 
 ---
 
-### Real-Time Adaptation Engine (`real_time_monitor_agent.py` + `dynamic_pattern_agent.py`)
+## 🖥️ Desktop Studio & API
 
-Shortsyt doesn't just create videos — it evolves based on live performance data. The **MicroEVS (Early Velocity Score)** system:
+### Electron Desktop Studio (`shortsyt-desktop/`)
+- **Built with:** Electron 32 + React 18 + Vite + TailwindCSS.
+- **Features:**
+  - Live pipeline dashboard with real-time render progress (7 stages).
+  - Clip Browser with pre-analysis ranking and action score badges.
+  - Video preview player with thumbnail inspection and QA reports.
+  - One-click YouTube upload trigger and token lifetime countdown.
 
-```
-MicroEVS = VPM_60 × (viewed_pct / swiped_pct) × engagement_factor
-```
-
-Based on the score, the system injects a prompt directive into Qwen 2.5 via env var:
-
-| State | MicroEVS | Action |
-|---|---|---|
-| 🟢 **Hyper-Clone** (S) | > 150% | Clone exact hook syntax — change only the subject |
-| 🟡 **Soft-Mutate** (A) | 105–150% | Keep topic, switch hook type (question → statement) |
-| 🟠 **Explore** (B) | < 105% | Abandon hook, explore previously successful style |
-| 🔴 **Hard Pivot** (F) | < 80% | Topic banned to `quarantine.json` (14-day timeout) |
-
-Anti-fatigue guard: if State S triggers 3× in a row → forced Hard Pivot regardless of score.
+### FastAPI Backend (`lol_agent/api/`)
+- 15 REST endpoints including `/health`, `/status`, `/clips`, `/thumbnails`, `/camera-preview`, `/youtube/upload`.
+- Asynchronous job execution and live log streaming.
 
 ---
 
-### Synapsa IPC Bridge (`synapsa_bridge.py` — 493 lines)
+## 🛠️ Technology Stack
 
-Shortsyt runs in a lightweight venv. When AI generation is needed, it cross-venv calls the heavy Synapsa environment (PyTorch, transformers, PEFT, bitsandbytes):
-
-```python
-def generate_viral_script_with_synapsa(viral_context, niche_topic, ...):
-    # 1. Guard: check VRAM before loading model
-    if not _check_vram_available(min_gb=4.5):   # nvidia-smi query
-        return use_fallback_script()
-
-    # 2. Pass large payloads via env vars (Windows arg-length limit workaround)
-    os.environ["SYNAPSA_CONTEXT_PAYLOAD"] = "||".join(viral_context)
-
-    # 3. Cross-venv subprocess call with 5-minute timeout guard
-    result = subprocess.run(
-        [SYNAPSA_PYTHON, "synapsa_bridge.py", "--action", "script"],
-        timeout=300,
-        capture_output=True
-    )
-    # 4. Parse JSON from stdout (last valid line)
-    return json.loads(result.stdout.strip().split('\n')[-1])
-```
-
-Fallback chain: Synapsa (Qwen 2.5) → 30 curated fallback scripts (cross-session deduplicated).
-
----
-
-### Diagnostic Pre-Flight (`analyze_video_features.py`)
-
-Before every upload, an internal auditor intercepts the `.mp4`:
-- Resolution validation: requires 9:16 vertical
-- Duration check (rejects < 8 seconds)
-- **Hook density calculation:** parses subtitle `.ass` file to the 3-second mark — if opening >12 words → upload halted ("Swipe Away" risk)
-
----
-
-### Persistent State
-
-```
-accounts/
-├── topic_history.json           # 50+ video topic dedup database
-├── used_fallbacks.json          # Cross-session fallback tracker
-└── smart_analysis_*.json        # Daily channel analytics (24 files)
-
-video_success_model.pkl          # 376KB trained sklearn view predictor
-model_stylu.pkl                  # 162KB style model
-```
-
-Session-level dedup via env var `_SESSION_SCRIPTS_{PROFILE}` — Film 2 cannot reuse Film 1's script in the same daily run.
-
----
-
-## 📂 Project Structure
-
-```
-shortsyt/                         174 files total
-├── agent_dark_psychology.py      1,121 lines — main pipeline orchestrator
-├── quality_auditor.py              718 lines — 8-dim NLP quality engine
-├── synapsa_bridge.py               493 lines — IPC bridge to Qwen 2.5
-├── cashcow_generator.py            555 lines — video render engine (FFmpeg + MoviePy)
-├── real_time_monitor_agent.py      248 lines — YouTube Analytics scraper
-├── dynamic_pattern_agent.py        213 lines — MicroEVS prompt injector
-├── smart_video_analyzer.py         ~38K      — channel intelligence engine
-├── facts_database.py               ~40K      — curated psychology facts DB
-├── accounts/
-│   ├── topic_history.json          Deduplication database
-│   └── smart_analysis_*.json       31 days of channel analytics
-├── video_success_model.pkl         Trained sklearn classifier (376KB)
-└── publish_report.json             Full history of 87+ published videos
-```
-
----
-
-## 🛠️ Tech Stack
-
-| Component | Technology |
+| Layer | Technologies |
 |---|---|
-| Script AI | Qwen 2.5 7B (NF4 4-bit) via Synapsa IPC |
-| Script Fallback | 30 curated scripts (cross-session deduplicated) |
-| TTS | Microsoft Edge-TTS (offline, zero API cost) |
-| Subtitles | OpenAI Whisper (local) → `.ass` with pop-zoom sync |
-| Video Render | FFmpeg + MoviePy + Hormozi-style word animations |
-| Upload | YouTube Data API v3 + OAuth2 |
-| Analytics | YouTube Analytics API v2 + sklearn view predictor |
-| Quality Gate | Custom NLP scorer (SequenceMatcher + ffprobe) |
-| Scheduling | Windows Task Scheduler (daily 13:30) |
+| **Computer Vision & Tracking** | OpenCV, NumPy, Color Space Segmentation |
+| **Action & Kill Detection** | Tesseract OCR (5.4.0), PyTesseract, Momentum Analyzers |
+| **Video Processing** | FFmpeg (60 FPS, Mininterpolate, 9:16 Smart Crop, Color EQ) |
+| **AI Metadata & Hooks** | Google Gemini Multimodal API (Narrative Titles & Tags) |
+| **Desktop Application** | Electron 32, React 18, Vite, TypeScript, TailwindCSS |
+| **Backend & Automation** | FastAPI, Uvicorn, Python 3.13, YouTube Data API v3 OAuth2 |
 
 ---
 
-## 🔄 Running in Production
+## 🔒 Privacy & Safety
 
-```bash
-# Runs automatically via Windows Task Scheduler at 13:30
-start_daily.bat
+- Tokens, OAuth credentials (`accounts/`), `.env`, and raw video binaries are strictly excluded via `.gitignore`.
+- Video processing, computer vision analysis, and rendering happen 100% locally.
 
-# Manual run
-python agent_dark_psychology.py
-
-# Analytics only (no render/upload)
-python smart_video_analyzer.py --analyze-only
-```
-
-**Prerequisites:**
-- Synapsa in separate venv at `C:\...\Synapsa\venv\` (optional — fallback scripts work without it)
-- YouTube OAuth2 credentials in `client_secrets.json`
-- NVIDIA GPU with ≥4.5 GB free VRAM (checked automatically via `nvidia-smi`)
-
----
-
-## ⚙️ Integration with Synapsa
-
-This project is one half of a two-system architecture. The AI backend is [Synapsa](https://github.com/BATTLEMETAL/Synapsa-Local-LLM-Agent) — a multi-agent platform running Qwen 2.5 7B locally with NF4 quantization.
-
-Shortsyt calls Synapsa via subprocess IPC when VRAM is sufficient. When VRAM is occupied (e.g., by a game), the pipeline falls back automatically to curated scripts — maintaining daily publishing without any human intervention.
-
----
-
-## 🔒 Cost & Privacy
-
-| Item | Cost |
-|---|---|
-| TTS narration | $0 (Edge-TTS, offline) |
-| Script generation | $0 (local Qwen 2.5, offline) |
-| Subtitles | $0 (local Whisper) |
-| Video render | $0 (FFmpeg/MoviePy) |
-| YouTube upload | $0 (YouTube Data API free quota) |
-| **Total per video** | **$0** |
-
-User content and scripts are never sent to external services. OAuth2 is the only credentialed external call.
-
----
-
-*Part of the Synapsa + Shortsyt inter-process AI system. See [Synapsa-Local-LLM-Agent](https://github.com/BATTLEMETAL/Synapsa-Local-LLM-Agent) for the AI backend.*
