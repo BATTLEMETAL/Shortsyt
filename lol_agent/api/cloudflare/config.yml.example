@@ -1,0 +1,17 @@
+# Cloudflare Tunnel — konfiguracja
+# Skopiuj do: C:\Users\mz100\.cloudflared\config.yml
+# Dokumentacja: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/
+
+tunnel: TWOJ-UUID-TUNELU-TUTAJ
+credentials-file: C:\Users\mz100\.cloudflared\TWOJ-UUID-TUTAJ.json
+
+ingress:
+  # Shortsyt API — nasłuchuje na porcie 8765
+  - hostname: shortsyt.twoja-domena.com
+    service: http://localhost:8765
+    originRequest:
+      connectTimeout: 30s
+      noTLSVerify: false
+
+  # Catch-all (wymagany)
+  - service: http_status:404

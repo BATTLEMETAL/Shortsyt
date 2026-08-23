@@ -51,8 +51,12 @@ thumbnails/
 
 # Node / Desktop / Mobile
 node_modules/
+dist-app/
+dist-electron/
 shortsyt-desktop/node_modules/
 shortsyt-desktop/dist/
+shortsyt-desktop/dist-app/
+shortsyt-desktop/dist-electron/
 shortsyt-desktop/release/
 shortsyt-app/node_modules/
 shortsyt-app/.expo/
