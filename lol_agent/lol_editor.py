@@ -1,290 +1,895 @@
 """
-LOL Agent — Editor
-Montaż: wyciszenie game audio, nakładanie muzyki, kadrowanie 9:16, overlaye tekstowe
+LOL Agent — Editor v3
+Styl: czysty gameplay, tekst hook na peak, muzyka dobrana do energii akcji,
+      efekt zoom-punch na peak moment + dynamiczne śledzenie kamery.
 """
 import os
 import random
 import subprocess
 import glob
+import shutil
 from typing import Optional
 from lol_config import (
     LOL_MUSIC_DIR, LOL_TEMP_DIR,
     OUTPUT_WIDTH, OUTPUT_HEIGHT, OUTPUT_FPS,
-    MUSIC_VOLUME, GAME_AUDIO_VOLUME,
-    SLOWMO_FACTOR, SLOWMO_DURATION,
-    ACTION_LABELS, OVERLAY_FONT, OVERLAY_FONT_FALLBACK,
-    SHORT_MAX_DURATION
+    MUSIC_VOLUME, GAME_AUDIO_VOLUME, SHORT_MAX_DURATION, SMOOTH_SLOWMO
 )
+import json
+
+def get_performance_insights() -> dict:
+    """Wczytuje najnowsze wnioski z analizy wydajności (lol_pre_analysis.json)."""
+    insights_path = os.path.join(os.path.dirname(__file__), "lol_pre_analysis.json")
+    if os.path.exists(insights_path):
+        try:
+            with open(insights_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("yt_stats", {})
+        except Exception:
+            pass
+    return {}
+
+# librosa beat detector — auto-detects drop from any MP3
+try:
+    from lol_beat_detector import get_drop_time as _get_drop_time
+    BEAT_DETECTOR_OK = True
+except ImportError:
+    BEAT_DETECTOR_OK = False
+    _get_drop_time = None
+
+# Smart camera — import z obsługą błędu jeśli brak numpy/PIL
+try:
+    from smart_camera import find_action_crop_x, find_action_path, generate_ffmpeg_pan_expression
+    SMART_CAMERA_AVAILABLE = True
+except ImportError:
+    SMART_CAMERA_AVAILABLE = False
+    print("⚠️  Smart camera niedostępna (brak numpy/PIL) — używam centrum")
+
+# ─── Kategorie muzyki wg energii akcji ───────────────────────────────────────
+# Klucz = typ akcji, wartość = wymagana energia (high/medium/any)
+ACTION_ENERGY = {
+    "pentakill": "high",
+    "quadrakill": "high",
+    "baron": "high",
+    "dragon": "high",
+    "triple": "medium",
+    "outplay": "medium",
+    "oneshot": "medium",
+    "clutch": "medium",
+    "escape": "low",
+    "double": "any",
+}
+
+# Manual energy map — filename → energy level
+# Add new files here after downloading from ncs.io
+MUSIC_ENERGY_MAP = {
+    # ── Already in lol_music/ ─────────────────────────────────────────────
+    "ncs_elektronomia_sky_high.mp3":           "high",
+    "ncs_cartoon_on_and_on.mp3":               "medium",
+
+    # ── Download from ncs.io and add to lol_music/ ───────────────────────
+    # HIGH energy — use for: pentakill, quadrakill, baron
+    "ncs_egzod_royalty.mp3":                   "high",
+    "ncs_lost_sky_dreams_pt2.mp3":             "high",
+    "ncs_robin_hustin_light_it_up.mp3":        "high",
+    "ncs_elektronomia_memory.mp3":             "high",
+    "ncs_unknown_brain_superhero.mp3":         "high",
+
+    # MEDIUM energy — use for: triple kill, outplay, clutch, oneshot
+    "ncs_different_heaven_my_heart.mp3":       "medium",
+    "ncs_alan_walker_fade.mp3":                "medium",
+    "ncs_alex_skrindo_euphoria.mp3":           "medium",
+
+    # LOW energy — use for: escape, double kill (tension/dramatic)
+    "ncs_jim_yosef_link.mp3":                  "low",
+    "ncs_distrion_atlas_rubicon.mp3":          "low",
+}
+
+# Beat drop timestamps in seconds — where the song's main drop hits
+# Used for beat-sync: drop aligns with the kill peak in the video
+MUSIC_DROP_MAP = {
+    "ncs_cartoon_on_and_on.mp3":               38.0,
+    "ncs_elektronomia_sky_high.mp3":           30.0,
+
+    # Fill these in after listening to each track:
+    "ncs_egzod_royalty.mp3":                   45.0,   # approximate — adjust after listening
+    "ncs_lost_sky_dreams_pt2.mp3":             40.0,
+    "ncs_robin_hustin_light_it_up.mp3":        35.0,
+    "ncs_elektronomia_memory.mp3":             32.0,
+    "ncs_unknown_brain_superhero.mp3":         38.0,
+    "ncs_different_heaven_my_heart.mp3":       28.0,
+    "ncs_alan_walker_fade.mp3":                42.0,
+    "ncs_alex_skrindo_euphoria.mp3":           36.0,
+    "ncs_jim_yosef_link.mp3":                  30.0,
+    "ncs_distrion_atlas_rubicon.mp3":          44.0,
+}
+
+
 
 
 def ensure_temp_dir():
     os.makedirs(LOL_TEMP_DIR, exist_ok=True)
 
 
-def pick_random_music() -> Optional[str]:
-    """Losuje utwór muzyczny z folderu lol_music/."""
-    music_files = []
-    for fmt in ("*.mp3", "*.wav", "*.ogg", "*.m4a"):
-        music_files.extend(glob.glob(os.path.join(LOL_MUSIC_DIR, fmt)))
+def pick_music_for_action(action_type: str = "outplay", preferred_track: Optional[str] = None) -> str:
+    """
+    Wybiera plik muzyczny dopasowany do energii akcji.
+    """
+    if preferred_track:
+        cand = os.path.join(LOL_MUSIC_DIR, preferred_track)
+        if os.path.exists(cand):
+            print(f"🎵 Muzyka [preferred]: {preferred_track}")
+            return cand
 
+    music_files = glob.glob(os.path.join(LOL_MUSIC_DIR, "*.mp3"))
     if not music_files:
-        print("⚠️  Brak muzyki w folderze lol_music/ — wideo będzie bez muzyki")
-        return None
+        raise FileNotFoundError(f"Brak plików MP3 w {LOL_MUSIC_DIR}")
+
+    # Filtruj po energii akcji jeśli mapa dostępna
+    required_energy = ACTION_ENERGY.get(action_type.lower(), "any")
+    if required_energy != "any":
+        matched = []
+        for f in music_files:
+            fname = os.path.basename(f)
+            energy = MUSIC_ENERGY_MAP.get(fname, "any")
+            if energy == required_energy or energy == "any":
+                matched.append(f)
+        if matched:
+            music_files = matched
+
+    # Dedup: wykluczaj ostatnio używane utwory (historia ostatnich utworów)
+    last_track_file = os.path.join(LOL_MUSIC_DIR, ".last_track")
+    recent_tracks = []
+    if os.path.exists(last_track_file):
+        try:
+            with open(last_track_file, "r", encoding="utf-8") as f:
+                recent_tracks = [line.strip() for line in f if line.strip()]
+        except Exception:
+            pass
+
+    # Wyklucz ostatnie utwory z puli
+    candidates = [f for f in music_files if os.path.basename(f) not in recent_tracks]
+    if not candidates and len(music_files) > 1:
+        # Jeśli wszystkie z puli były w historii, wyklucz przynajmniej ostatni
+        candidates = [f for f in music_files if os.path.basename(f) != recent_tracks[-1]]
+    if candidates:
+        music_files = candidates
+        if recent_tracks:
+            print(f"🎵 Dedup: aktywna rotacja muzyki (wykluczono ostatnie: {', '.join(recent_tracks[-3:])})")
 
     chosen = random.choice(music_files)
-    print(f"🎵 Wybrano muzykę: {os.path.basename(chosen)}")
+    chosen_name = os.path.basename(chosen)
+
+    # Zapisz historię (max 4 ostatnie utwory)
+    try:
+        updated_history = (recent_tracks + [chosen_name])[-4:]
+        with open(last_track_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(updated_history))
+    except Exception:
+        pass
+
+    energy_label = MUSIC_ENERGY_MAP.get(chosen_name, "?")
+    print(f"🎵 Muzyka [{energy_label}]: {chosen_name}")
     return chosen
 
 
+def get_video_duration(path: str) -> float:
+    """Zwraca długość wideo w sekundach."""
+    r = subprocess.run([
+        "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", path
+    ], capture_output=True, text=True)
+    try:
+        return float(r.stdout.strip())
+    except ValueError:
+        return 0.0
+
+
 def cut_clip(input_path: str, start: float, end: float, output_path: str) -> str:
-    """Wycina fragment klipu (ffmpeg seek)."""
+    """Wycina fragment klipu."""
     duration = end - start
     cmd = [
         "ffmpeg", "-y",
-        "-ss", str(start),
-        "-i", input_path,
+        "-ss", str(start), "-i", input_path,
         "-t", str(duration),
-        "-c", "copy",
+        "-c", "copy", output_path
+    ]
+    print(f"✂️  Tnę: {start:.1f}s → {end:.1f}s ({duration:.1f}s)")
+    r = subprocess.run(cmd, capture_output=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"FFmpeg cut error: {r.stderr.decode('utf-8', errors='replace')[:400]}")
+    return output_path
+
+
+def apply_editor_effects(input_path: str, output_path: str,
+                         clip_duration: float, crop_x: str,
+                         peak_moment: float = 0.0,
+                         zoom_level: float = 1.08,
+                         zoom_duration: float = 0.8,
+                         slowmo_speed: float = 0.75,
+                         slowmo_duration: float = 1.5,
+                         intermediate_peaks: list = None) -> float:
+    """
+    Stosuje pionowe kadrowanie, zoom-punch i spowolnienie (speed ramp)
+    w jednym przebiegu za pomocą filter_complex w FFmpeg.
+    crop_x moze byc wyrazeniem (np. if(lt(t,5.0),...)) dla dynamicznego sledzenia.
+    intermediate_peaks: czasy (rel. do klipu) killów PRZED glównym peak_moment.
+      -> kazdy dostaje mini slow-mo 0.8x/0.5s (zaznaczenie kill bez pelnego slow-mo)
+    Gwarantuje idealna dokladnosc klatkowaa i brak przyciec/desynchronizacji.
+    """
+    source_w, source_h = 1920, 1080
+    crop_w = int(source_h * 9 / 16)   # 607 ~= 608
+    crop_h = source_h
+
+    # Jeśli podano int/float, skonwertuj na str
+    if not isinstance(crop_x, str):
+        cx = max(0, min(int(crop_x), source_w - crop_w)) if crop_x >= 0 else (source_w - crop_w) // 2
+        crop_x_expr = f"{cx}"
+    else:
+        crop_x_expr = crop_x
+
+    # Parametry zoomu (PENTA/ostatni kill)
+    crop_w_zoom = int(crop_w / zoom_level)
+    crop_h_zoom = int(crop_h / zoom_level)
+    crop_x_expr_zoom = f"({crop_x_expr})+{(crop_w - crop_w_zoom) // 2}"
+    crop_y_zoom = (source_h - crop_h_zoom) // 2
+
+    out_w, out_h = 1080, 1920
+
+    t0 = 0.0
+    # Anticipation lead-in: zwolnienie zaczyna się 0.4s przed decydującym ciosem
+    t1 = max(t0, peak_moment - 0.4)
+    t2 = peak_moment + zoom_duration
+    t3 = peak_moment + slowmo_duration
+    t4 = clip_duration
+
+    # Zabezpieczenia czasowe
+    t1 = max(t0, min(t1, t4))
+    t2 = max(t1, min(t2, t4))
+    t3 = max(t2, min(t3, t4))
+
+    # Mini slow-mo parametry (TRIPLE/QUADRA i inne kills przed PENTA)
+    MINI_SPEED = 0.6   # 60% tempa -- wyrazne zaznaczenie kill (sesja 15: 0.8→0.6)
+    MINI_DUR   = 1.0   # 1.0s -- TRIPLE/QUADRA musza "bic" (sesja 15: 0.5→1.0)
+
+    normal_crop = f"crop={crop_w}:{crop_h}:'{crop_x_expr}':0"
+
+    segs = []
+    # Wykryj 'dead air' / chase gaps (> 4.5s) pomiędzy killami (np. 12s biegania między Quadra a Penta)
+    chase_gaps = []
+    valid_intermediate = [p for p in (intermediate_peaks or []) if 0.5 < p < peak_moment - 1.0]
+    all_pks = sorted(valid_intermediate + [peak_moment])
+    for p_idx in range(len(all_pks) - 1):
+        p_curr = all_pks[p_idx]
+        p_next = all_pks[p_idx + 1]
+        if (p_next - p_curr) > 4.5:
+            c_start = p_curr + 1.2
+            c_end = max(c_start + 1.0, p_next - 1.5)
+            if c_end > c_start + 1.5:
+                chase_gaps.append((c_start, c_end))
+
+    # Segmenty przed głównym peakiem (z uwzględnieniem ewentualnego chase fast-forward 2.8x)
+    cur_t = t0
+    if chase_gaps:
+        print(f"⚡ Chase fast-forward active for gaps: {chase_gaps}")
+        for (c_start, c_end) in chase_gaps:
+            if c_start > cur_t + 0.05:
+                segs.append({"start": cur_t, "end": min(c_start, t1), "speed": 1.0, "crop": normal_crop})
+            if c_end > c_start and c_start < t1:
+                segs.append({"start": c_start, "end": min(c_end, t1), "speed": 2.8, "crop": normal_crop})
+            cur_t = max(cur_t, c_end)
+        if t1 > cur_t + 0.05:
+            segs.append({"start": cur_t, "end": t1, "speed": 1.0, "crop": normal_crop})
+    elif t1 > t0 + 0.05:
+        segs.append({"start": t0, "end": t1, "speed": 1.0, "crop": normal_crop})
+
+    # Segment peak akcji: slow-mo + zoom-punch (PENTA)
+    if t2 > t1 + 0.05:
+        segs.append({
+            "start": t1, "end": t2, "speed": slowmo_speed,
+            "crop": f"crop={crop_w_zoom}:{crop_h_zoom}:'{crop_x_expr_zoom}':{crop_y_zoom}"
+        })
+
+    # Segment po-peak: slow-mo bez zoomu
+    if t3 > t2 + 0.05:
+        segs.append({"start": t2, "end": t3, "speed": slowmo_speed, "crop": normal_crop})
+
+    # Reszta klipu: 1x
+    if t4 > t3 + 0.05:
+        segs.append({"start": t3, "end": t4, "speed": 1.0, "crop": normal_crop})
+
+    filter_lines = []
+    labels = []
+    output_duration = 0.0
+
+    for i, seg in enumerate(segs):
+        lbl = f"v{i}"
+        trim = f"trim=start={seg['start']:.3f}:end={seg['end']:.3f}"
+        setpts1 = "setpts=PTS-STARTPTS"
+        crop_scale = (
+            f"{seg['crop']},scale={out_w}:{out_h}:flags=lanczos,fps=60,setsar=1,"
+            f"eq=contrast=1.08:saturation=1.35:brightness=0.03"
+        )
+
+        seg_dur = seg['end'] - seg['start']
+        output_duration += seg_dur / seg['speed']
+
+        if seg['speed'] != 1.0:
+            factor = 1.0 / seg['speed']
+            setpts = f"setpts=(PTS-STARTPTS)*{factor:.4f}"
+            filter_lines.append(f"[0:v]{trim},{crop_scale},{setpts}[{lbl}]")
+        else:
+            setpts = "setpts=PTS-STARTPTS"
+            filter_lines.append(f"[0:v]{trim},{crop_scale},{setpts}[{lbl}]")
+
+        labels.append(f"[{lbl}]")
+
+    concat_str = "".join(labels) + f"concat=n={len(segs)}:v=1:a=0[v_final]"
+    filter_lines.append(concat_str)
+
+    filter_complex = ";".join(filter_lines)
+
+    # Zapisz filter_complex do pliku skryptu aby uniknąć limitu długości linii poleceń Windows (WinError 206)
+    fc_script = output_path.replace(".mp4", "_filter.txt")
+    with open(fc_script, "w", encoding="utf-8") as f:
+        f.write(filter_complex)
+
+    print(f"🎬 Processing filtergraph with dynamic tracking...")
+
+    cmd = [
+        "ffmpeg", "-y", "-i", input_path,
+        "-filter_complex_script", fc_script,
+        "-map", "[v_final]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
         output_path
     ]
-    print(f"✂️  Tnę klip: {start:.1f}s → {end:.1f}s ({duration:.1f}s)")
-    result = subprocess.run(cmd, capture_output=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg cut error: {result.stderr.decode()}")
-    return output_path
+
+    # Jeśli slow-mo aktywne i SMOOTH_SLOWMO włączone — dodaj minterpolate
+    # Odbywa się przez dodatkowy pass (minterpolate nie można łączyć z concat)
+    has_slowmo = any(seg["speed"] != 1.0 for seg in segs)
+    try:
+        if has_slowmo and SMOOTH_SLOWMO:
+            # Krok 1: render bez minterpolate
+            tmp_pre_interp = output_path.replace(".mp4", "_pre_interp.mp4")
+            cmd_step1 = [
+                "ffmpeg", "-y", "-i", input_path,
+                "-filter_complex_script", fc_script,
+                "-map", "[v_final]",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                "-pix_fmt", "yuv420p",
+                tmp_pre_interp
+            ]
+            r = subprocess.run(cmd_step1, capture_output=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"FFmpeg filtergraph error: {r.stderr.decode('utf-8', errors='replace')[:800]}")
+
+            # Krok 2: minterpolate blend — płynna interpolacja klatek na slow-mo segmentach
+            # FIX artefakt końcowy: tpad=stop_mode=clone dodaje 0.5s zduplikowanych klatek
+            # przed minterpolate (daje materiał do blend'owania na końcu),
+            # trim=0:duration=X przycina z powrotem do właściwej długości.
+            print(f"🎬 Minterpolate blend — wygadzanie slow-mo (output_duration={output_duration:.2f}s)...")
+            cmd_step2 = [
+                "ffmpeg", "-y", "-i", tmp_pre_interp,
+                "-vf", (
+                    f"tpad=stop_mode=clone:stop_duration=0.5,"
+                    f"minterpolate=fps={OUTPUT_FPS}:mi_mode=blend,"
+                    f"trim=0:duration={output_duration:.4f},"
+                    f"setpts=PTS-STARTPTS"
+                ),
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                output_path
+            ]
+            r2 = subprocess.run(cmd_step2, capture_output=True)
+            if r2.returncode != 0:
+                # Fallback — użyj wersji bez minterpolate
+                print(f"⚠️  minterpolate error (fallback): {r2.stderr.decode('utf-8', errors='replace')[:400]}")
+                import shutil as _sh
+                _sh.move(tmp_pre_interp, output_path)
+            else:
+                try:
+                    import os as _os
+                    _os.remove(tmp_pre_interp)
+                except OSError:
+                    pass
+        else:
+            r = subprocess.run(cmd, capture_output=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"FFmpeg filtergraph error: {r.stderr.decode('utf-8', errors='replace')[:800]}")
+    finally:
+        if os.path.exists(fc_script):
+            try:
+                os.remove(fc_script)
+            except OSError:
+                pass
+
+    return output_duration
 
 
-def apply_slowmo_ending(input_path: str, output_path: str,
-                        clip_duration: float,
-                        slowmo_factor: float = SLOWMO_FACTOR,
-                        slowmo_duration: float = SLOWMO_DURATION) -> str:
+# ─── Czcionka Impact Windows ─────────────────────────────────────────────────
+FONT_PATH = r"C:\Windows\Fonts\impact.ttf"
+FONT_FALLBACK = r"C:\Windows\Fonts\arialbd.ttf"
+
+
+def _get_font_path() -> str:
+    if os.path.exists(FONT_PATH):
+        return FONT_PATH
+    if os.path.exists(FONT_FALLBACK):
+        return FONT_FALLBACK
+    return ""
+
+
+def add_text_overlay(
+    video_path: str,
+    hook_text: str,
+    peak_moment: float,
+    video_duration: float,
+    output_path: str,
+    show_duration: float = 2.5
+) -> str:
     """
-    Nakłada slow-motion na ostatnią część klipu.
-    Normalna prędkość → potem slow-mo na peak moment.
+    Nakłada tekst hook (np. 'TRIPLE KILL') na wideo przy peak_moment.
+    Styl: białe duże litery z czarnym obramowaniem, na dole ekranu.
     """
-    normal_end = max(0, clip_duration - slowmo_duration)
-
-    if normal_end <= 0:
-        # Klip za krótki na slow-mo — kopiuj
-        subprocess.run(["ffmpeg", "-y", "-i", input_path, "-c", "copy", output_path],
-                       capture_output=True)
+    if not hook_text:
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
         return output_path
 
-    temp_normal = output_path.replace(".mp4", "_norm.mp4")
-    temp_slow = output_path.replace(".mp4", "_slow.mp4")
+    font = _get_font_path()
+    if not font:
+        print("⚠️  Brak czcionki Impact — pomijam overlay tekstu")
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
+        return output_path
 
-    # Part 1: normalna prędkość
-    subprocess.run([
-        "ffmpeg", "-y", "-i", input_path,
-        "-t", str(normal_end),
-        "-c", "copy", temp_normal
-    ], capture_output=True)
+    # Usuń emoji — FFmpeg drawtext ich nie obsługuje
+    import re
+    clean_text = re.sub(r'[^\x00-\x7F]+', '', hook_text).strip()
+    clean_text = clean_text.replace("'", "")   # usuń apostrof — łamie FFmpeg drawtext parser w subprocess
+    clean_text = clean_text.replace(":", "\\:")  # escape dwukropek (separator FFmpeg)
+    clean_text = clean_text.replace("%", "%%")   # escape procent
 
-    # Part 2: slow motion
-    pts_factor = 1.0 / slowmo_factor  # 2.0 = 0.5x speed
-    subprocess.run([
-        "ffmpeg", "-y", "-i", input_path,
-        "-ss", str(normal_end),
-        "-vf", f"setpts={pts_factor}*PTS",
-        "-af", f"atempo={slowmo_factor}",
-        temp_slow
-    ], capture_output=True)
+    t_start = max(0.0, peak_moment - 0.2)
+    t_end = min(video_duration, t_start + show_duration)
 
-    # Concat
-    concat_file = output_path.replace(".mp4", "_concat.txt")
-    with open(concat_file, "w") as f:
-        f.write(f"file '{os.path.abspath(temp_normal)}'\n")
-        f.write(f"file '{os.path.abspath(temp_slow)}'\n")
-
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", concat_file, "-c", "copy", output_path
-    ], capture_output=True)
-
-    # Cleanup
-    for tmp in [temp_normal, temp_slow, concat_file]:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-
-    print(f"🐌 Slow-motion na ostatnie {slowmo_duration}s ({slowmo_factor}x)")
-    return output_path
-
-
-def crop_to_vertical(input_path: str, output_path: str) -> str:
-    """
-    Kadruje wideo do formatu 9:16 (1080x1920).
-    Jeśli oryginał jest 16:9, wycentruj i przytnij.
-    """
-    print(f"📐 Kadrowanie do 9:16 ({OUTPUT_WIDTH}x{OUTPUT_HEIGHT})...")
-
-    # Oblicz crop dla 16:9 → 9:16
-    # Dla 1920x1080 źródła: crop do 608x1080, potem scale do 1080x1920
-    vf_filter = (
-        f"scale={OUTPUT_WIDTH * 3}:-1,"
-        f"crop={OUTPUT_WIDTH}:{OUTPUT_HEIGHT},"
-        f"scale={OUTPUT_WIDTH}:{OUTPUT_HEIGHT}:flags=lanczos,"
-        f"fps={OUTPUT_FPS}"
-    )
-
-    # Prostszy i bardziej niezawodny filter
-    vf_filter = (
-        f"scale='if(gt(iw/ih,9/16),{OUTPUT_HEIGHT}*9/16,{OUTPUT_WIDTH})':'if(gt(iw/ih,9/16),{OUTPUT_HEIGHT},{OUTPUT_WIDTH}*16/9)',"
-        f"pad={OUTPUT_WIDTH}:{OUTPUT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,"
-        f"fps={OUTPUT_FPS}"
+    # Styl: duży biały Impact z grubym czarnym obrysem
+    # Y=0.50 — bezpieczna strefa YouTube Shorts (dolne 25% zasłonięte przez UI aplikacji)
+    drawtext = (
+        f"drawtext="
+        f"fontfile='{font.replace(chr(92), '/').replace(':', '\\:')}'"
+        f":text='{clean_text}'"
+        f":x=(w-text_w)/2"
+        f":y=h*0.10"  # górna strefa — widoczna, nie zasłania akcji ani kill text LoL
+        f":fontsize=110"
+        f":fontcolor=white"
+        f":borderw=6"
+        f":bordercolor=black"
+        f":shadowx=3:shadowy=3:shadowcolor=black@0.7"
+        f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
 
     cmd = [
         "ffmpeg", "-y",
-        "-i", input_path,
-        "-vf", vf_filter,
+        "-i", video_path,
+        "-vf", drawtext,
         "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-an",  # Usuń audio — dodamy muzykę osobno
+        "-pix_fmt", "yuv420p",
+        "-c:a", "copy",
         output_path
     ]
+    print(f"🗨️  Overlay tekstu: '{clean_text}' @ {t_start:.1f}s–{t_end:.1f}s")
+    r = subprocess.run(cmd, capture_output=True)
+    if r.returncode != 0:
+        err = r.stderr.decode('utf-8', errors='replace')[:400]
+        print(f"⚠️  Overlay error (pomijam): {err}")
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
+    return output_path
 
-    result = subprocess.run(cmd, capture_output=True)
-    if result.returncode != 0:
-        # Fallback: prosty crop
-        cmd_fallback = [
-            "ffmpeg", "-y", "-i", input_path,
-            "-vf", f"scale={OUTPUT_WIDTH}:{OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease,"
-                   f"pad={OUTPUT_WIDTH}:{OUTPUT_HEIGHT}:(ow-iw)/2:(oh-ih)/2,fps={OUTPUT_FPS}",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            "-an",
-            output_path
-        ]
-        result2 = subprocess.run(cmd_fallback, capture_output=True)
-        if result2.returncode != 0:
-            raise RuntimeError(f"FFmpeg crop error: {result2.stderr.decode()}")
 
+def add_dynamic_captions(
+    video_path: str,
+    peaks: list,
+    trim_start: float,
+    video_duration: float,
+    output_path: str,
+    peak_moment: float = 0.0,
+    slowmo_speed: float = 0.50,
+    slowmo_duration: float = 1.5,
+) -> str:
+    """
+    Nakłada wiele dynamicznych napisów — jeden na każdy wykryty kill peak.
+    peaks = [(t_abs, label), ...] gdzie t_abs to czas w ORYGINALNYM klipie.
+    trim_start = offset od którego zaczęto ciąć (do przeliczenia na czas w klipie).
+
+    Rozmiary fontów i kolory wg rangi killa:
+      DOUBLE KILL  → 80px, biały
+      TRIPLE KILL  → 100px, żółty
+      QUADRAKILL   → 115px, pomarańczowy
+      PENTAKILL    → 135px, czerwony + blink
+    """
+    if not peaks:
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
+        return output_path
+
+    font = _get_font_path()
+    if not font:
+        print("⚠️  Brak czcionki — pomijam dynamiczne napisy")
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
+        return output_path
+
+    import re
+    font_safe = font.replace(chr(92), '/').replace(':', '\\:')
+
+    # Konfiguracja wizualna wg etykiety killa
+    # P3 FIX (2026-08-12): PENTAKILL/GODLIKE zmienione z 'red' na złoty LoL '0xFFD700'
+    KILL_STYLES = {
+        "DOUBLE KILL":   {"size": 80,  "color": "white",     "duration": 1.8},
+        "TRIPLE KILL":   {"size": 100, "color": "yellow",    "duration": 2.0},
+        "QUADRAKILL":    {"size": 115, "color": "orange",    "duration": 2.2},
+        "PENTAKILL":     {"size": 135, "color": "0xFFD700",  "duration": 2.5},
+        "KILLING SPREE": {"size": 85,  "color": "white",     "duration": 1.8},
+        "UNSTOPPABLE":   {"size": 90,  "color": "yellow",    "duration": 2.0},
+        "LEGENDARY":     {"size": 105, "color": "orange",    "duration": 2.2},
+        "GODLIKE":       {"size": 120, "color": "0xFFD700",  "duration": 2.5},
+    }
+
+    # Przelicz czas z oryginalnego klipu na czas w zmontowanym wideo
+    # Oblicza dokładną analityczną transformację czasu uwzględniając mini slow-mo (0.6x) i główny slow-mo (0.5x)
+    def _adjust_t(t_orig: float) -> float:
+        """Map original-clip timestamp → rendered-video timestamp accounting for all slow-mo segments."""
+        MINI_SPEED = 0.6
+        MINI_DUR   = 1.0
+        
+        t0 = 0.0
+        t1 = max(t0, min(peak_moment - 0.4, video_duration))
+        t2 = max(t1, min(peak_moment + 1.0, video_duration))
+        t3 = max(t2, min(peak_moment + slowmo_duration, video_duration))
+        t4 = video_duration
+
+        # Buduj sekwencję segmentów czasu
+        segments = []
+        cursor = t0
+        
+        # Wyciągnij intermediate_peaks z peaks
+        int_peaks = [tk - trim_start for (tk, _) in (peaks or []) if (tk - trim_start) < peak_moment - 0.1]
+        if int_peaks:
+            for pk in sorted(int_peaks):
+                pk_f = float(pk)
+                if pk_f < cursor + 0.05 or pk_f >= t1 - 0.05:
+                    continue
+                mini_end = min(pk_f + MINI_DUR, t1)
+                if pk_f > cursor + 0.05:
+                    segments.append((cursor, pk_f, 1.0))
+                if mini_end > pk_f + 0.05:
+                    segments.append((pk_f, mini_end, MINI_SPEED))
+                cursor = mini_end
+
+        if t1 > cursor + 0.05:
+            segments.append((cursor, t1, 1.0))
+        if t2 > t1 + 0.05:
+            segments.append((t1, t2, slowmo_speed))
+        if t3 > t2 + 0.05:
+            segments.append((t2, t3, slowmo_speed))
+        if t4 > t3 + 0.05:
+            segments.append((t3, t4, 1.0))
+
+        # Oblicz zmapowany czas
+        mapped_t = 0.0
+        for s_start, s_end, speed in segments:
+            if t_orig < s_start:
+                break
+            elif t_orig <= s_end:
+                mapped_t += (t_orig - s_start) / speed
+                return mapped_t
+            else:
+                mapped_t += (s_end - s_start) / speed
+
+        return mapped_t
+
+    caption_items = []
+    for (t_abs, label) in peaks:
+        t_raw = t_abs - trim_start
+        t_in_clip = _adjust_t(t_raw)
+        if t_in_clip < 0 or t_in_clip > video_duration:
+            continue
+
+        style = KILL_STYLES.get(label, {"size": 90, "color": "white", "duration": 2.0})
+        # Offset antycypacji 0.6s: synchronizacja z momentem animacji ciosu/zgonu w grze
+        t_start = max(0.0, t_in_clip - 0.6)
+        t_end   = min(video_duration, t_start + style["duration"])
+
+        clean_label = re.sub(r'[^\x00-\x7F]+', '', label).strip()
+        clean_label = clean_label.replace("'", "\\\\\'")
+
+        caption_items.append({
+            "start": t_start,
+            "end": t_end,
+            "label": clean_label,
+            "style": style
+        })
+
+    # Zabezpieczenie przed nakładaniem napisów: poprzedni napis znika natychmiast gdy pojawia się kolejny kill!
+    caption_items.sort(key=lambda x: x["start"])
+    for i in range(len(caption_items) - 1):
+        next_start = caption_items[i+1]["start"]
+        if caption_items[i]["end"] > next_start:
+            caption_items[i]["end"] = max(caption_items[i]["start"] + 0.3, next_start - 0.05)
+
+    drawtext_filters = []
+    for item in caption_items:
+        t_start = item["start"]
+        t_end   = item["end"]
+        clean_label = item["label"]
+        style = item["style"]
+
+        # P3 FIX: tło drawbox pod kill label
+        # UWAGA: drawbox NIE ma dostępu do text_w (tylko drawtext ma).
+        # Używamy iw (frame width) i ih (frame height) zamiast w/h.
+        # UWAGA2: FFmpeg nie obsługuje // (Python floor div) — używaj trunc()
+        # box_w = przybliżona szerokość etykiety (size * znaki * 0.7), min 400px
+        box_h = style['size'] + 20
+        approx_box_w = min(max(int(style['size'] * max(len(clean_label), 6) * 0.72), 400), 1020)
+        box_x_expr = f"trunc((iw-{approx_box_w})/2)"
+        box_y_expr = f"trunc(ih*0.55)-{box_h // 2}"
+        dbox = (
+            f"drawbox="
+            f"x={box_x_expr}"
+            f":y={box_y_expr}"
+            f":w={approx_box_w}"
+            f":h={box_h}"
+            f":color=black@0.55"
+            f":t=fill"
+            f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
+        )
+        dt = (
+            f"drawtext="
+            f"fontfile='{font_safe}'"
+            f":text='{clean_label}'"
+            f":x=(w-text_w)/2"
+            # Y=0.55 — bezpieczna strefa Shorts (powyżej zasłoniętego UI dolnego pasa)
+            f":y=h*0.55"
+            f":fontsize={style['size']}"
+            f":fontcolor={style['color']}"
+            f":borderw=5"
+            f":bordercolor=black"
+            f":shadowx=4:shadowy=4:shadowcolor=black@0.8"
+            f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
+        )
+        drawtext_filters.append(dbox)
+        drawtext_filters.append(dt)
+        print(f"   🗨️  {label} @ {t_in_clip:.1f}s — rozmiar {style['size']}px")
+
+    if not drawtext_filters:
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
+        return output_path
+
+    vf_chain = ",".join(drawtext_filters)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-vf", vf_chain,
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "copy",
+        output_path
+    ]
+    print(f"🎬 Renderuję {len(drawtext_filters)} dynamicznych napisów...")
+    r = subprocess.run(cmd, capture_output=True)
+    if r.returncode != 0:
+        err = r.stderr.decode('utf-8', errors='replace')[:600]
+        print(f"⚠️  Dynamiczne napisy error: {err}")
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
     return output_path
 
 
 def merge_music(video_path: str, music_path: Optional[str],
-                output_path: str, video_duration: float) -> str:
-    """
-    Łączy wideo (bez audio) z muzyką.
-    Game audio wyciszone (GAME_AUDIO_VOLUME = 0).
+                output_path: str, video_duration: float,
+                video_peak_time: float,
+                game_audio_path: Optional[str] = None,
+                kill_peaks: list = None) -> str:
+    """Nakłada muzykę i miesza ją z oryginalnym dźwiękiem gry.
+
+    video_path      = wideo bez audio (step4 po apply_editor_effects)
+    game_audio_path = źródłowy klip z dźwiękiem gry (step1 — wyciety raw clip)
+                      Jeśli None — spróbuj pobrać audio z video_path.
     """
     if not music_path or not os.path.exists(music_path):
-        print("⚠️  Brak muzyki — eksportuję bez dźwięku")
-        subprocess.run([
-            "ffmpeg", "-y", "-i", video_path, "-c", "copy", output_path
-        ], capture_output=True)
+        print("⚠️ Brak muzyki — eksportuję bez dźwięku")
+        shutil.copy(video_path, output_path)
         return output_path
 
-    print(f"🎵 Nakładam muzykę: {os.path.basename(music_path)}")
+    fname = os.path.basename(music_path)
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", video_path,
-        "-i", music_path,
-        "-map", "0:v:0",         # Video z klipu
-        "-map", "1:a:0",         # Audio z muzyki
-        "-c:v", "copy",
-        "-c:a", "aac", "-b:a", "192k",
-        "-af", f"volume={MUSIC_VOLUME}",
-        "-t", str(video_duration),  # Przytnij muzykę do długości klipu
-        "-shortest",
-        output_path
-    ]
+    # Auto-detect beat drop with librosa (falls back to manual map)
+    if BEAT_DETECTOR_OK:
+        drop_time = _get_drop_time(music_path, manual_map=MUSIC_DROP_MAP)
+    else:
+        drop_time = MUSIC_DROP_MAP.get(fname, 0.0)
 
-    result = subprocess.run(cmd, capture_output=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg merge error: {result.stderr.decode()}")
+    music_seek_args = []
+    if drop_time > 0.0:
+        music_start = max(0.0, drop_time - video_peak_time)
+        print(f"🎵 Beat Sync: drop piosenki = {drop_time}s, szczyt wideo = {video_peak_time}s -> start piosenki = {music_start:.2f}s")
+        music_seek_args = ["-ss", f"{music_start:.3f}"]
+    else:
+        print(f"🎵 Brak mapy dropu dla {fname} — puszczam od początku")
 
-    print(f"✅ Muzyka nałożona pomyślnie")
+    # Sprawdź źródło audio gry: preferuj game_audio_path (step1), fallback do video_path
+    audio_source = game_audio_path if (game_audio_path and os.path.exists(game_audio_path)) else video_path
+    probe = subprocess.run([
+        "ffprobe", "-v", "quiet",
+        "-select_streams", "a:0",
+        "-show_entries", "stream=codec_type",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        audio_source
+    ], capture_output=True, text=True)
+    has_game_audio = probe.stdout.strip() == "audio"
+
+    fade_start = max(0.0, video_duration - 1.5)
+
+    if has_game_audio and GAME_AUDIO_VOLUME > 0.0:
+        # ── Miksuj dźwięk gry + muzykę przez amix ──────────────────────────────────
+        game_vol  = GAME_AUDIO_VOLUME
+        music_vol = MUSIC_VOLUME
+
+        # Generuj dynamiczny boost audio gry przy kilach (po loudnorm = bez kompensacji)
+        def _game_boost_expr(base, peaks):
+            if not peaks:
+                return str(base)
+            parts = []
+            for t, label in (peaks or []):
+                dur   = 1.5 if label == "PENTAKILL" else 1.0
+                boost = 3.0 if label == "PENTAKILL" else 2.5
+                parts.append(f"between(t,{t:.2f},{t+dur:.2f})*{boost-1:.1f}")
+            return f"min(3.0,{base:.2f}*(1+{'+ '.join(parts)}))"
+
+        # Wycisz muzykę podczas PENTAKILL żeby głos announcera byl slyszalny
+        def _music_duck_expr(base, peaks):
+            if not peaks:
+                return str(base)
+            duck_parts = []
+            for t, label in (peaks or []):
+                if label == "PENTAKILL":
+                    duck_parts.append(f"between(t,{t:.2f},{t+1.8:.2f})*0.7")
+            if not duck_parts:
+                return str(base)
+            return f"max(0.05,{base:.2f}*(1-{'- '.join(duck_parts)}))"
+
+        game_boost = _game_boost_expr(game_vol, kill_peaks)
+        music_duck  = _music_duck_expr(music_vol, kill_peaks)
+
+        filter_complex = (
+            # loudnorm najpierw → normalizacja poziomu bazowego
+            # potem volume z eval=frame → dynamiczny boost nie jest kompensowany
+            f"[2:a]loudnorm=I=-14:TP=-1.5:LRA=11,"
+            f"volume=eval=frame:volume='{game_boost}',"
+            f"afade=t=out:st={fade_start:.2f}:d=1.5[ga];"
+            f"[1:a]loudnorm=I=-14:TP=-1.5:LRA=11,"
+            f"volume=eval=frame:volume='{music_duck}',"
+            f"afade=t=out:st={fade_start:.2f}:d=1.5[ma];"
+            f"[ga][ma]amix=inputs=2:duration=longest:dropout_transition=2[aout]"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,           # input 0: wideo
+            *music_seek_args,
+            "-i", music_path,           # input 1: muzyka
+            "-i", audio_source,         # input 2: game audio
+            "-map", "0:v:0",
+            "-filter_complex", filter_complex,
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+            "-t", f"{video_duration:.3f}",
+            output_path
+        ]
+        src_label = os.path.basename(audio_source)
+        print(f"🎵 Miksuję dźwięk gry [{src_label}] ({int(GAME_AUDIO_VOLUME*100)}%) + muzykę ({int(MUSIC_VOLUME*100)}%) przez amix")
+    else:
+        # ── Brak audio lub game audio wyłączone — tylko muzyka ────────────────
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            *music_seek_args, "-i", music_path,
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+            # loudnorm PRZED fade
+            "-af", f"volume={MUSIC_VOLUME},loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=out:st={fade_start:.2f}:d=1.5",
+            "-t", f"{video_duration:.3f}",
+            "-shortest",
+            output_path
+        ]
+        print(f"🎵 Tylko muzyka ({int(MUSIC_VOLUME*100)}%) — brak dźwięku gry w źródle")
+
+    r = subprocess.run(cmd, capture_output=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"Merge error: {r.stderr.decode('utf-8', errors='replace')[:600]}")
+    print("✅ Audio nałożone i zsynchronizowane")
     return output_path
 
 
-def add_text_overlay(video_path: str, output_path: str,
-                     action_label: str,
-                     champion_name: str = "",
-                     rank: str = "") -> str:
+def add_cta_overlay(
+    video_path: str,
+    video_duration: float,
+    output_path: str,
+    cta_text: str = "SUBSCRIBE FOR MORE!",
+    show_duration: float = 2.0,
+) -> str:
     """
-    Dodaje tekstowy overlay z etykietą akcji (np. PENTAKILL 🔥).
-    Używa FFmpeg drawtext filter.
+    Nakłada wezwanie do subskrypcji (CTA) na ostatnie `show_duration` sekund wideo.
+    Tekst pojawia się u góry ekranu — poza zasłoniętą strefą UI YouTube Shorts.
     """
-    print(f"🖊️  Dodaję overlay: {action_label}")
+    font = _get_font_path()
+    if not font:
+        print("⚠️  Brak czcionki — pomijam CTA overlay")
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
+        return output_path
 
-    # Emoji nie działają w ffmpeg drawtext — użyj czystego tekstu
-    clean_label = action_label
-    for emoji in ["🔥", "⚡", "💥", "🎯", "👑", "🚀", "💀", "🐉"]:
-        clean_label = clean_label.replace(emoji, "")
-    clean_label = clean_label.strip()
+    import re
+    font_safe = font.replace(chr(92), '/').replace(':', '\\:')
+    clean_cta = re.sub(r'[^\x00-\x7F]+', '', cta_text).strip()
+    clean_cta = clean_cta.replace("'", "\\\\'")
+    clean_cta = clean_cta.replace(":", "\\:")
+    clean_cta = clean_cta.replace("%", "%%")
 
-    # Linia 1: Akcja (duży tekst, na górze)
-    # Linia 2: Champion (mniejszy, pod spodem)
-    sub_text = ""
-    if champion_name:
-        sub_text = f" | {champion_name.upper()}"
-    if rank:
-        sub_text += f" | {rank}"
+    t_start = max(0.0, video_duration - show_duration)
+    t_end   = video_duration
 
-    # Drawtext filter
-    # Tło półprzezroczyste + biały tekst
-    main_font_size = 90
-    sub_font_size = 50
-
-    drawtext_main = (
+    # P4 FIX (2026-08-12): tło drawbox pod CTA żeby tekst nie ginął w jasnych scenach
+    # UWAGA: w drawbox używamy iw/ih (frame width/height) zamiast w/h
+    # bo w i h są nazwami parametrów drawbox i kolidują z wyrażeniami.
+    cta_box = (
+        f"drawbox="
+        f"x=0"
+        f":y=ih*0.10"
+        f":w=iw"
+        f":h=ih*0.10"
+        f":color=black@0.50"
+        f":t=fill"
+        f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
+    )
+    # Górna bezpieczna strefa (y=h*0.08) — widoczna na wszystkich telefonach
+    drawtext = (
         f"drawtext="
-        f"text='{clean_label}{sub_text}':"
-        f"fontsize={main_font_size}:"
-        f"fontcolor=white:"
-        f"bordercolor=black:borderw=4:"
-        f"x=(w-text_w)/2:y=h*0.08:"
-        f"font=Impact"
+        f"fontfile='{font_safe}'"
+        f":text='{clean_cta}'"
+        f":x=(w-text_w)/2"
+        f":y=h*0.14"  # poniżej UI YouTube Shorts (Back/Search/Camera są w górnych 10%)
+        f":fontsize=65"
+        f":fontcolor=white"
+        f":borderw=4"
+        f":bordercolor=black"
+        f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
+        f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
 
-    # Animacja — fade in na początku
-    drawtext_animated = (
-        f"drawtext="
-        f"text='{clean_label}':"
-        f"fontsize={main_font_size}:"
-        f"fontcolor=white:"
-        f"bordercolor=black:borderw=5:"
-        f"x=(w-text_w)/2:y=h*0.07:"
-        f"font=Impact:"
-        f"alpha='if(lt(t,0.3),t/0.3,1)'"
-    )
-
+    # P5 FIX (2026-08-12): CRF 22 zamiast 18 — ~50% mniejszy plik, YT i tak rekoduje
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
-        "-vf", drawtext_animated,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-vf", f"{cta_box},{drawtext}",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
         "-c:a", "copy",
         output_path
     ]
-
-    result = subprocess.run(cmd, capture_output=True)
-    if result.returncode != 0:
-        print(f"⚠️  Drawtext error, kopiuję bez overlaya: {result.stderr.decode()[:200]}")
-        subprocess.run([
-            "ffmpeg", "-y", "-i", video_path, "-c", "copy", output_path
-        ], capture_output=True)
-
-    return output_path
-
-
-def add_gradient_bar(video_path: str, output_path: str) -> str:
-    """Dodaje gradient bar na dole ekranu (elegancki wygląd gaming)."""
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", video_path,
-        "-vf", (
-            "drawbox=x=0:y=ih*0.85:w=iw:h=ih*0.15:"
-            "color=black@0.6:t=fill"
-        ),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-c:a", "copy",
-        output_path
-    ]
-    result = subprocess.run(cmd, capture_output=True)
-    if result.returncode != 0:
-        subprocess.run([
-            "ffmpeg", "-y", "-i", video_path, "-c", "copy", output_path
-        ], capture_output=True)
+    print(f"🔔 CTA overlay: '{clean_cta}' @ ostatnie {show_duration:.1f}s")
+    r = subprocess.run(cmd, capture_output=True)
+    if r.returncode != 0:
+        err = r.stderr.decode('utf-8', errors='replace')[:400]
+        print(f"⚠️  CTA overlay error (pomijam): {err}")
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
     return output_path
 
 
@@ -292,93 +897,221 @@ def render_short(
     source_path: str,
     clip_start: float,
     clip_end: float,
-    action_type: str,
+    action_type: str = "outplay",
     champion_name: str = "",
     rank: str = "",
-    use_slowmo: bool = True,
+    use_speed_ramp: bool = True,
+    use_zoom_punch: bool = True,
+    use_smart_camera: bool = True,
+    peak_moment: float = 0.0,
+    hook_text: str = "",
+    peaks: list = None,
+    preferred_track: Optional[str] = None,
     output_filename: str = "lol_short_final.mp4"
 ) -> str:
     """
-    Główna funkcja montażu — przeprowadza cały pipeline edycji.
-    Zwraca ścieżkę do gotowego Shorta.
+    Pipeline montażu v5 — Momentum-aware editing:
+      1. Wycięcie fragmentu (Stream Copy)
+      2. Smart Camera crop (dynamic tracking)
+      3. Filtry wizualne (Crop, Scale, Zoom-punch, Speed-ramp + minterpolate)
+      4. Muzyka z momentum sync + miksowanie z dźwiękiem gry (amix)
+      5. Dynamiczne napisy kill-by-kill (jeden napis na każdy kill peak)
+      6. Hook overlay (główny hook z AI title)
+      7. Subscribe CTA overlay (ostatnie 2s)
     """
     ensure_temp_dir()
-    print(f"\n{'='*50}")
-    print(f"🎬 LOL EDITOR — START MONTAŻU")
-    print(f"{'='*50}")
-
     clip_duration = clip_end - clip_start
 
-    # Ścieżki tymczasowe
+    print(f"\n{'='*55}")
+    print(f"🎬  LOL EDITOR v3 — {action_type.upper()} | {champion_name} | {clip_duration:.1f}s")
+    print(f"{'='*55}")
+
     t = lambda name: os.path.join(LOL_TEMP_DIR, name)
+    step1        = t("01_cut.mp4")
+    step4        = t("04_processed.mp4")
+    step5_music  = t("05_music.mp4")
+    step5_cta    = t("06_cta.mp4")
+    step5        = os.path.join(LOL_TEMP_DIR, output_filename)
 
-    step1_cut = t("01_cut.mp4")
-    step2_vertical = t("02_vertical.mp4")
-    step3_slowmo = t("03_slowmo.mp4")
-    step4_gradient = t("04_gradient.mp4")
-    step5_overlay = t("05_overlay.mp4")
-    step6_final = os.path.join(LOL_TEMP_DIR, output_filename)
+    # KROK 1: Wytnij fragment (szybki stream copy)
+    print("\n[1/4] Wycinanie fragmentu...")
+    cut_clip(source_path, clip_start, clip_end, step1)
 
-    # === KROK 1: Wycięcie najlepszego fragmentu ===
-    print("\n📍 KROK 1/5: Wycinanie fragmentu...")
-    cut_clip(source_path, clip_start, clip_end, step1_cut)
+    # KROK 2: Smart Camera Crop do 9:16 (znajdź ścieżkę)
+    print("\n[2/4] Smart Camera crop...")
+    crop_x_expr = "-1"   # default: centrum geometryczne
+    if use_smart_camera and SMART_CAMERA_AVAILABLE:
+        try:
+            path_points = find_action_path(
+                source_path,
+                clip_start, clip_end,
+                source_w=1920, source_h=1080,
+                crop_w=int(1080 * 9 / 16),
+                peaks=peaks or []     # <- kill-snap: champion locked during kills
+            )
+            # P1 FIX (2026-08-12): Kill banner shift — gdy kill peak, przesuń crop_x
+            # BANNER_SHIFT = 0: Champion pozostaje w 100% w centrum kadru.
+            # Wyeliminowano sztuczne przesuwanie kadru w lewo, które wyrzucało Katarinę poza prawy margines.
+            BANNER_SHIFT = 0
+            BANNER_WINDOW = 0.0
+            CROP_W = int(1080 * 9 / 16)
+            SOURCE_W = 1920
+            kill_times = [t_k - clip_start for (t_k, _) in (peaks or [])]
+            if kill_times and BANNER_SHIFT > 0:
+                # SESJA 13 FIX: scal nakladajace sie kill windows (MERGE_GAP=1.5s)
+                # Eliminuje 320px round-trip jerk w 0.3-0.4s gapach miedzy TRIPLE/QUADRA/PENTA
+                MERGE_GAP = 1.5
+                merged_windows = []
+                for tk in sorted(kill_times):
+                    ws, we = tk - BANNER_WINDOW, tk + BANNER_WINDOW
+                    if merged_windows and ws < merged_windows[-1][1] + MERGE_GAP:
+                        merged_windows[-1] = (merged_windows[-1][0], max(merged_windows[-1][1], we))
+                    else:
+                        merged_windows.append([ws, we])
+                # SESJA 14 FIX A: ramp 0.5s przy wejsciu/wyjsciu z merged window
+                # Zamiast instant skoku -160px: plynny ramp w ciagu RAMP_SECS
+                RAMP_SECS = 0.5
+                shifted = []
+                for (pt, px) in path_points:
+                    # Znajdz najblizszy merged window i oblicz alpha rampy
+                    shift_alpha = 0.0
+                    for (ws, we) in merged_windows:
+                        if pt < ws:
+                            continue
+                        if pt > we:
+                            continue
+                        # pt jest wewnatrz okna
+                        dist_start = pt - ws  # jak daleko od poczatku
+                        dist_end   = we - pt  # jak daleko od konca
+                        ramp_in  = min(1.0, dist_start / RAMP_SECS) if RAMP_SECS > 0 else 1.0
+                        ramp_out = min(1.0, dist_end   / RAMP_SECS) if RAMP_SECS > 0 else 1.0
+                        shift_alpha = min(ramp_in, ramp_out)
+                        break
+                    if shift_alpha > 0:
+                        effective_shift = int(BANNER_SHIFT * shift_alpha)
+                        px_shifted = max(0, min(px - effective_shift, SOURCE_W - CROP_W))
+                        shifted.append((pt, px_shifted))
+                    else:
+                        shifted.append((pt, px))
+                path_points = shifted
+                print(f"   🏆 Kill banner shift: -{BANNER_SHIFT}px (ramp {RAMP_SECS}s) @ {len(merged_windows)} merged window(s) (from {len(kill_times)} kills)")
+            crop_x_expr = generate_ffmpeg_pan_expression(path_points)
+        except Exception as e:
+            print(f"   Blad sledzenia sciezki: {e} — fallback do centrum")
+            crop_x = find_action_crop_x(
+                source_path,
+                clip_start, clip_end,
+                source_w=1920, source_h=1080,
+                crop_w=int(1080 * 9 / 16)
+            )
+            crop_x_expr = f"{crop_x}"
 
-    # === KROK 2: Kadrowanie do 9:16 ===
-    print("\n📍 KROK 2/5: Kadrowanie do 9:16...")
-    crop_to_vertical(step1_cut, step2_vertical)
+    # KROK 3: Zastosuj efekty wizualne — parametry dopasowane do wagi akcji
+    print("\n[3/4] Nakładanie efektów (crop, zoom, speed ramp)...")
 
-    # === KROK 3: Slow-motion na zakończenie ===
-    if use_slowmo and clip_duration > SLOWMO_DURATION + 2:
-        print("\n📍 KROK 3/5: Slow-motion...")
-        apply_slowmo_ending(step2_vertical, step3_slowmo, clip_duration)
+    # Dynamiczna adaptacja parametrów na podstawie najnowszych wniosków (performance insights)
+    insights = get_performance_insights()
+    act_stats = insights.get(action_type, {})
+    weighted_avg = act_stats.get("weighted_avg", act_stats.get("avg_views", 0))
+
+    if action_type in ("pentakill", "quadrakill"):
+        _zoom_level   = 1.20   # wyraźny zoom-punch
+        _slowmo_speed = 0.45   # 45% tempa = dramatyczne spowolnienie
+        _slowmo_dur   = 5.0    # 5s slow-mo pokrywa ostatnie 2-3 kille
+    elif action_type in ("triple", "oneshot", "clutch", "outplay"):
+        _zoom_level   = 1.18 if weighted_avg > 1500 else 1.15
+        _slowmo_speed = 0.48 if weighted_avg > 1500 else 0.50
+        _slowmo_dur   = 2.5
     else:
-        print("\n📍 KROK 3/5: Slow-motion pominięty (klip za krótki)")
-        import shutil
-        shutil.copy(step2_vertical, step3_slowmo)
+        _zoom_level   = 1.10
+        _slowmo_speed = 0.50
+        _slowmo_dur   = 1.5
 
-    # === KROK 4: Gradient bar ===
-    print("\n📍 KROK 4/5: Gradient overlay...")
-    add_gradient_bar(step3_slowmo, step4_gradient)
+    if weighted_avg > 0:
+        print(f"   💡 Insights ({action_type}): weighted avg {weighted_avg} views -> zoom={_zoom_level}x, slowmo={_slowmo_speed}x ({_slowmo_dur}s)")
 
-    # === KROK 5: Tekst overlay ===
-    print("\n📍 KROK 5/5: Tekst overlay...")
-    action_label = ACTION_LABELS.get(action_type, "OUTPLAY 🎯")
-    add_text_overlay(step4_gradient, step5_overlay, action_label, champion_name, rank)
+    # Intermediate peaks: wszystkie kille PRZED ostatnim (PENTA) -> mini slow-mo 0.8x/0.5s
+    _all_kill_rel = sorted([t_k - clip_start for (t_k, _) in (peaks or [])])
+    _inter_peaks  = _all_kill_rel[:-1] if len(_all_kill_rel) > 1 else []
+    if _inter_peaks:
+        print(f"   ⚡ Intermediate peaks (mini slow-mo): {[f'{p:.1f}s' for p in _inter_peaks]}")
 
-    # === KROK 6: Muzyka ===
-    print("\n📍 KROK 6/6: Nakładanie muzyki...")
-    music_path = pick_random_music()
+    final_duration = apply_editor_effects(
+        input_path=step1,
+        output_path=step4,
+        clip_duration=clip_duration,
+        crop_x=crop_x_expr,
+        peak_moment=peak_moment,
+        zoom_level=_zoom_level if use_zoom_punch else 1.0,
+        zoom_duration=0.8,
+        slowmo_speed=_slowmo_speed if use_speed_ramp else 1.0,
+        slowmo_duration=_slowmo_dur,
+        intermediate_peaks=_inter_peaks if use_speed_ramp else []
+    )
 
-    # Pobierz faktyczną długość po ewentualnym slow-mo
-    result = subprocess.run([
-        "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", step5_overlay
-    ], capture_output=True, text=True)
-    final_duration = float(result.stdout.strip()) if result.stdout.strip() else clip_duration
+    # KROK 4: Muzyka dopasowana do akcji z beat-sync
+    print("\n[4/7] Muzyka i synchronizacja beat-sync + miksowanie audio gry...")
+    music = pick_music_for_action(action_type, preferred_track=preferred_track or ("ncs_egzod_royalty.mp3" if action_type == "pentakill" else None))
+    # Przekazuj step1 (surowy wycinek z audio gry) jako game_audio_path
+    # step4 nie ma audio (apply_editor_effects mapuje tylko [v_final])
+    merge_music(step4, music, step5_music, final_duration, peak_moment,
+                game_audio_path=step1, kill_peaks=peaks or [])
 
-    merge_music(step5_overlay, music_path, step6_final, final_duration)
+    # KROK 5: Dynamiczne napisy kill-by-kill
+    _peaks = peaks or []
+    step5_captions = t("05_captions.mp4")
+    if _peaks:
+        print(f"\n[5/6] Dynamiczne napisy ({len(_peaks)} kill peaks)...")
+        add_dynamic_captions(
+            video_path    = step5_music,
+            peaks         = _peaks,
+            trim_start    = clip_start,
+            video_duration= final_duration,
+            output_path   = step5_captions,
+            peak_moment   = peak_moment,
+            slowmo_speed  = _slowmo_speed,
+            slowmo_duration = _slowmo_dur,
+        )
+    else:
+        # Brak OCR peaks — przeskocz ten krok
+        import shutil as _sh
+        _sh.copy(step5_music, step5_captions)
+        print("\n[5/6] Brak kill peaks — pomijam dynamiczne napisy")
 
-    print(f"\n🎉 SHORT GOTOWY: {step6_final}")
-    print(f"   ⏱️  Długość: {final_duration:.1f}s")
-    print(f"   🎮 Akcja: {action_label}")
-    return step6_final
+    # KROK 6: Hook overlay — pojawia sie na POCZATKU (pierwsze 2s) żeby zatrzymać scroll
+    # Badania: hook musi trafić przed pierwszą decyzją o swipe (0-2s)
+    # Kill captions (QUADRAKILL/PENTAKILL) sa dodawane w add_dynamic_captions (krok 5)
+    _hook = hook_text.strip() if hook_text else ""
+    if not _hook:
+        from lol_config import ACTION_LABELS
+        _hook = ACTION_LABELS.get(action_type, "").replace("🔥","").replace("⚡","").replace("💥","").replace("🎯","").replace("👑","").strip()
+    print(f"\n[6/7] Hook overlay: '{_hook}' @ pierwsze 2s...")
+    hook_show_start = 0.5   # zawsze pierwsze sekundy — to jest przynęta dla widza
+    add_text_overlay(step5_captions, _hook, hook_show_start, final_duration, step5_cta)
+
+    # KROK 7: Subscribe CTA overlay (ostatnie 2 sekundy)
+    print(f"\n[7/7] Subscribe CTA overlay...")
+    add_cta_overlay(step5_cta, final_duration, step5)
+
+    print(f"\n{'='*55}")
+    print(f"✅  SHORT GOTOWY: {step5}")
+    print(f"   ⏱️  {final_duration:.1f}s | 🎮 {action_type.upper()} | 🎵 {os.path.basename(music) if music else 'brak'} | 🖊️  {_hook}")
+    print(f"{'='*55}\n")
+    return step5
 
 
 if __name__ == "__main__":
-    # Test
     import sys
-    source = sys.argv[1] if len(sys.argv) > 1 else \
-        r"c:\Users\mz100\PycharmProjects\shortsyt\League of Legends_10-01-2025_3-26-40-0.mp4"
-
-    if os.path.exists(source):
-        result_path = render_short(
-            source_path=source,
-            clip_start=0,
-            clip_end=55,
-            action_type="pentakill",
-            champion_name="Jinx",
-            rank="Gold"
+    src = sys.argv[1] if len(sys.argv) > 1 else r"C:\Medal\Edits\MedalTVLeagueofLegends20260524184943960-trim-1780471647631.mp4"
+    if os.path.exists(src):
+        render_short(
+            source_path=src,
+            clip_start=0.0,
+            clip_end=14.2,
+            action_type="outplay",
+            champion_name="Yone",
+            peak_moment=8.0,
+            output_filename="test_v3_smart_camera.mp4"
         )
-        print(f"\n✅ Test zakończony: {result_path}")
     else:
-        print(f"❌ Plik nie istnieje: {source}")
+        print(f"❌ Nie znaleziono: {src}")
