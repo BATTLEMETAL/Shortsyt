@@ -38,17 +38,34 @@ def _build_hashtags(champion: str = "", action_type: str = "") -> str:
     return " ".join(t for t in tags if t)
 
 
+def build_description(title: str, champion: str = "", action_type: str = "") -> str:
+    """
+    Buduje opis YouTube z CTA templatem kanału Dwannellenga.
+    Stała struktura: hook z tytułu + CTA + hashtagi.
+    Używana zamiast Gemini description — Gemini bywa nieprzewidywalny.
+    """
+    hashtags = _build_hashtags(champion, action_type)
+    return (
+        f"{title}\n\n"
+        f"🎮 League of Legends highlights — Dwannellenga\n"
+        f"⚡ New clips every day at 8:30 & 18:30 CET!\n\n"
+        f"👍 Drop a LIKE if you enjoyed!\n"
+        f"🔔 SUBSCRIBE so you never miss a clip!\n"
+        f"💬 What would you have done differently? Comment below!\n\n"
+        f"{hashtags}"
+    )
+
+
 def _ensure_shorts_tag(description: str, champion: str = "", action_type: str = "") -> str:
     """Garantuje #Shorts i pełen zestaw hashtagów w opisie."""
-    # Usuń stare hashtagi jeśli są na końcu, żeby nie duplikować
     lines = description.rstrip().split("\n")
-    # Zbierz linie bez hashtagowych linii na samym końcu
     content_lines = lines
     while content_lines and content_lines[-1].strip().startswith("#"):
         content_lines = content_lines[:-1]
     clean_desc = "\n".join(content_lines).rstrip()
     hashtags = _build_hashtags(champion, action_type)
     return f"{clean_desc}\n\n{hashtags}"
+
 
 
 GEMINI_RETRIES = 3
@@ -139,7 +156,10 @@ RULES:
 
                 result = {
                     "title":       data.get("title",       generate_fallback_title(action_label, champion_name, rank)),
-                    "description": _ensure_shorts_tag(data.get("description", generate_fallback_description(action_label, champion_name)), champion_name, action_type),
+                    "description": build_description(
+                        data.get("title", generate_fallback_title(action_label, champion_name, rank)),
+                        champion_name, action_type
+                    ),
                     "tags":        all_tags,
                     "hook_text":   data.get("hook_text",   action_label.upper()),
                     "champion":    champion_name,
@@ -201,7 +221,10 @@ def generate_fallback_metadata(
 
     return {
         "title":       generate_fallback_title(action_label, champion, rank),
-        "description": _ensure_shorts_tag(generate_fallback_description(action_label, champion), champion, action_type),
+        "description": build_description(
+            generate_fallback_title(action_label, champion, rank),
+            champion, action_type
+        ),
         "tags":        all_tags,
         "hook_text":   action_label.upper(),
         "champion":    champion,

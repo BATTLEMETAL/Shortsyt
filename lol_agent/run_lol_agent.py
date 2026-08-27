@@ -486,7 +486,7 @@ def run_pipeline(
             post_roll=1.2,
             merge_gap=3.5,
             min_segment_dur=2.5,
-            max_total_duration=17.0,  # FIX: 26.0→17.0 — raw ~17s po slow-mo/efektach daje ~15s final (15s SNAP obsługuje do 22s)
+            max_total_duration=26.0,  # 26.0s max dla pełnych sekwencji multi-kill / teamfightów
         )
         if len(combat_segs) == 1:
             seg_s, seg_e = combat_segs[0]

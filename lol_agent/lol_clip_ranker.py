@@ -111,10 +111,13 @@ def fast_kill_scan(video_path: str, sample_every_n_seconds: float = 0.5) -> list
         return []
 
     KILL_PATTERNS = {
-        "PENTAKILL": re.compile(r"PENTA\s*KILL", re.IGNORECASE),
-        "QUADRAKILL": re.compile(r"QUADRA\s*KILL", re.IGNORECASE),
-        "TRIPLE KILL": re.compile(r"TRIPLE\s*KILL", re.IGNORECASE),
-        "DOUBLE KILL": re.compile(r"DOUBLE\s*KILL", re.IGNORECASE),
+        "PENTAKILL":   re.compile(r"PENTA", re.IGNORECASE),
+        "QUADRAKILL":  re.compile(r"QUADRA", re.IGNORECASE),
+        "TRIPLE KILL": re.compile(r"TRIPLE", re.IGNORECASE),
+        "DOUBLE KILL": re.compile(r"DOUBLE", re.IGNORECASE),
+        "SHUTDOWN":    re.compile(r"SHUT", re.IGNORECASE),
+        "FIRST BLOOD": re.compile(r"FIRST\s*BLOOD", re.IGNORECASE),
+        "KILL":        re.compile(r"(\+([1-9]\d{2,3})|slain|dwannellenga)", re.IGNORECASE),
     }
 
     kills = []
@@ -130,19 +133,20 @@ def fast_kill_scan(video_path: str, sample_every_n_seconds: float = 0.5) -> list
             if not ret:
                 break
 
-            # Crop to middle strip (kill text appears in center-upper area)
             h, w = frame.shape[:2]
-            crop = frame[int(h * 0.3):int(h * 0.6), int(w * 0.2):int(w * 0.8)]
+            # Center announcement banner region
+            crop = frame[int(h * 0.12):int(h * 0.36), int(w * 0.20):int(w * 0.80)]
 
             gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-            _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
-            text = pytesseract.image_to_string(thresh, config="--psm 6")
+            _, thresh = cv2.threshold(gray, 185, 255, cv2.THRESH_BINARY)
+            thresh_big = cv2.resize(thresh, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            text = pytesseract.image_to_string(thresh_big, config="--psm 6")
 
             ts = frame_idx / fps
             for kill_type, pattern in KILL_PATTERNS.items():
                 if pattern.search(text):
-                    # Avoid duplicates within 2s window
-                    if not kills or (ts - kills[-1][0]) > 2.0:
+                    # Avoid duplicates within 1.2s window
+                    if not kills or (ts - kills[-1][0]) > 1.2:
                         kills.append((ts, kill_type))
                     break
 
@@ -151,6 +155,7 @@ def fast_kill_scan(video_path: str, sample_every_n_seconds: float = 0.5) -> list
         print(f"  fast_kill_scan error: {e}")
 
     return kills
+
 
 
 # ─── Scene density via PySceneDetect ──────────────────────────────────────────
@@ -223,16 +228,40 @@ def score_clip(video_path: str, verbose: bool = True) -> dict:
     except Exception as _eval_err:
         pass
 
-    # ── Kill score (40%) fallback ──────────────────────────────────────────────
+    # ── Kill score (40%) fallback with death check ──────────────────────────────
     kills = fast_kill_scan(video_path)
-    kill_score_raw = sum(KILL_WEIGHTS.get(k, 1) for _, k in kills)
-    kill_score = min(100, kill_score_raw * 10)  # normalize: penta alone = 100
+    
+    # Fast trailing death check
+    player_died = False
+    try:
+        import cv2, numpy as np
+        cap_chk = cv2.VideoCapture(video_path)
+        fps_chk = cap_chk.get(cv2.CAP_PROP_FPS) or 30.0
+        tot_f = int(cap_chk.get(cv2.CAP_PROP_FRAME_COUNT))
+        if tot_f > 10:
+            trail_f = int(tot_f * 0.90)
+            cap_chk.set(cv2.CAP_PROP_POS_FRAMES, trail_f)
+            ret_c, frame_c = cap_chk.read()
+            if ret_c and frame_c is not None:
+                h_c, w_c = frame_c.shape[:2]
+                roi_c = frame_c[int(h_c * 0.2):int(h_c * 0.8), int(w_c * 0.2):int(w_c * 0.8)]
+                hsv_c = cv2.cvtColor(roi_c, cv2.COLOR_BGR2HSV)
+                if float(np.mean(hsv_c[:, :, 1])) < 38.0:
+                    player_died = True
+        cap_chk.release()
+    except Exception:
+        pass
 
-    # Najcięższy kill w klipie (nie ostatni) — PENTAKILL > QUADRAKILL > ...
-    highest_kill = (
-        max(kills, key=lambda x: KILL_WEIGHTS.get(x[1], 0))[1]
-        if kills else "none"
-    )
+    if player_died and len(kills) <= 1:
+        kill_score = 0.0
+        highest_kill = "NONE (PLAYER DIED)"
+    else:
+        kill_score_raw = sum(KILL_WEIGHTS.get(k, 1) for _, k in kills)
+        kill_score = min(100, kill_score_raw * 10)  # normalize: penta alone = 100
+        highest_kill = (
+            max(kills, key=lambda x: KILL_WEIGHTS.get(x[1], 0))[1]
+            if kills else "none"
+        )
 
     # ── Duration score (15%) ─────────────────────────────────────────────────
     if OPTIMAL_MIN <= duration <= OPTIMAL_MAX:
@@ -259,16 +288,23 @@ def score_clip(video_path: str, verbose: bool = True) -> dict:
     intensity_score = min(100, scenes_per_min * 10)
 
     # If scenedetect unavailable, use kill count as proxy
-    if not SCENEDETECT_OK and kills:
+    if not SCENEDETECT_OK and kills and not player_died:
         intensity_score = min(100, len(kills) * 25)
+    elif player_died:
+        intensity_score = 10.0
 
     # ── Composite score ───────────────────────────────────────────────────────
-    composite = (
-        kill_score      * 0.40 +
-        intensity_score * 0.30 +
-        resolution_score* 0.15 +
-        duration_score  * 0.15
-    )
+    if player_died and len(kills) <= 1:
+        composite = 0.0
+        worthy = False
+    else:
+        composite = (
+            kill_score      * 0.40 +
+            intensity_score * 0.30 +
+            resolution_score* 0.15 +
+            duration_score  * 0.15
+        )
+        worthy = composite >= RANKABLE_THRESHOLD and len(kills) >= 2
 
     result = {
         "path": video_path,
@@ -283,7 +319,7 @@ def score_clip(video_path: str, verbose: bool = True) -> dict:
         "duration": round(duration, 1),
         "resolution": f"{width}x{height}",
         "scenes_per_min": scenes_per_min,
-        "worthy": composite >= RANKABLE_THRESHOLD,
+        "worthy": worthy,
         "scanned_at": datetime.now().isoformat(),
     }
 

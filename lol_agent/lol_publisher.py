@@ -5,6 +5,27 @@ Publikuje gotowego Shorta na kanał Dwannellenga (LoL)
 import os
 import sys
 import pickle
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+import types
+
+# Compatibility shim for older pickled Google Auth tokens
+if 'google.auth._regional_access_boundary_utils' not in sys.modules:
+    class _DynamicDummyModule(types.ModuleType):
+        def __getattr__(self, name):
+            class Dummy:
+                def __init__(self, *args, **kwargs): pass
+                def __setstate__(self, state):
+                    if isinstance(state, dict): self.__dict__.update(state)
+            Dummy.__name__ = name
+            setattr(self, name, Dummy)
+            return Dummy
+    sys.modules['google.auth._regional_access_boundary_utils'] = _DynamicDummyModule('google.auth._regional_access_boundary_utils')
+
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
@@ -77,24 +98,44 @@ def get_lol_youtube_service():
                 credentials = None
 
         if not credentials or not credentials.valid:
-            print(f"🌐 Otwieram przeglądarkę — zaloguj się na KONTO LoL (Dwannellenga)...", flush=True)
+            print(f"🌐 Generuję URL autoryzacji YouTube...", flush=True)
             if not os.path.exists(CLIENT_SECRET_PATH):
                 raise FileNotFoundError(
                     f"Brak pliku client_secret.json: {CLIENT_SECRET_PATH}\n"
                     "Pobierz go z Google Cloud Console."
                 )
             os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_PATH, SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                CLIENT_SECRET_PATH, SCOPES,
+                redirect_uri="urn:ietf:wg:oauth:2.0:oob"
+            )
+            auth_url, _ = flow.authorization_url(
+                prompt="consent",
+                access_type="offline",
+                include_granted_scopes="true",
+            )
 
-            # Wypisz URL w terminalu — skopiuj i otwórz ręcznie w przeglądarce
-            flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
-            auth_url, _ = flow.authorization_url(prompt="consent select_account")
+            # Próbuj otworzyć przeglądarkę automatycznie
+            try:
+                import webbrowser
+                opened = webbrowser.open(auth_url)
+                if opened:
+                    print("✅ Przeglądarka otwarta automatycznie!", flush=True)
+                else:
+                    print("⚠️  Nie można otworzyć przeglądarki automatycznie.", flush=True)
+            except Exception:
+                pass
+
             print("\n" + "="*60)
-            print("🔗 OTWÓRZ TEN LINK W PRZEGLĄDARCE:")
+            print("🔗 OTWÓRZ TEN LINK W PRZEGLĄDARCE (jeśli nie otworzył się sam):")
             print("="*60)
             print(auth_url)
             print("="*60)
-            code = input("\n📋 Wklej tutaj kod autoryzacji z przeglądarki: ").strip()
+            print("\nINSTRUKCJA:")
+            print("  1. Zaloguj się na konto Google DWANNELLENGA")
+            print("  2. Zaakceptuj wszystkie uprawnienia")
+            print("  3. Skopiuj kod który pojawi się na stronie Google")
+            code = input("\n📋 Wklej tutaj kod autoryzacji: ").strip()
             flow.fetch_token(code=code)
             credentials = flow.credentials
 
@@ -103,8 +144,58 @@ def get_lol_youtube_service():
             pickle.dump(credentials, f)
         print(f"✅ Token LoL zapisany: {TOKEN_PATH}", flush=True)
 
-
     return build('youtube', 'v3', credentials=credentials)
+
+
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Union, Dict, List, Tuple
+
+
+def parse_schedule_time(schedule_str: str) -> Tuple[str, str]:
+    """
+    Parsuje czas publikacji do formatu RFC3339 UTC dla YouTube API.
+    Obsługuje:
+      - 'morning' / 'rano' -> 08:30 (najbliższe)
+      - 'evening' / 'wieczor' / 'wieczór' -> 18:00 (najbliższe)
+      - 'HH:MM' (np. '18:00', '08:30') -> najbliższe wystąpienie tej godziny
+      - 'YYYY-MM-DDTHH:MM:SS' -> dokładny czas ISO
+    Zwraca: (rfc3339_utc_str, human_readable_local_str)
+    """
+    now = datetime.now()
+    schedule_lower = schedule_str.strip().lower()
+
+    target_hour = None
+    target_minute = 0
+    target_date = now.date()
+
+    if schedule_lower in ("morning", "rano", "poranek"):
+        target_hour = 8
+        target_minute = 30
+    elif schedule_lower in ("evening", "wieczor", "wieczór"):
+        target_hour = 18
+        target_minute = 0
+    elif ":" in schedule_lower and len(schedule_lower.split(":")) == 2:
+        parts = schedule_lower.split(":")
+        target_hour = int(parts[0])
+        target_minute = int(parts[1])
+    else:
+        try:
+            dt = datetime.fromisoformat(schedule_str)
+            if dt.tzinfo is None:
+                dt = dt.astimezone()
+            utc_dt = dt.astimezone(timezone.utc)
+            return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ"), dt.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            raise ValueError(f"Nieznany format planowania czasu: '{schedule_str}'. Użyj np. '18:00', 'morning', 'evening' lub '2026-08-24T18:00:00'")
+
+    target_dt = datetime(target_date.year, target_date.month, target_date.day, target_hour, target_minute)
+    # Jeśli czas już minął dzisiaj (z marginesem 10 minut), przenieś na jutro
+    if target_dt <= now + timedelta(minutes=10):
+        target_dt += timedelta(days=1)
+
+    local_dt = target_dt.astimezone()
+    utc_dt = local_dt.astimezone(timezone.utc)
+    return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ"), local_dt.strftime("%Y-%m-%d %H:%M")
 
 
 def upload_lol_short(
@@ -115,6 +206,7 @@ def upload_lol_short(
     privacy: str = YT_PRIVACY,
     thumbnail_path: str = None,
     category_id: str = YT_CATEGORY_ID,
+    publish_at: Optional[str] = None,
 ) -> dict:
     """
     Uploaduje Shorta LoL na YouTube.
@@ -126,7 +218,6 @@ def upload_lol_short(
     print(f"\n🚀 Uploading na YouTube...")
     print(f"   📹 Plik: {os.path.basename(video_path)}")
     print(f"   📌 Tytuł: {title[:60]}...")
-    print(f"   🔒 Privacy: {privacy}")
 
     youtube = get_lol_youtube_service()
 
@@ -137,6 +228,19 @@ def upload_lol_short(
             if len(title) + len(ht) + 1 <= 98:
                 title = f"{title} {ht}"
 
+    status_dict = {
+        "selfDeclaredMadeForKids": False,
+    }
+
+    if publish_at:
+        rfc_time, human_time = parse_schedule_time(publish_at)
+        status_dict["privacyStatus"] = "private"
+        status_dict["publishAt"] = rfc_time
+        print(f"   📅 Zaplanowano publikację na: {human_time} (UTC: {rfc_time})")
+    else:
+        status_dict["privacyStatus"] = privacy
+        print(f"   🔒 Privacy: {privacy}")
+
     body = {
         "snippet": {
             "title": title[:100],  # Max 100 znaków
@@ -144,10 +248,7 @@ def upload_lol_short(
             "tags": _limit_tags(tags),  # Max 500 chars combined
             "categoryId": category_id,
         },
-        "status": {
-            "privacyStatus": privacy,
-            "selfDeclaredMadeForKids": False,
-        }
+        "status": status_dict
     }
 
     media = MediaFileUpload(

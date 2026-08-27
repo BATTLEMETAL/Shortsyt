@@ -171,7 +171,7 @@ def _detect_champion_vision(video_path: str) -> str:
 
 # ─── Momentum analyzer integration ────────────────────────────────────────────
 
-def _run_momentum_analyzer(video_path: str) -> dict:
+def _run_momentum_analyzer(video_path: str, action_hint: str = "") -> dict:
     """
     Wywoluje lol_momentum_analyzer.analyze_momentum() i konwertuje wynik
     na slownik zgodny z run_lol_agent.py API.
@@ -181,7 +181,8 @@ def _run_momentum_analyzer(video_path: str) -> dict:
     """
     try:
         from lol_momentum_analyzer import analyze_momentum
-        result = analyze_momentum(video_path, use_ocr=True, save_chart=True)
+        result = analyze_momentum(video_path, use_ocr=True, save_chart=True,
+                                  action_hint=action_hint)
 
         # Typ akcji: z najwyzszego detected killa
         action_type = "outplay"
@@ -196,12 +197,13 @@ def _run_momentum_analyzer(video_path: str) -> dict:
             "peak_start":        result.trim_start,
             "peak_end":          result.trim_end,
             "clip_duration":     result.trim_end - result.trim_start,
-            "main_peak_in_clip": result.main_peak_in_clip,  # PENTA time po fix
+            "main_peak_in_clip": result.main_peak_in_clip,
             "peaks":             result.peaks,
             "kill_count":        len(result.peaks),
             "kill_detected":     result.kill_detected,
             "confidence":        "high" if result.kill_detected else "low",
-            "champion":          "",  # uzupelni Gemini Vision
+            "champion":          "",
+            "momentum_curve":    result.curve,   # [(t, score), ...] dla find_combat_segments
         }
 
     except Exception as e:
@@ -444,7 +446,7 @@ def trim_quiet_end(video_path: str,
 
 # ─── Main API ─────────────────────────────────────────────────────────────────
 
-def analyze_clip(video_path: str, champion: str = "") -> dict:
+def analyze_clip(video_path: str, champion: str = "", action_hint: str = "") -> dict:
     """
     Pelna analiza klipu wideo:
     1. lol_momentum_analyzer → OCR kill detection (PENTA timing, kill peaks)
@@ -458,7 +460,7 @@ def analyze_clip(video_path: str, champion: str = "") -> dict:
     print(f"[ANALYZER] Analizuje: {os.path.basename(video_path)}")
 
     # 1. Momentum analyzer (primary — OCR kill detection)
-    result = _run_momentum_analyzer(video_path)
+    result = _run_momentum_analyzer(video_path, action_hint=action_hint)
     if result is None:
         print("[ANALYZER] Momentum analyzer failed — filename fallback")
         result = _filename_fallback(video_path)

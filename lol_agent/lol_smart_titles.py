@@ -268,7 +268,8 @@ def generate_smart_title(
     champion_name: str,
     rank: str = "Gold",
     clip_path: str = "",
-    language: str = "en"
+    language: str = "en",
+    kill_context: dict = None,
 ) -> dict:
     """
     Generates an optimised title based on:
@@ -320,6 +321,51 @@ def generate_smart_title(
     templates_for_action = PROVEN_STYLE_TEMPLATES.get(action_type.lower(), PROVEN_STYLE_TEMPLATES["pentakill"])
     templates_formatted = "\n".join([f"- \"{t.format(Champion=champion_name)}\"" for t in templates_for_action])
 
+    # Buduj blok kontekstu akcji dla promptu
+    kc = kill_context or {}
+    kill_count    = kc.get("kill_count", 0)
+    kill_sequence = kc.get("kill_sequence", [])
+    kill_timings  = kc.get("kill_timings", [])
+    kill_spread   = kc.get("kill_spread", "unknown")
+    game_time     = kc.get("game_time", "")
+    clip_duration = kc.get("clip_duration", "")
+
+    # Infer solo/team from kill sequence spread
+    if kill_sequence and kill_timings:
+        _context_note = f"Kill sequence: {', '.join(kill_sequence)} at {', '.join(kill_timings)}. Spread: {kill_spread}."
+    else:
+        _context_note = f"No OCR kill data — action detected via motion/VFX analysis."
+
+    # Solo vs teamfight signal based on timing
+    if kill_spread != "unknown" and kill_spread != "instant":
+        try:
+            _spread_val = float(kill_spread.split("s")[0])
+            _solo_hint = "rapid solo burst (kills < 3s apart)" if _spread_val < 3.0 else "extended multi-kill (spread over fight)"
+        except Exception:
+            _solo_hint = ""
+    else:
+        _solo_hint = "instant burst" if kill_spread == "instant" else ""
+
+    _context_block = f"""NEW CLIP CONTEXT (use this to make the title ACCURATE to the actual situation):
+- Action type: {action_label}
+- Champion: {champion_name}
+- Rank: {rank}
+- Kill count: {kill_count if kill_count else 'unknown (OCR missed)'}
+- {_context_note}
+- Solo/team signal: {_solo_hint}
+- Game phase: {game_time if game_time else 'unknown'}
+- Clip duration: {clip_duration}
+{medal_context}
+
+TITLE ACCURACY RULES (critical — avoid wrong context):
+- If game_time is "early game" → jungle skirmishes, invades, early picks (NOT dives/sieges)
+- If game_time is "late game" → teamfights, baron/dragon, base defense
+- If solo burst < 3s → player outplayed enemies alone (emphasize speed/skill)
+- If extended fight → surviving a 1vX → emphasize resilience/clutch
+- "Dive" implies enemy tried to tower dive — ONLY use if kill happened under tower
+- "Carry" implies multiple enemies killed in teamfight
+- Match the title to the REAL situation, not a generic pattern"""
+
     prompt = f"""You are a YouTube Shorts title & metadata creator for the League of Legends channel 'Dwannellenga'.
 
 !!! CRITICAL RULE: ALL output MUST be 100% in ENGLISH. ZERO Polish words allowed anywhere.
@@ -331,30 +377,28 @@ REAL PROVEN TOP-PERFORMING TITLES FROM THIS EXACT CHANNEL (sorted by views):
 PROVEN TITLE ARCHETYPES FOR {action_label.upper()} ON THIS CHANNEL:
 {templates_formatted}
 
-NEW CLIP METADATA:
-- Action type: {action_label}
-- Champion: {champion_name}
-- Rank: {rank}
-{medal_context}
+{_context_block}
 
 TASK:
 1. Replicate the EXACT tone, brevity, emoji placement, and punchiness of Dwannellenga's top-performing videos.
-2. The title MUST be short, engaging, and story-driven (either from the victim's perspective, situational irony, or punchy summary).
+2. The title MUST be short, engaging, and story-driven — and ACCURATE to the actual clip context above.
 3. Do NOT invent overly robotic or generic AI titles like "Pentakill Rampage!".
+4. Do NOT use "dive" unless it was actually a tower dive. Use context clues above.
 
 FORBIDDEN PATTERNS:
 - Generic "[Champion] Pentakill Rampage!"
 - "[Champion]'s Unstoppable [Action]!"
 - "[Champion] MELTS Entire Team"
 - Any title starting with the champion name followed directly by an action noun
+- Titles that don't match the game phase or situation described above
 
 Return ONLY valid JSON (no markdown, no comments):
 {{
-  "title": "Short punchy title (35-55 chars), matching the style of channel top hits. ENGLISH ONLY.",
+  "title": "Short punchy title (35-55 chars), matching the style of channel top hits AND accurate to context. ENGLISH ONLY.",
   "description": "Short engaging description (80-120 words) with hype, champion context, and subscription call to action. ENGLISH ONLY.",
   "tags": ["15-20 tags in English, NO # symbol in tags, plain lowercase keywords: league of legends, {champion_name.lower()}, {action_type.lower()}"],
   "hook_text": "3-4 word ALL CAPS overlay (e.g. THEY NEVER SAW IT / NO WAY OUT / 1V5 DEFENSE). ENGLISH ONLY.",
-  "why_this_title": "One sentence explaining which top channel video pattern this title matches"
+  "why_this_title": "One sentence explaining which top channel video pattern this title matches AND why it fits the actual clip context"
 }}"""
 
 

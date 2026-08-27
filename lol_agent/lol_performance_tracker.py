@@ -34,11 +34,8 @@ CHECK_AFTER_HOURS  = 48.0   # how many hours after upload to check
 def _get_youtube():
     """Return authenticated YouTube Data API client."""
     try:
-        from googleapiclient.discovery import build
-        if os.path.exists(TOKEN_PATH):
-            with open(TOKEN_PATH, "rb") as f:
-                creds = pickle.load(f)
-            return build("youtube", "v3", credentials=creds)
+        from lol_publisher import get_lol_youtube_service
+        return get_lol_youtube_service()
     except Exception as e:
         print(f"  YT auth error: {e}")
     return None

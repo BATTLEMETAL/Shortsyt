@@ -120,13 +120,13 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not GEMINI_API_KEY:
     raise EnvironmentError("GEMINI_API_KEY is not set. Add it to your .env file.")
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-flash-lite-latest"
 GEMINI_FALLBACK_MODELS = [
+    "gemini-flash-lite-latest",
     "gemini-2.5-flash",
     "gemini-flash-latest",
     "gemini-3.7-flash",
     "gemini-3.5-flash",
-    "gemini-flash-lite-latest",
 ]
 
 

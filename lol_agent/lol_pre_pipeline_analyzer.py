@@ -45,6 +45,8 @@ ACTION_WEIGHTS = {
 OPTIMAL_MIN = 18
 OPTIMAL_MAX = 35
 MIN_KILL_COUNT = 3
+# Akcje które nie wymagają multi-killa — historycznie outperformują pentakill (4k vs 1k avg views)
+SINGLE_KILL_ACTIONS = {"outplay", "clutch", "escape", "oneshot"}
 
 
 PUBLISHED_LOG = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
@@ -211,12 +213,27 @@ def detect_action_ocr(filepath: str) -> dict:
     """Wykrywa akcje przez OCR (lol_momentum_analyzer). Fallback: heurystyka z nazwy pliku."""
     try:
         from lol_momentum_analyzer import analyze_momentum
-        result = analyze_momentum(filepath, verbose=False)
-        kills = result.get("kills", [])
-        kill_count = len(kills)
-        peaks = result.get("peaks", [])
+        result = analyze_momentum(filepath)
+        peaks = getattr(result, "peaks", [])
+        kill_count = len(peaks)
+        duration = getattr(result, "duration", 0.0)
+        trim_start = getattr(result, "trim_start", 0.0)
+        trim_end = getattr(result, "trim_end", duration)
 
-        if kill_count >= 5:
+        labels = [label.upper() for _, label in peaks]
+        if any("PENTA" in l for l in labels):
+            action_type = "pentakill"
+            kill_count = max(kill_count, 5)
+        elif any("QUADRA" in l for l in labels):
+            action_type = "quadrakill"
+            kill_count = max(kill_count, 4)
+        elif any("TRIPLE" in l for l in labels):
+            action_type = "triple"
+            kill_count = max(kill_count, 3)
+        elif any("DOUBLE" in l for l in labels):
+            action_type = "double"
+            kill_count = max(kill_count, 2)
+        elif kill_count >= 5:
             action_type = "pentakill"
         elif kill_count == 4:
             action_type = "quadrakill"
@@ -226,17 +243,18 @@ def detect_action_ocr(filepath: str) -> dict:
             action_type = "double"
         else:
             action_type = "outplay"
+            kill_count = max(kill_count, 1)
 
-        duration   = result.get("duration", 0)
-        clip_start = peaks[0][0] if peaks else 0
-        clip_end   = peaks[-1][0] + 1.2 if peaks else duration
+        clip_window = round(trim_end - trim_start, 1) if (trim_end > trim_start) else round(duration, 1)
 
         return {
             "action_type": action_type,
             "kill_count":  kill_count,
             "peaks":       peaks,
             "duration_s":  duration,
-            "clip_window": round(clip_end - max(0, clip_start - 9.5), 1),
+            "clip_window": clip_window,
+            "trim_start":  trim_start,
+            "trim_end":    trim_end,
         }
     except Exception:
         fname_lower = os.path.basename(filepath).lower()
@@ -254,13 +272,18 @@ def score_clip(clip_meta: dict, ocr: dict, yt_stats: dict) -> float:
     kills  = ocr["kill_count"]
     window = ocr["clip_window"]
 
-    kill_score = kills * 10.0
-    action_w   = ACTION_WEIGHTS.get(action, 1.0)
+    # Dla single-kill outplay bazowy kill_score to min 20.0 (wysoki potencjał virala na kanale)
+    if action in SINGLE_KILL_ACTIONS:
+        kill_score = max(kills * 10.0, 20.0)
+    else:
+        kill_score = kills * 10.0
+
+    action_w = ACTION_WEIGHTS.get(action, 1.0)
 
     if OPTIMAL_MIN <= window <= OPTIMAL_MAX:
         dur_bonus = 1.2
     elif window < OPTIMAL_MIN:
-        dur_bonus = 0.8
+        dur_bonus = 0.9 if window >= 12 else 0.7
     elif window <= 50:
         dur_bonus = 1.0
     else:
@@ -280,22 +303,26 @@ def score_clip(clip_meta: dict, ocr: dict, yt_stats: dict) -> float:
 
 
 def recommend(score: float, action: str, kills: int) -> str:
-    if kills < MIN_KILL_COUNT:
+    if kills < 1:
+        return "SKIP - brak killow"
+    if kills < MIN_KILL_COUNT and action not in SINGLE_KILL_ACTIONS:
         return "SKIP - za malo killow"
     if score >= 60:
         return "PUBLISH FIRST"
-    if score >= 40:
+    if score >= 35:
         return "PUBLISH"
-    if score >= 25:
+    if score >= 20:
         return "ROZWAŻ"
     return "SKIP"
 
 
 def main():
     parser = argparse.ArgumentParser(description="LOL Pre-Pipeline Analyzer")
-    parser.add_argument("--dir",    default=LOL_INPUT_DIR)
-    parser.add_argument("--no-ocr", action="store_true", help="Pomijn OCR")
-    parser.add_argument("--top",    type=int, default=TOP_N)
+    parser.add_argument("--dir",        default=LOL_INPUT_DIR)
+    parser.add_argument("--no-ocr",     action="store_true", help="Pomijn OCR")
+    parser.add_argument("--top",        type=int, default=TOP_N)
+    parser.add_argument("--scan-limit", type=int, default=50,
+                        help="Ile klipow przeskanowac (domyslnie 50)")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -312,17 +339,28 @@ def main():
     else:
         print("  Brak danych YT - uzywam domyslnych wag")
 
+    # Wczytaj juz przetworzone (deduplikacja)
+    processed_hashes_path = os.path.join(os.path.dirname(__file__), "processed_hashes.json")
+    processed_hashes = set()
+    if os.path.exists(processed_hashes_path):
+        try:
+            with open(processed_hashes_path, encoding="utf-8") as f:
+                processed_hashes = set(json.load(f).keys())
+        except Exception:
+            pass
+
     print(f"\nSkanowanie katalogu...")
     clips = scan_outplayed_dir(args.dir)
     if not clips:
-        print("  Brak klipow MP4 > 5MB")
+        print("  Brak klipow MP4 >5MB")
         return
     print(f"  Znaleziono {len(clips)} klipow")
 
-    results = []
-    to_analyze = clips[:args.top * 2]
+    # Ogranicz do scan_limit — skanuj szeroko, nie tylko najnowsze
+    to_analyze = clips[:args.scan_limit]
     print(f"\nAnalizuje {len(to_analyze)} klipow (OCR)...")
 
+    results = []
     for i, clip in enumerate(to_analyze, 1):
         sys.stdout.write(f"\r  [{i}/{len(to_analyze)}] {clip['filename'][:55]:<55}")
         sys.stdout.flush()
@@ -331,6 +369,7 @@ def main():
         sc  = score_clip(clip, ocr, yt_stats)
         rec = recommend(sc, ocr["action_type"], ocr["kill_count"])
         results.append({**clip, **ocr, "score": sc, "recommend": rec})
+
 
     print()
 

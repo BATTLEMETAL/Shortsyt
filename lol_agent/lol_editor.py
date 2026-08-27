@@ -1170,28 +1170,30 @@ def render_short(
     add_cta_overlay(step5_cta, final_duration, step5, cta_text=_end_cta, show_duration=1.5)
 
     # ── POST-RENDER 15s SNAP ─────────────────────────────────────────────────
-    # Jeśli finalny short wychodzi 15.5–22.0s → przytnij do 15.0s od końca.
-    # Klipy ~15s mają najwyższy priorytet algorytmu YT Shorts.
-    # Trimujemy OD POCZĄTKU (zachowujemy climax/kill na końcu).
-    if 15.5 <= final_duration <= 22.0:
-        step5_15s = step5.replace(".mp4", "_15s.mp4")
+    # Stosuj TYLKO dla pojedynczych wymian/akcji (15.5-18.0s), NIGDY nie niszcz multi-killów ani nie ucinaj pierwszego fraga!
+    is_multikill = action_type in ("pentakill", "quadrakill") or (peaks and len(peaks) >= 3)
+    if 15.5 <= final_duration <= 18.0 and not is_multikill:
         trim_from_start = final_duration - 15.0
-        cmd_15s = [
-            "ffmpeg", "-y",
-            "-i", step5,
-            "-ss", f"{trim_from_start:.3f}",
-            "-t", "15.0",
-            "-c", "copy",
-            step5_15s
-        ]
-        r15 = subprocess.run(cmd_15s, capture_output=True)
-        if r15.returncode == 0:
-            import shutil as _sh15
-            _sh15.move(step5_15s, step5)
-            final_duration = 15.0
-            print(f"   ⚡ 15s SNAP zastosowany: przycięto -{trim_from_start:.2f}s od początku → 15.0s")
-        else:
-            print(f"   ⚠️  15s SNAP błąd (pomijam): {r15.stderr.decode('utf-8', errors='replace')[:200]}")
+        first_peak_rel = min((t_k for (t_k, _) in (peaks or [])), default=999.0)
+        # Przytnij tylko jeśli pierwszy kill jest bezpiecznie po punkcie cięcia
+        if first_peak_rel > trim_from_start + 1.0:
+            step5_15s = step5.replace(".mp4", "_15s.mp4")
+            cmd_15s = [
+                "ffmpeg", "-y",
+                "-i", step5,
+                "-ss", f"{trim_from_start:.3f}",
+                "-t", "15.0",
+                "-c", "copy",
+                step5_15s
+            ]
+            r15 = subprocess.run(cmd_15s, capture_output=True)
+            if r15.returncode == 0:
+                import shutil as _sh15
+                _sh15.move(step5_15s, step5)
+                final_duration = 15.0
+                print(f"   ⚡ 15s SNAP zastosowany: przycięto -{trim_from_start:.2f}s od początku → 15.0s")
+            else:
+                print(f"   ⚠️  15s SNAP błąd (pomijam): {r15.stderr.decode('utf-8', errors='replace')[:200]}")
     # ─────────────────────────────────────────────────────────────────────────
 
     print(f"\n{'='*55}")

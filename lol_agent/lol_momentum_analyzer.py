@@ -795,19 +795,21 @@ def find_combat_segments(
         valid_segs = [[clip_start, safe_end]]
 
     # 6. Kontrola łącznej długości (max_total_duration = 26s):
-    # Jeśli suma długości przekracza limit, skróć najwcześniejszy segment (zachowując finał i kille)
+    # Jeśli suma długości przekracza limit, skróć najwcześniejszy segment (ale NIGDY nie ucinaj pierwszego killa!)
     total_dur = sum(e - s for s, e in valid_segs)
     if total_dur > max_total_duration:
         excess = total_dur - max_total_duration
         first_s, first_e = valid_segs[0]
-        first_dur = first_e - first_s
-        if first_dur > excess + min_segment_dur:
-            valid_segs[0][0] = round(first_s + excess, 2)
-        elif len(valid_segs) > 1:
-            valid_segs.pop(0)
-            total_dur = sum(e - s for s, e in valid_segs)
-            if total_dur > max_total_duration:
-                valid_segs[0][0] = round(valid_segs[0][0] + (total_dur - max_total_duration), 2)
+        # Bezpieczna granica: zachowaj minimum 2.0s przed pierwszym killem
+        if peaks:
+            earliest_allowed_s = max(clip_start, peaks[0][0] - 2.0)
+            max_safe_cut = max(0.0, earliest_allowed_s - first_s)
+            actual_cut = min(excess, max_safe_cut)
+        else:
+            actual_cut = excess
+
+        if actual_cut > 0 and (first_e - (first_s + actual_cut)) >= min_segment_dur:
+            valid_segs[0][0] = round(first_s + actual_cut, 2)
 
     final_segs = [(round(s, 2), round(e, 2)) for s, e in valid_segs]
 

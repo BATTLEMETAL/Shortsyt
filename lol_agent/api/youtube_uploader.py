@@ -9,6 +9,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+# Relax token scope checks (Google returns extra default scopes like openid)
+os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -20,6 +24,7 @@ from .config import CLIENT_SECRET_PATH, YT_TOKEN_PATH, ACCOUNTS_DIR
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl",  # wymagane dla pinned comments
 ]
 
 
@@ -86,50 +91,196 @@ def get_token_status() -> Dict[str, Any]:
     }
 
 
+_ACTIVE_FLOWS: Dict[int, Any] = {}
+
+
 def get_auth_url() -> str:
     """
     Zwróć URL do autoryzacji YouTube OAuth.
-    Użytkownik otwiera URL, autoryzuje i wkleja kod.
+    Używa localhost redirect — backend sam odbierze kod po zalogowaniu w przeglądarce.
+    Google automatycznie przekieruje na http://localhost:PORT po autoryzacji.
     """
     if not CLIENT_SECRET_PATH.exists():
         raise FileNotFoundError(f"Brak client_secret.json: {CLIENT_SECRET_PATH}")
 
+    import socket
+    import json as _json
+
+    # Znajdź wolny port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+
+    redirect_uri = f"http://localhost:{port}"
+
     flow = InstalledAppFlow.from_client_secrets_file(
         str(CLIENT_SECRET_PATH),
         scopes=SCOPES,
-        redirect_uri="urn:ietf:wg:oauth:2.0:oob",
+        redirect_uri=redirect_uri,
     )
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         prompt="consent",
         include_granted_scopes="true",
     )
-    # Zapisz client_config + auth_url (flow ma niepicklowalną lambdę)
-    import json as _json
+
+    _ACTIVE_FLOWS[port] = flow
+
+    # Zapisz konfigurację do pliku (wraz z code_verifier dla PKCE)
     flow_path = YT_TOKEN_PATH.parent / "_pending_flow.json"
     ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
     _json.dump({
         "client_config_file": str(CLIENT_SECRET_PATH),
         "scopes": SCOPES,
-        "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
-    }, open(flow_path, "w"))
+        "redirect_uri": redirect_uri,
+        "port": port,
+        "code_verifier": getattr(flow, "code_verifier", None),
+    }, open(flow_path, "w", encoding="utf-8"))
+
+    # Uruchom callback server w tle — czeka na redirect od Google
+    import threading
+    threading.Thread(target=_run_callback_server, args=(port, str(flow_path)), daemon=True).start()
 
     return auth_url
 
 
+def _run_callback_server(port: int, flow_path_str: str) -> None:
+    """
+    Minimalny HTTP server który odbiera callback od Google OAuth i wymienia kod na token.
+    Działa w tle jako daemon thread — kończy się automatycznie po odebraniu kodu.
+    """
+    import http.server
+    import urllib.parse
+    import time
+    import threading
+
+    class _CallbackHandler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass
+
+        def do_GET(self):
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+
+            if "code" not in params:
+                error = params.get("error", ["unknown"])[0]
+                body = f"""<!DOCTYPE html>
+                <html><head><meta charset="utf-8"><title>Błąd</title></head>
+                <body style="background:#0A0E1A;color:#FF6060;font-family:sans-serif;text-align:center;padding:60px">
+                <h2>❌ Błąd autoryzacji: {error}</h2>
+                <p style="color:#8B8FA8">Wróć do aplikacji i spróbuj ponownie.</p>
+                </body></html>""".encode("utf-8")
+
+                self.send_response(400)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(body)
+                self.wfile.flush()
+                return
+
+            code = params["code"][0]
+
+            # Najpierw wymień token
+            success = _exchange_code_direct(code, flow_path_str, port)
+
+            if success:
+                body = """<!DOCTYPE html>
+                <html><head><meta charset="utf-8"><title>Sukces!</title></head>
+                <body style="background:#0A0E1A;color:#55E88D;font-family:sans-serif;text-align:center;padding:60px">
+                <h1 style="font-size:32px">✅ Autoryzacja zakończona sukcesem!</h1>
+                <p style="color:#E4D6B5;font-size:16px;margin-top:16px">Token YouTube z uprawnieniami został zapisany.</p>
+                <p style="color:#8B8FA8;font-size:13px;margin-top:8px">Możesz zamknąć tę kartę i wrócić do aplikacji Shortsyt Studio.</p>
+                <script>setTimeout(()=>window.close(), 3500)</script>
+                </body></html>""".encode("utf-8")
+                self.send_response(200)
+            else:
+                body = """<!DOCTYPE html>
+                <html><head><meta charset="utf-8"><title>Błąd zapisu</title></head>
+                <body style="background:#0A0E1A;color:#FF6060;font-family:sans-serif;text-align:center;padding:60px">
+                <h2>⚠️ Błąd wymiany kodu</h2>
+                <p style="color:#8B8FA8">Nie udało się zapisać tokenu. Spróbuj ponownie w aplikacji.</p>
+                </body></html>""".encode("utf-8")
+                self.send_response(500)
+
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            self.wfile.flush()
+
+            # Zaplanuj zamknięcie serwera za 2 sekundy, żeby przeglądarka zdążyła odebrać stronę
+            def _delayed_shutdown(srv):
+                time.sleep(2.0)
+                try:
+                    srv.shutdown()
+                except Exception:
+                    pass
+
+            threading.Thread(target=_delayed_shutdown, args=(self.server,), daemon=True).start()
+
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+
+    try:
+        server = http.server.HTTPServer(("0.0.0.0", port), _CallbackHandler)
+        server.timeout = 300
+        server.serve_forever()
+    except Exception as e:
+        print(f"[OAuth callback server error]: {e}")
+
+
+def _exchange_code_direct(code: str, flow_path_str: str, port: int) -> bool:
+    """Wymień kod OAuth na token, uwzględniając PKCE code_verifier."""
+    import json as _json
+    try:
+        flow = _ACTIVE_FLOWS.pop(port, None)
+        if flow is None:
+            flow_path = Path(str(flow_path_str))
+            if not flow_path.exists():
+                print("[OAuth] ❌ Brak pliku flow", flush=True)
+                return False
+            cfg = _json.load(open(flow_path, encoding="utf-8"))
+            flow = InstalledAppFlow.from_client_secrets_file(
+                cfg["client_config_file"],
+                scopes=cfg["scopes"],
+                redirect_uri=cfg["redirect_uri"],
+            )
+            if cfg.get("code_verifier"):
+                flow.code_verifier = cfg["code_verifier"]
+
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        _save_credentials(creds)
+        Path(str(flow_path_str)).unlink(missing_ok=True)
+        print("[OAuth] SUCCESS: YouTube token saved successfully!", flush=True)
+        return True
+    except Exception as e:
+        print(f"[OAuth] ERROR: Token exchange failed: {repr(e)}", flush=True)
+        return False
+
+
 def exchange_auth_code(code: str) -> Dict[str, Any]:
-    """Wymień kod autoryzacji na token i zapisz."""
+    """Ręczna wymiana kodu autoryzacji na token (fallback)."""
     import json as _json
     flow_path = YT_TOKEN_PATH.parent / "_pending_flow.json"
     if not flow_path.exists():
         raise ValueError("Brak pending flow — najpierw wywołaj get_auth_url()")
 
-    cfg = _json.load(open(flow_path))
-    flow = InstalledAppFlow.from_client_secrets_file(
-        cfg["client_config_file"],
-        scopes=cfg["scopes"],
-        redirect_uri=cfg["redirect_uri"],
-    )
+    cfg = _json.load(open(flow_path, encoding="utf-8"))
+    port = cfg.get("port", 0)
+    flow = _ACTIVE_FLOWS.pop(port, None)
+    if flow is None:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            cfg["client_config_file"],
+            scopes=cfg["scopes"],
+            redirect_uri=cfg["redirect_uri"],
+        )
+        if cfg.get("code_verifier"):
+            flow.code_verifier = cfg["code_verifier"]
 
     flow.fetch_token(code=code)
     creds = flow.credentials

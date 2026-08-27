@@ -1,0 +1,65 @@
+{
+  "ncs_different_heaven_my_heart.mp3": {
+    "title": "My Heart",
+    "artist": "Different Heaven & EH!DE",
+    "attribution": "My Heart by Different Heaven & EH!DE\nMusic provided by NoCopyrightSounds\nWatch: https://youtu.be/jK2aIUmmdP4",
+    "ncs_url": "https://ncs.io/MyHeart",
+    "energy": "medium"
+  },
+  "ncs_jim_yosef_link.mp3": {
+    "title": "Link",
+    "artist": "Jim Yosef",
+    "attribution": "Link by Jim Yosef\nMusic provided by NoCopyrightSounds\nWatch: https://youtu.be/9iHM6X6uUH8",
+    "ncs_url": "https://ncs.io/link",
+    "energy": "low"
+  },
+  "ncs_lost_sky_dreams_pt2.mp3": {
+    "title": "Dreams pt. II (feat. Sara Skinner)",
+    "artist": "Lost Sky",
+    "attribution": "Dreams pt. II by Lost Sky ft Sara Skinner\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/DreamsII",
+    "ncs_url": "https://ncs.io/DreamsII",
+    "energy": "high"
+  },
+  "ncs_robin_hustin_light_it_up.mp3": {
+    "title": "Light It Up (feat. Jex)",
+    "artist": "Robin Hustin x TobiMorrow",
+    "attribution": "Light It Up by Robin Hustin x TobiMorrow ft Jex\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/LightItUp",
+    "ncs_url": "https://ncs.io/LightItUp",
+    "energy": "high"
+  },
+  "ncs_egzod_royalty.mp3": {
+    "title": "Royalty (feat. Neoni)",
+    "artist": "Egzod & Maestro Chives",
+    "attribution": "Royalty by Egzod & Maestro Chives ft Neoni\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/royalty",
+    "ncs_url": "https://ncs.io/royalty",
+    "energy": "high"
+  },
+  "ncs_elektronomia_immortality.mp3": {
+    "title": "Immortality",
+    "artist": "Elektronomia & RUD",
+    "attribution": "Immortality by Elektronomia & RUD\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/Immortality",
+    "ncs_url": "https://ncs.io/Immortality",
+    "energy": "high"
+  },
+  "ncs_unknown_brain_superhero.mp3": {
+    "title": "Superhero (feat. Chris Linton)",
+    "artist": "Unknown Brain",
+    "attribution": "Superhero by Unknown Brain ft Chris Linton\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/superhero",
+    "ncs_url": "https://ncs.io/superhero",
+    "energy": "medium"
+  },
+  "ncs_alex_skrindo_euphoria.mp3": {
+    "title": "Euphoria",
+    "artist": "Alex Skrindo",
+    "attribution": "Euphoria by Alex Skrindo\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/Euphoria",
+    "ncs_url": "https://ncs.io/Euphoria",
+    "energy": "medium"
+  },
+  "ncs_alan_walker_fade.mp3": {
+    "title": "Fade",
+    "artist": "Alan Walker",
+    "attribution": "Fade by Alan Walker\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/fade",
+    "ncs_url": "https://ncs.io/fade",
+    "energy": "low"
+  }
+}

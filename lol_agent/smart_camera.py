@@ -716,22 +716,22 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
             f = frames[i].astype(np.int16)
             r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
 
-            # 1. Maska Gracza (Złoty/Żółty pasek HP i złota ramka level box gracza)
-            gold_player = ((r > 165) & (g > 135) & (b < 105) & ((r - b) > 75) & ((g - b) > 40)) & excl
+            # 1. Maska Gracza (Złoty/Żółty pasek HP)
+            # Precyzyjny filtr geometryczny: pasek HP jest poziomy (aspect >= 2.2, ch <= 5), odrzuca pochodnie i ogień na ścianach
+            gold_player = ((r > 160) & (g > 130) & (b < 100) & ((r - b) > 70) & ((g - b) > 40)) & excl
             green_ally  = ((g > 140) & (r < 135) & (b < 135) & ((g - r) > 30)) & excl
-            player_mask = gold_player | green_ally
 
             # 2. Maska Wrogów (Czerwone paski HP)
             red = ((r > 150) & (g < 100) & (b < 100) & ((r - g) > 50) & ((r - b) > 50)) & excl
 
             frame_cands = []
 
-            # Wykryj komponenty gracza / sojuszników z rozróżnieniem złota (gracz) vs zieleń (sojusznicy)
+            # Wykryj komponenty gracza (złoty pasek HP gracza)
             num_l_p, _, stats_p, centroids_p = cv2.connectedComponentsWithStats(gold_player.astype(np.uint8))
             for comp_i in range(1, num_l_p):
                 cx, cy, cw, ch, area = stats_p[comp_i]
                 aspect = cw / max(ch, 1)
-                if cw >= 5 and ch <= 14 and area >= 8:
+                if aspect >= 2.2 and cw >= 8 and ch <= 6 and area >= 8:
                     src_x = int(centroids_p[comp_i][0] * scale_factor)
                     frame_cands.append((src_x, 'player_gold', aspect * area))
 
@@ -739,7 +739,7 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
             for comp_i in range(1, num_l_g):
                 cx, cy, cw, ch, area = stats_g[comp_i]
                 aspect = cw / max(ch, 1)
-                if cw >= 6 and ch <= 12 and area >= 8:
+                if aspect >= 2.0 and cw >= 8 and ch <= 6 and area >= 10:
                     src_x = int(centroids_g[comp_i][0] * scale_factor)
                     frame_cands.append((src_x, 'ally_green', aspect * area))
 
@@ -756,9 +756,10 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
 
             if frame_cands:
                 champ_detected += 1
+                gold_cands = [c for c in frame_cands if c[1] == 'player_gold']
+
                 if not initialized:
                     # Inicjalizacja: preferuj złoty pasek gracza, fallback na środek
-                    gold_cands = [c for c in frame_cands if c[1] == 'player_gold']
                     if gold_cands:
                         gold_cands.sort(key=lambda c: abs(c[0] - (source_w // 2)))
                         track_x = float(gold_cands[0][0])
@@ -767,39 +768,15 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
                         track_x = float(frame_cands[0][0])
                     initialized = True
                 else:
-                    # Wybierz kandydata najbliższego poprzedniej pozycji trajektorii z priorytetem gracza i strefy walki
-                    best_cand_x = track_x
-                    min_score = 999999.0
-                    for (cand_x, ctype, carea) in frame_cands:
-                        dist = abs(cand_x - track_x)
-                        score = dist
+                    # BEZWZGLĘDNY PRIORYTET GRACZA: jeśli gracz jest wykryty na ekranie, śledź TYLKO gracza!
+                    target_cands = gold_cands if gold_cands else frame_cands
+                    best_cand_x = min(target_cands, key=lambda c: abs(c[0] - track_x))[0]
 
-                        # Bonus za unikalny złoty pasek gracza (najwyższy priorytet)
-                        if ctype == 'player_gold':
-                            score -= 600.0
+                    # Dynamiczna aktualizacja trajektorii — wysoka responsywność (0.80/0.20)
+                    track_x = 0.80 * float(best_cand_x) + 0.20 * track_x
 
-                        if enemy_xs:
-                            # Bliskość do wrogów / centrum starcia
-                            dist_to_enemy = min(abs(cand_x - ex) for ex in enemy_xs)
-                            if ctype == 'enemy' or dist_to_enemy <= 280:
-                                score -= 300.0  # Aktywna strefa walki
-                            elif ctype == 'ally_green' and dist_to_enemy > 450:
-                                score += 500.0  # Pasywny, odległy sojusznik — zignoruj
-                        else:
-                            # Brak wrogów (walka zakończona / poza walką) — ignoruj sojuszników
-                            if ctype == 'ally_green':
-                                score += 450.0
-
-                        if score < min_score:
-                            min_score = score
-                            best_cand_x = float(cand_x)
-
-                    # Wygładzona aktualizacja trajektorii — zbalansowana inercja (0.50/0.50)
-                    # FIX: zmniejszono z 0.70 → 0.50 - kamera reaguje szybciej, nie gubi fraga przy multi-kill
-                    track_x = 0.50 * best_cand_x + 0.50 * track_x
-
-                    # Hard velocity clamp: max 50px przesunięcia na próbkę — eliminuje camera escape
-                    MAX_STEP_PX = 50
+                    # Velocity clamp: max 250px na próbkę — pozwala na błyskawiczne podążanie za assassynem
+                    MAX_STEP_PX = 250
                     if raw_points:
                         prev_crop = raw_points[-1][1] + crop_w // 2  # poprzednia track_x
                         track_x = max(prev_crop - MAX_STEP_PX, min(prev_crop + MAX_STEP_PX, track_x))
@@ -811,24 +788,15 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
 
         print(f"   🟡 HP bars: {champ_detected}/{len(frames)} klatek | Trajectory tracking OK")
 
-        # ── Wygładzanie adaptacyjne (window=7 dla kinowej płynności) ──
+        # ── Wygładzanie adaptacyjne (window=3 dla zerowego lagu i kinowej płynności) ──
         raw_xs = np.array([p[1] for p in raw_points], dtype=float)
         smoothed_xs = raw_xs.copy()
-        smooth_w = 7
+        smooth_w = 3
         for i in range(len(raw_xs)):
             start = max(0, i - smooth_w // 2)
             end   = min(len(raw_xs), i + smooth_w // 2 + 1)
             smoothed_xs[i] = np.mean(raw_xs[start:end])
         smoothed_xs = np.clip(smoothed_xs, 0, source_w - crop_w).astype(int)
-
-        # ── END FREEZE: ostatnie 2.0s = zablokuj kamerę na championie ──────────
-        # Zapobiega jakiejkolwiek ucieczce kamery po ostatnim fragu
-        end_freeze = 2.0  # sekundy od końca klipu = kamera w 100% zablokowana
-        if duration > end_freeze * 1.5:
-            freeze_idx = int(len(smoothed_xs) * (1.0 - end_freeze / duration))
-            freeze_idx = max(0, min(freeze_idx, len(smoothed_xs) - 1))
-            lock_x = smoothed_xs[freeze_idx]
-            smoothed_xs[freeze_idx:] = lock_x
 
         final_points = [(t, int(x)) for (t, _, _), x in zip(raw_points, smoothed_xs)]
         print(f"   Wygenerowano {len(final_points)} punktów ścieżki kamery (v12 Rock-Solid Tracker)")
