@@ -69,7 +69,6 @@ KILL_KEYWORDS: Dict[str, Tuple[int, str]] = {
     "first blood":   (35,  "FIRST BLOOD"),
     "shut down":     (35,  "SHUTDOWN"),
     "shutdown":      (35,  "SHUTDOWN"),
-    "ace":           (40,  "ACE"),
     "has been slain":(25,  "KILL"),
     "slain":         (20,  "KILL"),
     "killing spree": (25,  "KILLING SPREE"),
@@ -589,17 +588,18 @@ def analyze_momentum(
             trim_start = max(0.0, trim_end - 12.0)
 
         # ── 15-SECOND SNAP RULE ──────────────────────────────────────────────
-        # Klipy 15s mają najwyższy priorytet algorytmu (najlepszy watch-time / CTR).
-        # Jeśli okno wychodzi 15.5–18.0s → skróć build-up do 14.0s raw
-        # (po slow-mo 1.5s/0.5x → stretch ~0.75s → finalny ~14.75s ≈ 15s)
+        # Klipy 15s: skracaj TYLKO jeśli nie ucinamy setupu pierwszego killa (min 2.5s buforu)
         raw_window = trim_end - trim_start
         if 15.5 <= raw_window <= 18.0:
-            trim_start = max(0.0, trim_end - 14.0)
-            print(f"   ⚡ 15s SNAP: okno {raw_window:.1f}s → docięto do {trim_end - trim_start:.1f}s raw (~15s po slow-mo)")
+            target_s = max(0.0, trim_end - 14.0)
+            # Stosuj tylko jeśli zostaje minimum 2.5s przed pierwszym killem
+            if first_kill_t - target_s >= 2.5:
+                trim_start = target_s
+                print(f"   ⚡ 15s SNAP: okno {raw_window:.1f}s → docięto do {trim_end - trim_start:.1f}s raw (~15s po slow-mo)")
 
-        # If still over max_duration, clamp
+        # If still over max_duration, clamp (ale zachowaj minimum 2.0s przed pierwszym killem)
         if trim_end - trim_start > max_duration:
-            trim_start = max(0.0, trim_end - max_duration)
+            trim_start = max(0.0, min(first_kill_t - 2.0, trim_end - max_duration))
 
         main_peak_in_clip = max(0.0, main_peak_t - trim_start)
         print(f"\n✂️  Precyzyjne cięcie: {trim_start:.1f}s → {trim_end:.1f}s ({trim_end - trim_start:.1f}s, finisz +{after_k:.1f}s po killu)")

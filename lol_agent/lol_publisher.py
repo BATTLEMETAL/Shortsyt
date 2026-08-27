@@ -358,9 +358,10 @@ def post_pinned_comment(youtube, video_id: str, comment_text: str) -> bool:
     Dodaje i przypina komentarz pod filmem.
     Musi byc wywolane krotko po uploadzie (token musi miec scope youtube.force-ssl).
     """
+    import re
     try:
-        # Usuń surrogate chars (powodują 'utf-8 codec can't encode surrogates')
-        comment_text = comment_text.encode('utf-16', 'surrogatepass').decode('utf-16')
+        # Usuń niedozwolone znaki surrogate
+        comment_text = re.sub(r'[\ud800-\udfff]', '', comment_text)
         # Stworz watek komentarza
         thread = youtube.commentThreads().insert(
             part="snippet",
@@ -384,11 +385,11 @@ def post_pinned_comment(youtube, video_id: str, comment_text: str) -> bool:
             moderationStatus="published",
         ).execute()
 
-        print(f"   \ud83d\udccc Przypiety komentarz: '{comment_text[:60]}...'")
+        print(f"   📌 Przypiety komentarz: '{comment_text[:60]}...'")
         return True
 
     except Exception as e:
-        print(f"   \u26a0\ufe0f  Pinned comment error: {e}")
+        print(f"   ⚠️  Pinned comment error: {e}")
         return False
 
 

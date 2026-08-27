@@ -887,11 +887,9 @@ FALLBACK CLI:
 | 2026-08-26 s23 | **OAuth REWRITE**: OOB (deprecated 2022) zastąpiony localhost callback serverem. get_auth_url() → losowy port → _run_callback_server (daemon thread) → Google redirect → token zapisany automatycznie. Brak wklejania kodu. |
 | 2026-08-26 s23 | **Settings.tsx OAuth flow**: przycisk Autoryzuj → openExternal → polling apiGetYtTokenStatus co 2.5s → spinner "Czekam na autoryzację..." → auto-sukces gdy token pojawi się w backend. Bez kodu paste. |
 | 2026-08-26 s23 | **lol_publisher.py authorize fix**: zamieniono run_local_server na OOB+webbrowser.open. Instrukcja: jeśli przeglądarka nie otworzy się automatycznie, URL jest wypisany w konsoli do ręcznego skopiowania. |
-| 2026-08-26 s23 | **client_secret.json**: redirect_uris zawiera http://localhost — Google zaakceptuje callback serwer na localhost:PORT |
-| 2026-08-26 s23 | **lol_metadata_generator.py**: wdrożono build_description() — stały szablon CTA z brandingiem Dwannellenga, hookiem tytułowym i 3x CTA zastępujący nieprzewidywalne opisy Gemini |
-| 2026-08-26 s23 | **Beat-Sync Engine**: zainstalowano librosa 1.0.0, aktywny BEAT_DETECTOR_OK w lol_editor.py, wstępnie obliczono i zapisano drop cache dla wszystkich 11 utworów NCS |
-| 2026-08-26 s23 | **CONTEXT.md v33**: gruntowny audyt i porządki — usunięto przestarzałe checklisty s7-s14, zaktualizowano statusy, backlog, ścieżki i zasady produkcyjne |
-| 2026-08-26 s23 | **WAŻNE — po tych zmianach**: skasuj stary token i autoryzuj ponownie przez desktop Settings → Autoryzuj kanal YouTube. Stary token nie ma force-ssl → del accounts/lol_token.pickle |
+| 2026-08-27 s24 | **v17 Multi-Template True-Lock Tracker (smart_camera.py)**: Pełne rozwiązanie problemu pracy kamery 9:16. Auto-discovery szablonu postaci gracza w pierwszych klatkach (odznaka poziomu [LVL] + złoty pasek HP area >= 100, aspect >= 2.5), full-frame matchTemplate (cv2.TM_CCOEFF_NORMED) na przestrzeni BGR z auto-adaptacją po awansie poziomu (12→13). Zerowy drift na wieże i pochodnie. |
+| 2026-08-27 s24 | **Klip #1 (12-36-25-676_0.mp4)**: Opublikowany pomyślnie (ID: `6kpFYG3flMY`, link: https://www.youtube.com/shorts/6kpFYG3flMY). |
+| 2026-08-27 s24 | **Klip #2 (13-44-46-087_0.mp4)**: Zmontowany perfekcyjnie (10.3s→25.5s, 3 fragi w dead center), zakolejkowany na rano 08:30 CEST. |
 
 ---
 
@@ -905,21 +903,36 @@ Problem:
   a ucięcie początku gubi pierwsze zabójstwa. Ponadto, przeciąganie ogona (5s slowmo + 5s chodzenia)
   sprawiało, że short trwał 34s zamiast idealnych 24-25s.
 
-Złote Reguły Montażu (ZWERYFIKOWANE — SESJA 20):
+Złote Reguły Montażu (ZWERYFIKOWANE — SESJA 24):
   1. Dual-Signal Combat Detection (find_combat_segments w lol_momentum_analyzer.py):
      - Łączy OCR kill peaks + ciągłą krzywą momentum (ruch + VFX czarów).
      - Parametry: activity_threshold = 48.0, pre_roll = 1.2s, post_roll = 1.0s, merge_gap = 2.5s.
      - Jeśli przerwa > 2.5s (bieganie/pościg) → automatyczny JUMP CUT.
   
-  2. Multi-Segment Concat & Frame-Accurate Smart Camera (lol_editor.py):
-     - Segmenty walki wycinane bezstratnie (Stream Copy) i łączone przez Concat Demuxer do step1.
-     - Smart Camera (find_action_path) analizuje BEZPOŚREDNIO step1 (01_cut.mp4) z clip_start=0.0.
-     - Zero desynchronizacji kamery po jump-cucie — idealny lock na graczu przez całe wideo.
+  2. Multi-Segment Concat & Frame-Accurate Smart Camera (lol_editor.py & smart_camera.py):
+     - Smart Camera v17 True-Lock Tracker analizuje 01_cut.mp4 i utrzymuje postać w centrum kadru 9:16.
+     - Auto-wykrywanie szablonu badge gracza z klatek początkowych + matching przez cv2.matchTemplate.
+     - Redukcja ścieżki do 14-16 kluczowych punktów zapewnia bezbłędny parsing w FFmpeg (<300 znaków).
 
   3. Tight Climax & Anti-Dragging Ending:
      - Pentakill/Climax slow-mo duration: _slowmo_dur = 1.5s (speed 0.50x), zoom=1.20x.
      - Klip kończy się maksymalnie 1.0-1.2s po ostatnim killu / banerze ACE + 2.0s CTA overlay.
-     - Całkowity czas gotowego Shorta wynosi ~24-25s (idealna retencja YT Shorts).
+     - Całkowity czas gotowego Shorta wynosi ~15-25s (idealna retencja YT Shorts).
+```
+
+---
+
+## 13.6 UNIVERSAL SMART CAMERA ARCHITECTURE (v17 TRUE-LOCK)
+
+```
+Zasada Działania:
+  1. Ekstrakcja Klatek: extract_sample_frames() pobiera klatki w 1080p (RGB np.float32), konwertowane do BGR uint8.
+  2. Auto-Discovery: W pierwszych 10 klatkach wykrywa komponenty złotego paska HP gracza (area >= 100, cw 30-130, aspect >= 2.5).
+     Wyciąga szablon odznaki poziomu [LVL] znajdujący się po lewej stronie paska: bx0=cx-65, bx1=cx+15, by0=cy-15, by1=cy+25.
+  3. Dynamic Multi-Template Match: W każdej klatce przeszukuje pole gry (120:850, 80:1840) szukając szablonu z progiem 0.55.
+     W przypadku awansu na wyższy poziom dodaje nowy szablon do listy aktywnych wzorców.
+  4. Fallback: Jeśli postać jest niewidoczna (tarcza / Death Lotus / untargetable), utrzymuje poprzednią pozycję lub wspiera się kolorem.
+  5. Kinowe Wygładzanie: Ścieżka x jest wygładzana oknem win=5 i downsamplowana do 14 punktów dla zwięzłego wyrażenia FFmpeg.
 ```
 
 ---
