@@ -9,6 +9,8 @@ Użycie:
 """
 import os
 import sys
+import re
+import subprocess
 import hashlib
 import argparse
 import shutil
@@ -24,6 +26,12 @@ from lol_clip_analyzer import scan_input_folder, analyze_clip, archive_clip
 from lol_editor import render_short
 from lol_metadata_generator import generate_metadata
 from lol_publisher import get_lol_youtube_service, upload_lol_short, post_pinned_comment
+
+try:
+    from lol_momentum_analyzer import find_combat_segments
+    COMBAT_SEG_OK = True
+except ImportError:
+    COMBAT_SEG_OK = False
 
 # Thumbnail generator
 try:
@@ -112,6 +120,109 @@ def authorize_only():
         sys.exit(1)
 
 
+def _find_ffmpeg() -> str:
+    """Auto-detect ffmpeg binary."""
+    candidates = [
+        r"C:\ffmpeg\ffmpeg-8.0-full_build\bin\ffmpeg.exe",
+        r"C:\ffmpeg\bin\ffmpeg.exe",
+        r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+        r"C:\ProgramData\chocolatey\bin\ffmpeg.exe",
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return "ffmpeg"
+
+
+def merge_split_clips(video_path: str) -> str:
+    """
+    Automatycznie wykrywa i łączy wieloczęściowe klipy (np. *_0.mp4, *_1.mp4).
+    Jeśli podany plik jest częścią podzielonego klipu i istnieją kolejne części,
+    scala je bezstratnie przez FFmpeg concat do LOL_TEMP_DIR i zwraca nową ścieżkę.
+    """
+    if not video_path or not os.path.exists(video_path):
+        return video_path
+
+    dirname = os.path.dirname(os.path.abspath(video_path))
+    filename = os.path.basename(video_path)
+
+    # Match pattern np. "ClipName_0.mp4"
+    match = re.match(r"^(.*?)(?:_(\d+))(\.[a-zA-Z0-9]+)$", filename)
+    if not match:
+        return video_path
+
+    base_name, current_idx, ext = match.groups()
+
+    # Znajdź wszystkie pliki o tym samym base_name i rozszerzeniu
+    parts = []
+    idx = 0
+    while True:
+        part_candidate = os.path.join(dirname, f"{base_name}_{idx}{ext}")
+        if os.path.exists(part_candidate):
+            parts.append(part_candidate)
+            idx += 1
+        else:
+            break
+
+    if len(parts) <= 1:
+        return video_path
+
+    log(f"   🧩 Wykryto podzielony klip ({len(parts)} części): {', '.join([os.path.basename(p) for p in parts])}")
+
+    os.makedirs(LOL_TEMP_DIR, exist_ok=True)
+    clean_base = re.sub(r'[^a-zA-Z0-9_-]', '_', base_name)
+    merged_output = os.path.join(LOL_TEMP_DIR, f"merged_{clean_base}{ext}")
+
+    # Sprawdź czy scalony plik już istnieje i jest aktualny
+    if os.path.exists(merged_output):
+        merged_mtime = os.path.getmtime(merged_output)
+        if all(merged_mtime >= os.path.getmtime(p) for p in parts):
+            log(f"   ⚡ Używam istniejącego scalonego klipu: {os.path.basename(merged_output)}")
+            return merged_output
+
+    # Przygotuj listę dla FFmpeg concat demuxer
+    concat_list_file = os.path.join(LOL_TEMP_DIR, f"concat_{clean_base}.txt")
+    with open(concat_list_file, "w", encoding="utf-8") as f:
+        for part in parts:
+            safe_part_path = part.replace("\\", "/")
+            f.write(f"file '{safe_part_path}'\n")
+
+    ffmpeg_bin = _find_ffmpeg()
+    log(f"   🎬 Scalanie {len(parts)} części przez FFmpeg...")
+
+    # 1. Próba szybkiego concat bez re-encode (-c copy)
+    cmd = [
+        ffmpeg_bin, "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", concat_list_file,
+        "-c", "copy",
+        merged_output
+    ]
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    # 2. Fallback na re-encode jeśli -c copy się nie powiedzie
+    if res.returncode != 0 or not os.path.exists(merged_output) or os.path.getsize(merged_output) == 0:
+        log("   ⚠️  Concat stream copy nie powiódł się — ponawiam z transkodowaniem...")
+        cmd_reencode = [
+            ffmpeg_bin, "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concat_list_file,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-c:a", "aac",
+            merged_output
+        ]
+        res = subprocess.run(cmd_reencode, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    if res.returncode == 0 and os.path.exists(merged_output) and os.path.getsize(merged_output) > 0:
+        log(f"   ✅ Pomyślnie scalono klipy w: {os.path.basename(merged_output)}")
+        return merged_output
+    else:
+        log(f"   ❌ Błąd scalania klipów FFmpeg (kod: {res.returncode}). Używam oryginalnego pliku.")
+        return video_path
+
+
 def run_pipeline(
     video_path: str = None,
     champion: str = "",
@@ -124,6 +235,11 @@ def run_pipeline(
     clip_start_override: float = None,
     clip_end_override: float = None,
     preferred_music: str = None,
+    custom_title: str = "",
+    schedule: str = "",
+    segments_override: list = None,   # ręczne segmenty jump-cut [(s1,e1),(s2,e2)]
+    peak_override: float = None,      # ręczny peak_moment w sekundach (bezwzgl.)
+    peaks_override: list = None,      # ręczne kill peaks [(t_abs, label)] np. [(42.0,'PENTAKILL')]
 ):
     """Uruchamia pełny pipeline LOL."""
     log("="*60)
@@ -166,25 +282,37 @@ def run_pipeline(
             log(f"   Drop a file into: {os.path.dirname(__file__)}")
             return
 
-    # === Deduplication: skip if this clip was already processed ===
+    original_source_file = source_clip
+
+    # === Deduplication Check 1: Przed scaleniem i analizą ===
     if not dry_run:
-        clip_hash = _clip_hash(source_clip)
-        processed_path = os.path.join(os.path.dirname(__file__), "processed_hashes.json")
-        processed = {}
-        if os.path.exists(processed_path):
-            with open(processed_path, encoding="utf-8") as f:
-                processed = json.load(f)
-        if clip_hash in processed:
-            log(f"SKIP Duplicate detected: this clip was already uploaded on {processed[clip_hash]['date']}")
-            log(f"   Video: {processed[clip_hash].get('url', '?')}")
-            log("   Use --force to override.")
+        is_dup, dup_reason, dup_info = check_duplicate_clip(source_clip, original_source_file)
+        if is_dup:
+            log(f"🛑 DUPLICATE BLOCKED ({dup_reason}): ten klip został już opublikowany!")
+            log(f"   URL: {dup_info.get('url', '?')}")
+            log(f"   Tytuł: '{dup_info.get('title', '?')}' (Data: {dup_info.get('date', '?')})")
+            log("   Użyj --force, aby wymusić ponowny montaż.")
+            if not force:
+                return
+
+    # === Auto-Merge Split Clips (np. _0.mp4 + _1.mp4) ===
+    source_clip = merge_split_clips(source_clip)
+
+    # === Deduplication Check 2: Po scaleniu (MD5 & stem scalonego pliku) ===
+    if not dry_run:
+        is_dup, dup_reason, dup_info = check_duplicate_clip(source_clip, original_source_file)
+        if is_dup:
+            log(f"🛑 DUPLICATE BLOCKED ({dup_reason}): ten klip został już opublikowany!")
+            log(f"   URL: {dup_info.get('url', '?')}")
+            log(f"   Tytuł: '{dup_info.get('title', '?')}' (Data: {dup_info.get('date', '?')})")
+            log("   Użyj --force, aby wymusić ponowny montaż.")
             if not force:
                 return
 
 
     # === ETAP 2: Analiza klipu ===
     log(f"\n[ETAP 2/5] Analiza klipu: {os.path.basename(source_clip)}")
-    analysis = analyze_clip(source_clip, champion=champion)
+    analysis = analyze_clip(source_clip, champion=champion, action_hint=(action or "").lower())
     if not champion and analysis.get("champion"):
         champion = analysis["champion"]
 
@@ -253,11 +381,41 @@ def run_pipeline(
     smart_meta = None
     if SMART_TITLES_OK:
         try:
+            # Buduj kontekst akcji — Gemini dostaje REALNE dane o tym jak przebiegła akcja
+            _peaks = analysis.get("peaks") or []
+            _kill_labels = [lbl for (_, lbl) in _peaks] if _peaks else []
+            _kill_times  = [t for (t, _) in _peaks] if _peaks else []
+            _clip_dur    = analysis.get("clip_duration") or analysis.get("peak_end", 0) - analysis.get("peak_start", 0)
+            # Czas pierwszego killa w meczu (wg nazwy pliku: HH-MM-SS → minuty gry)
+            _fname = os.path.basename(source_clip)
+            _game_time_hint = ""
+            import re as _re
+            _ts = _re.search(r'(\d{2})-(\d{2})-(\d{2})-', _fname)
+            if _ts:
+                _h, _m, _s = int(_ts.group(1)), int(_ts.group(2)), int(_ts.group(3))
+                _total_min = _h * 60 + _m
+                if _total_min < 15:
+                    _game_time_hint = "early game (before 15 min)"
+                elif _total_min < 25:
+                    _game_time_hint = "mid game (15-25 min)"
+                else:
+                    _game_time_hint = "late game (25+ min)"
+
+            kill_context = {
+                "kill_count":    len(_peaks),
+                "kill_sequence": _kill_labels,              # np. ["TRIPLE KILL"]
+                "kill_timings":  [f"{t:.1f}s" for t in _kill_times],
+                "clip_duration": f"{_clip_dur:.1f}s",
+                "game_time":     _game_time_hint,
+                # spread: czas między pierwszym a ostatnim killem
+                "kill_spread":   f"{(_kill_times[-1]-_kill_times[0]):.1f}s between first and last kill" if len(_kill_times) > 1 else "instant",
+            }
             smart_meta = generate_smart_title(
                 action_type=analysis["action_type"],
                 champion_name=champion,
                 rank=rank,
-                clip_path=source_clip
+                clip_path=source_clip,
+                kill_context=kill_context,
             )
             hook_text = smart_meta.get("hook_text", "")
             log(f"   ✅ Smart hook (AI): '{hook_text}'")
@@ -309,6 +467,74 @@ def run_pipeline(
     peak_moment_in_clip = max(2.0, min(peak_moment_in_clip,
                                        analysis["peak_end"] - analysis["peak_start"] - 0.5))
 
+    # ── Oblicz segmenty walki (jump-cut gaps) ────────────────────────────────
+    combat_segs = None
+    if segments_override:
+        combat_segs = segments_override
+        log(f"   ✂️  Segmenty ręczne (CLI): {[(f'{s:.1f}', f'{e:.1f}') for s, e in combat_segs]}")
+    elif COMBAT_SEG_OK:
+        # Skanuj w granicach wyznaczonego okna aktywności z momentum_analyzer (lub override z CLI)
+        scan_s = clip_start_override if clip_start_override is not None else analysis.get("peak_start", 0.0)
+        scan_e = clip_end_override if clip_end_override is not None else analysis.get("peak_end", None)
+        combat_segs = find_combat_segments(
+            peaks=analysis.get("peaks", []),
+            curve=analysis.get("momentum_curve", []),
+            clip_start=scan_s,
+            clip_end=scan_e,
+            activity_threshold=35.0,
+            pre_roll=2.5,
+            post_roll=1.2,
+            merge_gap=3.5,
+            min_segment_dur=2.5,
+            max_total_duration=17.0,  # FIX: 26.0→17.0 — raw ~17s po slow-mo/efektach daje ~15s final (15s SNAP obsługuje do 22s)
+        )
+        if len(combat_segs) == 1:
+            seg_s, seg_e = combat_segs[0]
+            log(f"   📋 Combat segment: 1 okno ciągłe ({seg_s:.1f}s → {seg_e:.1f}s)")
+            analysis["peak_start"] = seg_s
+            analysis["peak_end"]   = seg_e
+            analysis["clip_duration"] = seg_e - seg_s
+            combat_segs = None
+        else:
+            log(f"   ✂️  Combat segments: {len(combat_segs)}x jump-cut aktywny ({sum(e-s for s, e in combat_segs):.1f}s total)")
+
+    # ── Oblicz docelowy peak_moment dla beat-sync / slowmo ───────────────────
+    final_peaks = analysis.get("peaks", [])
+    if peaks_override:
+        final_peaks = peaks_override
+        log(f"   💀 Kill peaks override (CLI): {peaks_override}")
+        labels = [lbl.upper() for _, lbl in peaks_override]
+        if any("PENTAKILL" in l for l in labels):
+            analysis["action_type"] = "pentakill"
+            log("   🎮 Action type → pentakill (z peaks override)")
+        elif any("QUADRA" in l for l in labels):
+            analysis["action_type"] = "quadrakill"
+
+    if peak_override is not None:
+        target_climax_t = peak_override
+    elif final_peaks:
+        # Climax = ostatni zabójczy cios w sekwencji
+        target_climax_t = final_peaks[-1][0]
+    else:
+        target_climax_t = analysis.get("main_peak_in_clip", 0.0) + analysis.get("peak_start", 0.0)
+
+    if combat_segs:
+        cursor = 0.0
+        matched = False
+        for seg_s, seg_e in combat_segs:
+            if seg_s <= target_climax_t <= seg_e:
+                peak_moment_in_clip = cursor + (target_climax_t - seg_s)
+                matched = True
+                break
+            cursor += (seg_e - seg_s)
+        if not matched:
+            total_dur = sum(e - s for s, e in combat_segs)
+            peak_moment_in_clip = total_dur * 0.70
+    else:
+        peak_moment_in_clip = max(0.0, target_climax_t - analysis.get("peak_start", 0.0))
+
+    log(f"   🎯 Zsynchronizowany Climax @ {peak_moment_in_clip:.1f}s (oryg: {target_climax_t:.1f}s)")
+
     final_video = render_short(
         source_path=source_clip,
         clip_start=analysis["peak_start"],
@@ -319,10 +545,13 @@ def run_pipeline(
         use_speed_ramp=not no_slowmo,
         peak_moment=peak_moment_in_clip,
         hook_text=hook_text,
-        peaks=analysis.get("peaks", []),
+        peaks=final_peaks,
         output_filename=output_name,
         preferred_track=preferred_music,
+        combat_segments=combat_segs,
     )
+
+
 
     # === Miniaturka 9:16 w stylu kanalu ===
     thumbnail_path = None
@@ -334,18 +563,17 @@ def run_pipeline(
             # Etykieta: typ akcji (PENTAKILL, TRIPLE KILL itp) - czysty, bez hook sloganow
             action_label = analysis["action_type"].upper().replace("_", " ")
 
-            # Klatka: ostatni kill peak (najwyzszy kill - np. PENTAKILL, nie QUADRAKILL)
-            # Fallback na peak_moment_in_clip jesli brak peaks
+            # Klatka: +1.5s po ostatnim killu → baner "TRIPLE KILL" / "PENTAKILL" zawsze widoczny
+            # Kill feed trzyma się ~2s na ekranie, +1.5s zawsze go złapie
             peaks_list = analysis.get("peaks", [])
             if peaks_list:
-                # Ostatni peak = najwyzszy kill (Penta > Quadra > Triple)
-                last_peak_time = peaks_list[-1][0] - analysis["peak_start"]
-                thumb_time = min(last_peak_time, analysis.get("clip_duration", 10) - 0.5)
+                last_peak_abs_t = peaks_list[-1][0]           # absolutny czas w source clip
+                last_peak_in_clip = last_peak_abs_t - analysis["peak_start"]
+                thumb_time = min(last_peak_in_clip + 1.5, analysis.get("clip_duration", 10) - 0.3)
+                source_thumb_t = last_peak_abs_t + 1.5        # +1.5s po killu w oryginale
             else:
-                thumb_time = min(peak_moment_in_clip, analysis.get("clip_duration", 10) - 0.5)
-
-            # Czas absolutny w source clip (peak_start + offset w klipie)
-            source_thumb_t = analysis["peak_start"] + max(0.5, thumb_time)
+                thumb_time = min(peak_moment_in_clip + 1.0, analysis.get("clip_duration", 10) - 0.3)
+                source_thumb_t = analysis["peak_start"] + max(0.5, thumb_time)
 
             thumbnail_path = generate_thumbnail(
                 video_path=final_video,
@@ -356,6 +584,14 @@ def run_pipeline(
                 source_clip_path=source_clip,
                 source_peak_moment=source_thumb_t,  # absolutny czas w oryginalnym klipie
             )
+            # Copy to permanent thumbnails directory so it survives cleanup_temp
+            if thumbnail_path and os.path.exists(thumbnail_path):
+                perm_thumb_dir = os.path.join(os.path.dirname(__file__), "thumbnails")
+                os.makedirs(perm_thumb_dir, exist_ok=True)
+                perm_thumb_path = os.path.join(perm_thumb_dir, thumb_name)
+                shutil.copy2(thumbnail_path, perm_thumb_path)
+                thumbnail_path = perm_thumb_path
+                log(f"   🖼️  Miniaturka zapisana trwale: {thumbnail_path}")
         except Exception as e:
             log(f"   ⚠️  Thumbnail error: {e}")
 
@@ -371,6 +607,10 @@ def run_pipeline(
             champion_name=champion or metadata_champion_guess(source_clip),
             rank=rank,
         )
+
+    if custom_title:
+        metadata["title"] = custom_title
+        log(f"   🎯 Tytuł wymuszony (custom): {custom_title}")
 
     log(f"   📑 Tytuł: {metadata['title']}")
 
@@ -454,9 +694,13 @@ def run_pipeline(
         tags=metadata["tags"],
         privacy=privacy,
         thumbnail_path=thumbnail_path,
+        publish_at=schedule if schedule else None,
     )
 
-    log(f"\n🎉 SUKCES! Short opublikowany!")
+    if schedule:
+        log(f"\n🎉 SUKCES! Short ZAPLANOWANY do publikacji!")
+    else:
+        log(f"\n🎉 SUKCES! Short opublikowany!")
     log(f"   🔗 {result['url']}")
 
     # Przypiety komentarz (engagement signal dla algorytmu)
@@ -475,28 +719,46 @@ def run_pipeline(
         "action_type": analysis["action_type"],
         "champion": champion,
         "thumbnail": thumbnail_path,
+        "scheduled_publish_at": schedule if schedule else None,
     }
     pub_log_path = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
     with open(pub_log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(pub_log, ensure_ascii=False) + "\n")
 
-    # Save clip hash so same clip is never uploaded twice
+    # Save clip hash & stem so same clip is never uploaded twice
     try:
-        clip_hash = _clip_hash(source_clip)
         processed_path = os.path.join(os.path.dirname(__file__), "processed_hashes.json")
         processed = {}
         if os.path.exists(processed_path):
             with open(processed_path, encoding="utf-8") as f:
                 processed = json.load(f)
-        processed[clip_hash] = {
+
+        orig_name = os.path.basename(original_source_file or source_clip)
+        stem = _extract_clip_stem(orig_name)
+        save_entry = {
             "date": datetime.now().isoformat(),
             "url": result["url"],
             "title": result["title"],
-            "source": os.path.basename(source_clip),
+            "source": orig_name,
+            "stem": stem,
             "action_fingerprint": analysis.get("action_fingerprint", {}),
         }
+
+        # Zapisz pod hashem wyrenderowanego/scalonego pliku
+        clip_hash = _clip_hash(source_clip)
+        processed[clip_hash] = save_entry
+
+        # Zapisz takze pod hashem oryginalnego pliku (np. _0.mp4)
+        if original_source_file and os.path.exists(original_source_file) and original_source_file != source_clip:
+            try:
+                orig_hash = _clip_hash(original_source_file)
+                processed[orig_hash] = save_entry
+            except Exception:
+                pass
+
         with open(processed_path, "w", encoding="utf-8") as f:
             json.dump(processed, f, ensure_ascii=False, indent=2)
+        log("   🔒 Zapisano sygnatury duplikatow (Hash + Nazwa + Stem + OCR Fingerprint)")
     except Exception as e:
         log(f"   ⚠️  Could not save clip hash: {e}")
 
@@ -538,6 +800,88 @@ def _clip_hash(video_path: str) -> str:
     with open(video_path, "rb") as f:
         h.update(f.read(2 * 1024 * 1024))
     return h.hexdigest()
+
+
+def _extract_clip_stem(filename: str) -> str:
+    """Ekstrahuje bazowy rdzen nazwy pliku (usuwajac _0, _1, trim, rozszerzenia)."""
+    if not filename:
+        return ""
+    clean = os.path.basename(filename)
+    clean = os.path.splitext(clean)[0]
+    if clean.startswith("merged_"):
+        clean = clean[7:]
+    clean = re.sub(r'_\d+$', '', clean)
+    clean = re.sub(r'-trim-\d+$', '', clean)
+    return clean.strip()
+
+
+def check_duplicate_clip(source_path: str, original_path: str = None) -> tuple:
+    """
+    Sprawdza, czy klip byl juz opublikowany na YouTube (Wielowarstwowa ochrona przed duplikatami):
+    1. MD5 Hash (pliku zrodlowego oraz czesci _0.mp4)
+    2. Nazwa pliku i bazowy rdzen (stem)
+    3. Wpis w published_videos.jsonl
+
+    Zwraca: (is_duplicate: bool, reason: str, dup_info: dict)
+    """
+    processed_path = os.path.join(os.path.dirname(__file__), "processed_hashes.json")
+    pub_path = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
+
+    hashes_to_check = set()
+    stems_to_check = set()
+    filenames_to_check = set()
+
+    for p in [source_path, original_path]:
+        if not p:
+            continue
+        fname = os.path.basename(p)
+        if fname:
+            filenames_to_check.add(fname.lower())
+            stem = _extract_clip_stem(fname).lower()
+            if stem:
+                stems_to_check.add(stem)
+        if os.path.exists(p):
+            try:
+                hashes_to_check.add(_clip_hash(p))
+            except Exception:
+                pass
+
+    # 1. Sprawdz processed_hashes.json
+    if os.path.exists(processed_path):
+        try:
+            with open(processed_path, "r", encoding="utf-8") as f:
+                processed = json.load(f)
+            for h in hashes_to_check:
+                if h in processed:
+                    return True, f"MD5 Hash Match ({h[:8]}...)", processed[h]
+
+            for entry_hash, entry in processed.items():
+                entry_src = entry.get("source", "").lower()
+                entry_stem = entry.get("stem", "").lower() or _extract_clip_stem(entry_src).lower()
+                if entry_src and entry_src in filenames_to_check:
+                    return True, f"Identyczna nazwa pliku ({entry.get('source')})", entry
+                if entry_stem and entry_stem in stems_to_check and len(entry_stem) >= 6:
+                    return True, f"Ten sam mecz / rdzeń nagrania ({entry.get('source', entry_stem)})", entry
+        except Exception as e:
+            log(f"   ⚠️  Blad odczytu processed_hashes.json: {e}")
+
+    # 2. Sprawdz published_videos.jsonl
+    if os.path.exists(pub_path):
+        try:
+            with open(pub_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    item = json.loads(line.strip())
+                    thumb = item.get("thumbnail", "").lower()
+                    title = item.get("title", "").lower()
+                    for stem in stems_to_check:
+                        if stem and len(stem) >= 8 and (stem in thumb or stem in title):
+                            return True, f"Wpis w historii publikacji ({item.get('title')})", item
+        except Exception:
+            pass
+
+    return False, "", {}
 
 
 def _compute_action_fingerprint(peaks: list, champion: str, action_type: str) -> dict:
@@ -639,6 +983,12 @@ def main():
     parser.add_argument("--start",   type=float, default=None, help="Ręczny start klipu w sekundach (override auto-trim)")
     parser.add_argument("--end",     type=float, default=None, help="Ręczny koniec klipu w sekundach (override auto-trim)")
     parser.add_argument("--music",   type=str, default="", help="Wymuszenie konkretnej ścieżki dźwiękowej (np. ncs_lost_sky_dreams_pt2.mp3)")
+    parser.add_argument("--title",   type=str, default="", help="Ręczny tytuł filmu (override)")
+    parser.add_argument("--schedule", type=str, default="", help="Zaplanuj publikację na godzinę (np. '18:00', '08:30', 'morning', 'evening' lub ISO string)")
+    parser.add_argument("--segments", type=str, default="", help="Ręczne segmenty jump-cut (JSON) np. '[[18,30],[39.5,53]]'")
+    parser.add_argument("--peak",     type=float, default=None, help="Ręczny peak_moment w sekundach oryginalnego klipu (override slowmo)")
+    parser.add_argument("--peaks",    type=str, default="", help="Ręczne kill peaks JSON np. '[[42.0,\"PENTAKILL\"]]'")
+
 
     args = parser.parse_args()
 
@@ -649,6 +999,23 @@ def main():
     if args.cleanup:
         cleanup_temp()
         return
+
+    import json as _json
+    _segments_override = None
+    if args.segments:
+        try:
+            _raw = _json.loads(args.segments)
+            _segments_override = [(float(s), float(e)) for s, e in _raw]
+        except Exception as _e:
+            print(f"⚠️  Nieprawidłowy format --segments (oczekiwano JSON np. '[[18,30],[39.5,53]]'): {_e}")
+
+    _peaks_override = None
+    if args.peaks:
+        try:
+            _raw_peaks = _json.loads(args.peaks)
+            _peaks_override = [(float(t), str(lbl)) for t, lbl in _raw_peaks]
+        except Exception as _e:
+            print(f"⚠️  Nieprawidłowy format --peaks (oczekiwano JSON np. '[[42.0,\"PENTAKILL\"]]'): {_e}")
 
     run_pipeline(
         video_path=args.file,
@@ -662,7 +1029,14 @@ def main():
         clip_start_override=args.start,
         clip_end_override=args.end,
         preferred_music=args.music,
+        custom_title=args.title,
+        schedule=args.schedule,
+        segments_override=_segments_override,
+        peak_override=args.peak,
+        peaks_override=_peaks_override,
     )
+
+
 
 
 if __name__ == "__main__":

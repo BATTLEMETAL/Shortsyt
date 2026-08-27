@@ -44,6 +44,21 @@ except ImportError:
     SMART_CAMERA_AVAILABLE = False
     print("⚠️  Smart camera niedostępna (brak numpy/PIL) — używam centrum")
 
+# Hardware acceleration & GPU auto-detection
+try:
+    from hardware_accel import get_optimal_encoder_args, detect_hardware
+    HW_ACCEL_OK = True
+except ImportError:
+    try:
+        from lol_agent.hardware_accel import get_optimal_encoder_args, detect_hardware
+        HW_ACCEL_OK = True
+    except ImportError:
+        HW_ACCEL_OK = False
+        def get_optimal_encoder_args(quality='high'):
+            return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-threads", "0", "-pix_fmt", "yuv420p"]
+        def detect_hardware():
+            return "libx264", "CPU fallback"
+
 # ─── Kategorie muzyki wg energii akcji ───────────────────────────────────────
 # Klucz = typ akcji, wartość = wymagana energia (high/medium/any)
 ACTION_ENERGY = {
@@ -254,23 +269,25 @@ def apply_editor_effects(input_path: str, output_path: str,
     normal_crop = f"crop={crop_w}:{crop_h}:'{crop_x_expr}':0"
 
     segs = []
-    # Wykryj 'dead air' / chase gaps (> 4.5s) pomiędzy killami (np. 12s biegania między Quadra a Penta)
+    # Wykryj 'dead air' / chase gaps (> 9.0s) pomiędzy killami (np. 12s biegania między Quadra a Penta)
+    # Zabezpieczenie: NIE przyspieszaj normalnych wymian / trade'ów (5-7s) — widz musi widzieć całą walkę!
     chase_gaps = []
-    valid_intermediate = [p for p in (intermediate_peaks or []) if 0.5 < p < peak_moment - 1.0]
-    all_pks = sorted(valid_intermediate + [peak_moment])
-    for p_idx in range(len(all_pks) - 1):
-        p_curr = all_pks[p_idx]
-        p_next = all_pks[p_idx + 1]
-        if (p_next - p_curr) > 4.5:
-            c_start = p_curr + 1.2
-            c_end = max(c_start + 1.0, p_next - 1.5)
-            if c_end > c_start + 1.5:
-                chase_gaps.append((c_start, c_end))
+    if not (intermediate_peaks is not None and getattr(apply_editor_effects, "_in_combat_seg_mode", False)):
+        valid_intermediate = [p for p in (intermediate_peaks or []) if 0.5 < p < peak_moment - 1.0]
+        all_pks = sorted(valid_intermediate + [peak_moment])
+        for p_idx in range(len(all_pks) - 1):
+            p_curr = all_pks[p_idx]
+            p_next = all_pks[p_idx + 1]
+            if (p_next - p_curr) > 9.0:  # Tylko gigantyczne przerwy >9s (bieg przez rzekę/bazę)
+                c_start = p_curr + 1.5
+                c_end = max(c_start + 1.0, p_next - 2.0)
+                if c_end > c_start + 2.0:
+                    chase_gaps.append((c_start, c_end))
 
     # Segmenty przed głównym peakiem (z uwzględnieniem ewentualnego chase fast-forward 2.8x)
     cur_t = t0
     if chase_gaps:
-        print(f"⚡ Chase fast-forward active for gaps: {chase_gaps}")
+        print(f"⚡ Chase fast-forward active for gaps (>9s): {chase_gaps}")
         for (c_start, c_end) in chase_gaps:
             if c_start > cur_t + 0.05:
                 segs.append({"start": cur_t, "end": min(c_start, t1), "speed": 1.0, "crop": normal_crop})
@@ -335,39 +352,44 @@ def apply_editor_effects(input_path: str, output_path: str,
 
     print(f"🎬 Processing filtergraph with dynamic tracking...")
 
+    encoder_high = get_optimal_encoder_args("high")
+    encoder_draft = get_optimal_encoder_args("draft")
+
     cmd = [
         "ffmpeg", "-y", "-i", input_path,
         "-filter_complex_script", fc_script,
         "-map", "[v_final]",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-pix_fmt", "yuv420p",
+        *encoder_high,
         output_path
     ]
 
-    # Jeśli slow-mo aktywne i SMOOTH_SLOWMO włączone — dodaj minterpolate
-    # Odbywa się przez dodatkowy pass (minterpolate nie można łączyć z concat)
+    # Optymalizacja GPU: Pojedynczy szybki przebieg z enkoderem sprzętowym
+    # Jeśli minterpolate jest wymagane tylko na CPU, pomijamy ciężki CPU blend na GPU
+    enc_name, _ = detect_hardware()
+    is_gpu = enc_name in ('h264_nvenc', 'h264_amf', 'h264_qsv')
+
     has_slowmo = any(seg["speed"] != 1.0 for seg in segs)
     try:
-        if has_slowmo and SMOOTH_SLOWMO:
-            # Krok 1: render bez minterpolate
+        if is_gpu or not (has_slowmo and SMOOTH_SLOWMO):
+            # Tryb ULTRA-FAST (GPU / Direct Single Pass): ~3-4 sekundy!
+            r = subprocess.run(cmd, capture_output=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"FFmpeg filtergraph error: {r.stderr.decode('utf-8', errors='replace')[:800]}")
+        else:
+            # CPU Fallback z minterpolate
             tmp_pre_interp = output_path.replace(".mp4", "_pre_interp.mp4")
             cmd_step1 = [
                 "ffmpeg", "-y", "-i", input_path,
                 "-filter_complex_script", fc_script,
                 "-map", "[v_final]",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
-                "-pix_fmt", "yuv420p",
+                *encoder_draft,
                 tmp_pre_interp
             ]
             r = subprocess.run(cmd_step1, capture_output=True)
             if r.returncode != 0:
                 raise RuntimeError(f"FFmpeg filtergraph error: {r.stderr.decode('utf-8', errors='replace')[:800]}")
 
-            # Krok 2: minterpolate blend — płynna interpolacja klatek na slow-mo segmentach
-            # FIX artefakt końcowy: tpad=stop_mode=clone dodaje 0.5s zduplikowanych klatek
-            # przed minterpolate (daje materiał do blend'owania na końcu),
-            # trim=0:duration=X przycina z powrotem do właściwej długości.
-            print(f"🎬 Minterpolate blend — wygadzanie slow-mo (output_duration={output_duration:.2f}s)...")
+            print(f"🎬 Minterpolate blend — wygładzanie slow-mo (output_duration={output_duration:.2f}s)...")
             cmd_step2 = [
                 "ffmpeg", "-y", "-i", tmp_pre_interp,
                 "-vf", (
@@ -376,14 +398,11 @@ def apply_editor_effects(input_path: str, output_path: str,
                     f"trim=0:duration={output_duration:.4f},"
                     f"setpts=PTS-STARTPTS"
                 ),
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                "-pix_fmt", "yuv420p",
+                *encoder_high,
                 output_path
             ]
             r2 = subprocess.run(cmd_step2, capture_output=True)
             if r2.returncode != 0:
-                # Fallback — użyj wersji bez minterpolate
-                print(f"⚠️  minterpolate error (fallback): {r2.stderr.decode('utf-8', errors='replace')[:400]}")
                 import shutil as _sh
                 _sh.move(tmp_pre_interp, output_path)
             else:
@@ -392,10 +411,6 @@ def apply_editor_effects(input_path: str, output_path: str,
                     _os.remove(tmp_pre_interp)
                 except OSError:
                     pass
-        else:
-            r = subprocess.run(cmd, capture_output=True)
-            if r.returncode != 0:
-                raise RuntimeError(f"FFmpeg filtergraph error: {r.stderr.decode('utf-8', errors='replace')[:800]}")
     finally:
         if os.path.exists(fc_script):
             try:
@@ -473,8 +488,7 @@ def add_text_overlay(
         "ffmpeg", "-y",
         "-i", video_path,
         "-vf", drawtext,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-pix_fmt", "yuv420p",
+        *get_optimal_encoder_args("high"),
         "-c:a", "copy",
         output_path
     ]
@@ -673,8 +687,7 @@ def add_dynamic_captions(
         "ffmpeg", "-y",
         "-i", video_path,
         "-vf", vf_chain,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-pix_fmt", "yuv420p",
+        *get_optimal_encoder_args("high"),
         "-c:a", "copy",
         output_path
     ]
@@ -872,13 +885,11 @@ def add_cta_overlay(
         f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
 
-    # P5 FIX (2026-08-12): CRF 22 zamiast 18 — ~50% mniejszy plik, YT i tak rekoduje
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
         "-vf", f"{cta_box},{drawtext}",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        "-pix_fmt", "yuv420p",
+        *get_optimal_encoder_args("draft"),
         "-movflags", "+faststart",
         "-c:a", "copy",
         output_path
@@ -907,23 +918,28 @@ def render_short(
     hook_text: str = "",
     peaks: list = None,
     preferred_track: Optional[str] = None,
-    output_filename: str = "lol_short_final.mp4"
+    output_filename: str = "lol_short_final.mp4",
+    combat_segments: list = None,
 ) -> str:
     """
-    Pipeline montażu v5 — Momentum-aware editing:
-      1. Wycięcie fragmentu (Stream Copy)
+    Pipeline montażu v6 — Combat-Segment-Aware editing:
+      1. Wycięcie fragmentów (jump-cut gdy combat_segments dostarczone)
       2. Smart Camera crop (dynamic tracking)
       3. Filtry wizualne (Crop, Scale, Zoom-punch, Speed-ramp + minterpolate)
       4. Muzyka z momentum sync + miksowanie z dźwiękiem gry (amix)
-      5. Dynamiczne napisy kill-by-kill (jeden napis na każdy kill peak)
-      6. Hook overlay (główny hook z AI title)
+      5. Dynamiczne napisy kill-by-kill
+      6. Hook overlay
       7. Subscribe CTA overlay (ostatnie 2s)
+
+    combat_segments: [(start, end), ...] w osi czasu oryginalnego klipu.
+      Gdy podane — każda przerwa miedzy segmentami jest JUMP CUT'em (bieganie usuwane).
+      Gdy None — fallback do pojedynczego okna clip_start→clip_end.
     """
     ensure_temp_dir()
     clip_duration = clip_end - clip_start
 
     print(f"\n{'='*55}")
-    print(f"🎬  LOL EDITOR v3 — {action_type.upper()} | {champion_name} | {clip_duration:.1f}s")
+    print(f"🎬  LOL EDITOR v6 — {action_type.upper()} | {champion_name} | {clip_duration:.1f}s")
     print(f"{'='*55}")
 
     t = lambda name: os.path.join(LOL_TEMP_DIR, name)
@@ -933,18 +949,77 @@ def render_short(
     step5_cta    = t("06_cta.mp4")
     step5        = os.path.join(LOL_TEMP_DIR, output_filename)
 
-    # KROK 1: Wytnij fragment (szybki stream copy)
+    # ── KROK 1: Wycięcie fragmentu / segmentów ────────────────────────────────
     print("\n[1/4] Wycinanie fragmentu...")
-    cut_clip(source_path, clip_start, clip_end, step1)
 
-    # KROK 2: Smart Camera Crop do 9:16 (znajdź ścieżkę)
+    if combat_segments and len(combat_segments) > 1:
+        # ── Multi-segment jump-cut ──────────────────────────────────────────
+        print(f"   ✂️  Jump-cut mode: {len(combat_segments)} segmentów walki")
+        seg_files = []
+        concat_list_path = t("concat_list.txt")
+
+        for i, (seg_s, seg_e) in enumerate(combat_segments):
+            seg_path = t(f"seg_{i:02d}.mp4")
+            cut_clip(source_path, seg_s, seg_e, seg_path)
+            seg_files.append((seg_path, seg_s, seg_e))
+
+        # Zbuduj listę FFmpeg concat demuxer
+        with open(concat_list_path, "w", encoding="utf-8") as cf:
+            for seg_path, _, _ in seg_files:
+                safe = seg_path.replace("\\", "/")
+                cf.write(f"file '{safe}'\n")
+
+        concat_cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", concat_list_path,
+            "-c", "copy",
+            step1
+        ]
+        print(f"   🔗 Łączę {len(seg_files)} segmentów → {os.path.basename(step1)}")
+        r = subprocess.run(concat_cmd, capture_output=True)
+        if r.returncode != 0:
+            err = r.stderr.decode("utf-8", errors="replace")[:400]
+            print(f"   ⚠️  Concat error (fallback do single cut): {err}")
+            cut_clip(source_path, clip_start, clip_end, step1)
+            combat_segments = None  # wyłącz remap peaków
+
+        # ── Remapuj peaks na nową oś czasu po połączeniu ──────────────────
+        if combat_segments:
+            clip_duration = sum(e - s for s, e in combat_segments)
+            clip_start = 0.0
+            clip_end = clip_duration
+            if peaks:
+                remapped = []
+                cursor = 0.0
+                for seg_path, seg_s, seg_e in seg_files:
+                    seg_dur = seg_e - seg_s
+                    for (pk_t, pk_lbl) in (peaks or []):
+                        if seg_s <= pk_t < seg_e:
+                            new_t = cursor + (pk_t - seg_s)
+                            remapped.append((round(new_t, 3), pk_lbl))
+                    cursor += seg_dur
+                if remapped:
+                    print(f"   🗺️  Peaks remapped: {[f'{t:.1f}s:{l}' for t,l in remapped]}")
+                    peaks = remapped
+                    peak_moment = max(0.0, peaks[-1][0] - 0.5)
+    else:
+        cut_clip(source_path, clip_start, clip_end, step1)
+        # Remapuj peaks do czasu lokalnego step1 (0.0 -> clip_duration)
+        if peaks:
+            peaks = [(round(t_k - clip_start, 3), lbl) for (t_k, lbl) in peaks]
+        clip_start = 0.0
+        clip_end = clip_duration
+
+
+    # KROK 2: Smart Camera Crop do 9:16 (znajdź ścieżkę na wyciętym pliku step1)
     print("\n[2/4] Smart Camera crop...")
     crop_x_expr = "-1"   # default: centrum geometryczne
     if use_smart_camera and SMART_CAMERA_AVAILABLE:
         try:
             path_points = find_action_path(
-                source_path,
-                clip_start, clip_end,
+                step1,
+                0.0, clip_duration,
                 source_w=1920, source_h=1080,
                 crop_w=int(1080 * 9 / 16),
                 peaks=peaks or []     # <- kill-snap: champion locked during kills
@@ -956,7 +1031,7 @@ def render_short(
             BANNER_WINDOW = 0.0
             CROP_W = int(1080 * 9 / 16)
             SOURCE_W = 1920
-            kill_times = [t_k - clip_start for (t_k, _) in (peaks or [])]
+            kill_times = [t_k for (t_k, _) in (peaks or [])]
             if kill_times and BANNER_SHIFT > 0:
                 # SESJA 13 FIX: scal nakladajace sie kill windows (MERGE_GAP=1.5s)
                 # Eliminuje 320px round-trip jerk w 0.3-0.4s gapach miedzy TRIPLE/QUADRA/PENTA
@@ -999,8 +1074,8 @@ def render_short(
         except Exception as e:
             print(f"   Blad sledzenia sciezki: {e} — fallback do centrum")
             crop_x = find_action_crop_x(
-                source_path,
-                clip_start, clip_end,
+                step1,
+                0.0, clip_duration,
                 source_w=1920, source_h=1080,
                 crop_w=int(1080 * 9 / 16)
             )
@@ -1016,12 +1091,12 @@ def render_short(
 
     if action_type in ("pentakill", "quadrakill"):
         _zoom_level   = 1.20   # wyraźny zoom-punch
-        _slowmo_speed = 0.45   # 45% tempa = dramatyczne spowolnienie
-        _slowmo_dur   = 5.0    # 5s slow-mo pokrywa ostatnie 2-3 kille
+        _slowmo_speed = 0.50   # 50% tempa = dynamiczne spowolnienie
+        _slowmo_dur   = 1.5    # 1.5s zwolnienia na decydujący cios (bez przeciągania ogona)
     elif action_type in ("triple", "oneshot", "clutch", "outplay"):
         _zoom_level   = 1.18 if weighted_avg > 1500 else 1.15
         _slowmo_speed = 0.48 if weighted_avg > 1500 else 0.50
-        _slowmo_dur   = 2.5
+        _slowmo_dur   = 1.5
     else:
         _zoom_level   = 1.10
         _slowmo_speed = 0.50
@@ -1089,9 +1164,35 @@ def render_short(
     hook_show_start = 0.5   # zawsze pierwsze sekundy — to jest przynęta dla widza
     add_text_overlay(step5_captions, _hook, hook_show_start, final_duration, step5_cta)
 
-    # KROK 7: Subscribe CTA overlay (ostatnie 2 sekundy)
-    print(f"\n[7/7] Subscribe CTA overlay...")
-    add_cta_overlay(step5_cta, final_duration, step5)
+    # KROK 7: CTA overlay (ostatnie 1.5s) — klasyczne wezwanie do subskrypcji
+    _end_cta = "LEAVE A LIKE & SUBSCRIBE FOR MORE!"
+    print(f"\n[7/7] CTA overlay: '{_end_cta}'...")
+    add_cta_overlay(step5_cta, final_duration, step5, cta_text=_end_cta, show_duration=1.5)
+
+    # ── POST-RENDER 15s SNAP ─────────────────────────────────────────────────
+    # Jeśli finalny short wychodzi 15.5–22.0s → przytnij do 15.0s od końca.
+    # Klipy ~15s mają najwyższy priorytet algorytmu YT Shorts.
+    # Trimujemy OD POCZĄTKU (zachowujemy climax/kill na końcu).
+    if 15.5 <= final_duration <= 22.0:
+        step5_15s = step5.replace(".mp4", "_15s.mp4")
+        trim_from_start = final_duration - 15.0
+        cmd_15s = [
+            "ffmpeg", "-y",
+            "-i", step5,
+            "-ss", f"{trim_from_start:.3f}",
+            "-t", "15.0",
+            "-c", "copy",
+            step5_15s
+        ]
+        r15 = subprocess.run(cmd_15s, capture_output=True)
+        if r15.returncode == 0:
+            import shutil as _sh15
+            _sh15.move(step5_15s, step5)
+            final_duration = 15.0
+            print(f"   ⚡ 15s SNAP zastosowany: przycięto -{trim_from_start:.2f}s od początku → 15.0s")
+        else:
+            print(f"   ⚠️  15s SNAP błąd (pomijam): {r15.stderr.decode('utf-8', errors='replace')[:200]}")
+    # ─────────────────────────────────────────────────────────────────────────
 
     print(f"\n{'='*55}")
     print(f"✅  SHORT GOTOWY: {step5}")
