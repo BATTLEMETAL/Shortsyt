@@ -38,10 +38,17 @@ def authorize_channel(profile_name: str):
             credentials = pickle.load(token)
             
     if not credentials or not credentials.valid:
+        refreshed = False
         if credentials and credentials.expired and credentials.refresh_token:
             print(f"🔄 Odświeżanie wygasłego tokenu dla {profile_name}...")
-            credentials.refresh(Request())
-        else:
+            try:
+                credentials.refresh(Request())
+                refreshed = True
+            except Exception as e:
+                print(f"⚠️  Nie udało się odświeżyć tokenu: {e}")
+                print("   Konieczna jest ponowna autoryzacja w przeglądarce.")
+        
+        if not refreshed:
             print(f"🌐 Otwieram przeglądarkę. Zaloguj się na konto Google przygotowane pod kanał {profile_name}...")
             if not os.path.exists(CLIENT_SECRETS_FILE):
                 print(f"❌ KRYTYCZNY BŁĄD: Nie znaleziono pliku {CLIENT_SECRETS_FILE}! Musisz go pobrać z Google Cloud Console.")

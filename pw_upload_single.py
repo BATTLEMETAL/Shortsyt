@@ -16,70 +16,38 @@ from upload_youtube import get_authenticated_service, upload_video
 # ── Konfiguracja ──────────────────────────────────────────────────────────────
 PROFILE_NAME = "prettywoman"
 
-VIDEO_PATH = r"C:\Users\mz100\OneDrive\Pulpit\strona kopia\strona yt\tiktokiprettywoman\snaptik_7616464658181983520_v3.mp4"
+VIDEO_PATH = r"C:\Users\mz100\OneDrive\Pulpit\strona kopia\strona yt\tiktokiprettywoman\snaptik_7646869278918036769_v3.mp4"
 
 # ── Metadane (zgodnie z życzeniem użytkownika) ────────────────────────────────
-TITLE = "ZNASZ TO UCZUCIE? 😂 Afroloki 3 dni roboty... #shorts #afroloki #braiderka"
+TITLE = "Warkocze bokserskie — fryzura idealna na wakacje! 😍 #shorts"
 
 DESCRIPTION = """\
-ZNASZ TO UCZUCIE? 😂
+To jedna z najwygodniejszych i najbardziej efektownych fryzur alternatywnych. Idealnie sprawdzi się na co dzień, na wakacje, treningi, festiwale i wszędzie tam, gdzie chcesz wyglądać pięknie bez codziennego układania włosów. 😍
 
-Kiedy robisz punktowe Afroloki… sama sobie… i nagle okazuje się, że ta fryzura powstaje 3 dni.
-
-Bo przecież każda braiderka wie jak to wygląda…
-👉 trochę po pracy
-👉 trochę przed pracą
-👉 trochę w pracy
-👉 trochę wieczorem na kanapie
-
-I tak chodzisz po mieście z połową głowy zaplecioną, bo dopóki nie skończysz… nie ma opcji odpuścić 😂
-
-Braiderki! Przyznajcie się w komentarzach — też tak robicie swoje włosy?
-
-A teraz pytanie do naszych klientek…
-ZNASZ TO UCZUCIE, kiedy w końcu masz na głowie świeżutkie, sprężyste Afroloki?
-Ten moment kiedy patrzysz w lustro i myślisz:
-„Wow… nie ma nic lepszego!" 😍
-
-Bo dobrze zrobione loki to nie tylko fryzura…
-to pewność siebie, wygoda i efekt WOW każdego dnia ❤️🔥
+Zapraszamy na wszelkiego rodzaju fryzury alternatywne – warkocze, kuce, afroloki, dredloki i wiele innych metamorfoz! ❤️
 
 📍 Salon Kosmetyczny Pretty Woman
 ul. Ofiar Oświęcimskich 28, Świdnica
-📞 788-945-643
+📞 788 945 643
 
-🎓 Prowadzimy również szkolenia z Afroloków dla osób, które chcą nauczyć się tej techniki.
-
-🛍️ Nasze produkty i włosy znajdziesz w sklepie online:
+🛍️ Nasz sklep:
 https://sklep.salon-prettywoman.pl/index.php
 
-#afroloki #afrolokiświdnica #braiderka #braidinghair #warkoloki #warkoczykisyntetyczne \
-#warkoczykiafrykańskie #loczki #kręconewłosy #crochethair #hairextensions \
-#protectivestyles #naturalhairstyles #świdnica #wrocław #wałbrzych \
-#dolnyslask #szkoleniaafroloki #pieknewlosy #shorts"""
+#warkoczebokserskie #braids #fryzuryalternatywne #warkoczyki #afroloki #shorts"""
 
 # ── Tagi własne + sugerowane przez YouTube dla tej niszy ─────────────────────
 TAGS = [
-    "afroloki",               # core niche
-    "afrolokiświdnica",       # lokalne SEO
-    "braiderka",              # engagement – dla braiderek
-    "braidinghair",           # sugerowany YT
-    "braids",                 # sugerowany YT (globalny)
-    "loczki",                 # PL niche
-    "crochethair",            # sugerowany YT
-    "protectivestyles",       # sugerowany YT
-    "naturalhairstyles",      # sugerowany YT
-    "boxbraids",              # sugerowany YT
-    "hairextensions",         # sugerowany YT
-    "hairstyle",              # sugerowany YT
-    "warkoloki",
-    "warkoczykisyntetyczne",
-    "warkoczykiafrykańskie",
-    "krecone wlosy",
-    "swidnica",
-    "wroclaw",
-    "dolnyslask",
-    "szkolenia afroloki",
+    "warkocze bokserskie",
+    "warkocze",
+    "braids",
+    "fryzury alternatywne",
+    "warkoczyki",
+    "afroloki",
+    "dredloki",
+    "metamorfoza",
+    "salon pretty woman",
+    "świdnica",
+    "fryzjer świdnica",
     "shorts",
 ]
 

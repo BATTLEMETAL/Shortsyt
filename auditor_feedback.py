@@ -27,8 +27,30 @@ from datetime import datetime, timezone, timedelta
 # Profil ustawiany przez zmienną środowiskową (domyślnie 'dark_mindset')
 PROFILE_NAME = os.environ.get("SHORTSYT_PROFILE", "dark_mindset")
 
-FEEDBACK_FILE  = f"accounts/{PROFILE_NAME}_auditor_feedback.json"
-WEIGHTS_FILE   = f"accounts/{PROFILE_NAME}_auditor_weights.json"
+FEEDBACK_FILE  = "auditor_feedback.json"
+WEIGHTS_FILE   = "auditor_weights.json"
+
+
+# Migracja danych ze starego formatu (accounts/dark_mindset_*) do nowego (root)
+def _migrate_legacy_files():
+    """Jednorazowa migracja danych ze starych ścieżek profil-specific do root."""
+    import shutil
+    old_feedback = f"accounts/{PROFILE_NAME}_auditor_feedback.json"
+    old_weights  = f"accounts/{PROFILE_NAME}_auditor_weights.json"
+    if os.path.exists(old_feedback) and not os.path.exists(FEEDBACK_FILE):
+        try:
+            shutil.copy2(old_feedback, FEEDBACK_FILE)
+            print(f"   ✅ [MIGRACJA] {old_feedback} → {FEEDBACK_FILE}")
+        except Exception as _me:
+            print(f"   ⚠️  [MIGRACJA] Błąd kopiowania feedback: {_me}")
+    if os.path.exists(old_weights) and not os.path.exists(WEIGHTS_FILE):
+        try:
+            shutil.copy2(old_weights, WEIGHTS_FILE)
+            print(f"   ✅ [MIGRACJA] {old_weights} → {WEIGHTS_FILE}")
+        except Exception as _me:
+            print(f"   ⚠️  [MIGRACJA] Błąd kopiowania weights: {_me}")
+
+_migrate_legacy_files()
 MIN_SAMPLES_FOR_CALIBRATION = 5   # minimalna liczba filmów do kalibracji
 RESULTS_CHECK_AFTER_H = 48        # sprawdź wyniki po 48h (Shorts algo dystrybuuje 48-72h, nie 24h)
 
@@ -132,14 +154,14 @@ def update_real_results(youtube) -> list[dict]:
                 r["checked_at"]      = now.isoformat()
 
                 # Czy prognoza audytu była trafna?
-                # APPROVED + >= 80 views w 48h = trafna (poprz. 30 = fałszywy sukces)
-                # REJECTED + < 80 = trafna
+                # APPROVED + >= 35 views w 48h = trafna (obniżony z 80 — realistyczny dla <100 subs)
+                # REJECTED + < 35 = trafna
                 # Weighted score: uwzględniamy engagement (views x engagement bonus)
                 audit_dec = r.get("audit_decision", "")
                 engagement_bonus = 1.0 + (s["engagement"] / 10)  # 5% eng = x1.5
                 weighted = int(s["views"] * engagement_bonus)
                 r["weighted_score"] = weighted  # zapisz do późniejszej kalibracji
-                APPROVAL_VIEW_THRESHOLD = 80
+                APPROVAL_VIEW_THRESHOLD = 35  # obniżony z 80 — realistyczny dla kanału <100 subs
                 if audit_dec == "APPROVED":
                     r["prediction_ok"] = s["views"] >= APPROVAL_VIEW_THRESHOLD
                 else:
@@ -340,6 +362,26 @@ def _pearson(x: list, y: list) -> float | None:
     if dx == 0 or dy == 0:
         return None
     return round(num / (dx * dy), 3)
+
+
+
+# ─── Pełny cykl feedbacku (update + kalibracja) ──────────────────────────────
+def run_feedback_cycle(youtube) -> dict:
+    """Pełny cykl: aktualizacja wyników z YT → kalibracja wag → raport.
+    Wywoływany automatycznie po każdej sesji agenta dark_psychology.
+    """
+    updated = update_real_results(youtube)
+    weights = {}
+    records = _load_feedback()
+    valid_with_results = [r for r in records if r.get("real_views") is not None]
+    if len(valid_with_results) >= MIN_SAMPLES_FOR_CALIBRATION:
+        weights = recalculate_weights()
+        print(f"   ✅ [FEEDBACK CYCLE] Kalibracja zakończona — {len(valid_with_results)} filmów.")
+    else:
+        remaining = MIN_SAMPLES_FOR_CALIBRATION - len(valid_with_results)
+        print(f"   ℹ️  [FEEDBACK CYCLE] Za mało danych ({len(valid_with_results)}/{MIN_SAMPLES_FOR_CALIBRATION}). "
+              f"Potrzeba jeszcze {remaining} film(ów) z ≥{10} views po 48h.")
+    return {"updated_count": len(updated), "weights": weights}
 
 
 # ─── CLI standalone ───────────────────────────────────────────────────────────

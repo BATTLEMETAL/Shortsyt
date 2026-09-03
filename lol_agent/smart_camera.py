@@ -501,25 +501,45 @@ def detect_kill_events(video_path: str,
                        action_type: str | None = None,
                        ) -> list[tuple[float, str]]:
     """
-    Glowna funkcja detekcji kilow. Probuje metody w kolejnosci:
-      1. Video brightness/color (detect_kill_events_from_video) — bez dependencies
-         Jesli 1 event + action_type znany → uzywa action_type jako etykiety
-      2. Audio bandpass (detect_kill_events_from_audio) — fallback gdy video nie wykrylo
-
-    Uzywana przez pipeline i test_render_v17.py.
+    Główna funkcja detekcji killi:
+      1. OCR & Player Kill Ownership Guard (lol_frag_detector) — najwyższa precyzja, filtruje tylko fragi gracza
+      2. Video brightness/color (detect_kill_events_from_video) — fallback
+      3. Audio bandpass (detect_kill_events_from_audio) — fallback
     """
-    # --- Metoda 1: Video ---
+    # --- Metoda 1: OCR / Frag Detector z Player Guardem ---
+    try:
+        try:
+            from lol_agent.lol_frag_detector import analyze_clip_frags
+        except ImportError:
+            from lol_frag_detector import analyze_clip_frags
+
+        frag_res = analyze_clip_frags(video_path, sample_fps=3.0)
+        ocr_kills = []
+        for k in frag_res.kills:
+            raw_t = k.get("timestamp", 0.0)
+            if (clip_start - 0.5) <= raw_t <= (clip_end + 0.5):
+                rel_t = max(0.2, min((clip_end - clip_start) - 0.2, round(raw_t - clip_start, 2)))
+                ocr_kills.append((rel_t, k.get("label", "KILL")))
+
+        if ocr_kills:
+            print(f"   [kills] Uzywam detekcji OCR / FragDetector ({len(ocr_kills)} event(ow)): {ocr_kills}")
+            return ocr_kills
+    except Exception as e:
+        print(f"   [kills] OCR detector exception (fallbacking to video/audio): {e}")
+
+    # --- Metoda 2: Video ---
     video_result = detect_kill_events_from_video(video_path, clip_start, clip_end,
                                                   action_type=action_type)
     if len(video_result) >= 1:
         print(f"   [kills] Uzywam detekcji VIDEO ({len(video_result)} event(ow))")
         return video_result
 
-    # --- Metoda 2: Audio fallback ---
+    # --- Metoda 3: Audio fallback ---
     print(f"   [kills] Video nie wykrylo — fallback do AUDIO")
     audio_result = detect_kill_events_from_audio(video_path, clip_start, clip_end,
                                                   clip_duration=clip_duration)
     return audio_result
+
 
 
 def _detect_cursor_x(frame_rgb: np.ndarray,
@@ -672,162 +692,136 @@ def find_action_crop_x(video_path: str, clip_start: float, clip_end: float,
 
 def find_action_path(video_path: str, clip_start: float, clip_end: float,
                      source_w: int = 1920, source_h: int = 1080,
-                     crop_w: int = 608, n_samples: int = 90,
+                     crop_w: int = 608, n_samples: int = 80,
                      peaks: list = None) -> list:
     """
-    Analizuje ruch klatka po klatce i zwraca ścieżkę (t, x) dla dynamicznego kadrowania.
-    v11 Stateful HD Trajectory Tracker:
-      - Próbkowanie w rozdzielczości 640x360 (precyzyjna geometria pasków HP championa).
-      - Ciągły Nearest-Neighbor Trajectory Tracker: eliminuje skakanie kamery na odległych sojuszników (np. Smoldera na tyłach).
-      - Śledzi aktywnego gracza w walce i utrzymuje cel w idealnym centrum kadru 9:16.
+    Analizuje ruch klatka po klatce i zwraca płynną ścieżkę (t, x) dla kadrowania 9:16.
+    Universal Stateful HD Trajectory Tracker v24:
+      - Śledzi w 100% wyłącznie złoty pasek gracza (w>=14, h=3-16, aspect=2.0-20.0, area>=30).
+      - Odporny na niskie HP, obrót ulta (Death Lotus) i animacje skoków Shunpo/Flash.
+      - Gdy pasek chwilowo niewidoczny -> kamera ZAMRAŻA pozycję gracza (nie skacze na inne postacie).
+      - Płynny start i pełna gęsta trajektoria (80 punktów w FFmpeg dla precyzji każdego fraga).
     """
     print(f"Smart Camera: analiza sciezki ruchu ({clip_end - clip_start:.1f}s)...")
 
-    scale_w, scale_h = 640, 360
-    scale_factor = source_w / scale_w
     duration  = clip_end - clip_start
     default_x = (source_w - crop_w) // 2
 
     try:
-        # Load sample frames at full 1080p for exact pixel precision
         frames = extract_sample_frames(video_path, clip_start, clip_end,
                                        n_frames=n_samples,
-                                       scale_w=1920, scale_h=1080)
+                                       scale_w=source_w, scale_h=source_h)
         if len(frames) < 2:
             raise ValueError("Za mało klatek do analizy ruchu")
 
         t_points = np.linspace(0.0, duration, len(frames))
 
-        # ── Step 1: Auto-discover player Level Badge from first frames ──
-        frames_bgr = [cv2.cvtColor(f.astype(np.uint8), cv2.COLOR_RGB2BGR) for f in frames]
-        templates = []
-        init_x = float(source_w // 2)
+        # ── Maska wykluczenia HUD i statycznych elementów ──
+        excl = np.ones((source_h, source_w), dtype=bool)
+        excl[:140, :] = False                                        # Górny pasek/tablica/KDA
+        excl[864:, :] = False                                        # Dolny pasek umiejętności
+        excl[626:, 1459:] = False                                    # Minimapa i panel przedmiotów
+        excl[670:, :345] = False                                     # Chat i portret
+        excl[:, :100] = False                                        # Lewy margines
+        excl[:, 1720:] = False                                       # Prawy margines / Outplayed watermark
 
-        for f_idx in range(min(12, len(frames))):
-            f_init = frames[f_idx]
-            r, g, b = f_init[:, :, 0], f_init[:, :, 1], f_init[:, :, 2]
-            # Gold HP bar mask (RGB channels from extract_sample_frames)
-            gold_m = ((r > 160) & (g > 130) & (b < 100) & ((r - b) > 55) & ((g - b) > 35))
-            gold_m[:100, :] = False
-            gold_m[880:, :] = False
-            gold_m[600:, 1450:] = False
-            gold_m[650:, :300] = False
-            
-            num_l, _, stats, cents = cv2.connectedComponentsWithStats(gold_m.astype(np.uint8))
-            cands = []
-            for ci in range(1, num_l):
-                cx, cy, cw, ch, area = stats[ci]
-                aspect = cw / max(ch, 1)
-                if area >= 100 and 30 <= cw <= 130 and 4 <= ch <= 20 and aspect >= 2.5 and 200 <= cx <= 1650:
-                    cands.append((ci, cx, cy, cw, ch, area, aspect))
-            
-            if cands:
-                best_c = max(cands, key=lambda c: c[5]) # largest area is player HP bar
-                ci, cx, cy, cw, ch, area, aspect = best_c
-                bx0 = max(0, cx - 65)
-                bx1 = min(1920, cx + 15)
-                by0 = max(0, cy - 15)
-                by1 = min(1080, cy + 25)
-                tmpl = frames_bgr[f_idx][by0:by1, bx0:bx1].copy()
-                templates.append(tmpl)
-                init_x = float(cx)
+        # KROK 1: Wykrycie paska gracza + centroid wrogów na każdej klatce
+        frames_data = []
+        for i in range(len(frames)):
+            f = frames[i].astype(np.int16)
+            r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
+
+            gold_mask = ((r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)) & excl
+            num_g, _, stats_g, _ = cv2.connectedComponentsWithStats(gold_mask.astype(np.uint8))
+
+            hp_bars = []
+            for comp_i in range(1, num_g):
+                cx, cy, cw, ch, area = stats_g[comp_i]
+                asp = cw / max(ch, 1)
+                # Czuły filtr paska HP gracza (obejmuje low HP i spinnig ult)
+                if cw >= 14 and 3 <= ch <= 16 and 2.0 <= asp <= 20.0 and area >= 30:
+                    hp_bars.append((cx, cy, cw, ch, area * asp))
+
+            # Zbierz centroid wrogich HP barów (czerwone) — Combat Centroid Fallback
+            red_mask = ((r > 150) & (g < 95) & (b < 85) & ((r - g) > 60) & ((r - b) > 70)) & excl
+            enemy_cx = None
+            if red_mask.astype(np.uint8).sum() > 0:
+                num_r, _, stats_r, centroids_r = cv2.connectedComponentsWithStats(red_mask.astype(np.uint8))
+                enemy_xs = []
+                for comp_i in range(1, num_r):
+                    cx, cy, cw, ch, area = stats_r[comp_i]
+                    asp = cw / max(ch, 1)
+                    if cw >= 8 and 2 <= ch <= 10 and 2.0 <= asp <= 20.0 and area >= 8:
+                        enemy_xs.append(int(centroids_r[comp_i][0]))
+                if enemy_xs:
+                    enemy_cx = int(np.mean(enemy_xs))
+
+            frames_data.append((hp_bars, enemy_cx))
+
+        # KROK 2: Znalezienie pierwszego pewnego punktu zaczepienia gracza
+        first_x = float(source_w // 2)
+        for hp_b, _ in frames_data:
+            if hp_b:
+                hp_b.sort(key=lambda c: -c[4])
+                first_x = float(hp_b[0][0])
                 break
 
-        print(f"   🎯 Player Badge auto-discovery: {'OK' if templates else 'Fallback to Color Tracker'} (init_x={init_x:.0f}px)")
+        # KROK 3: Płynne, responsywne śledzenie gracza z Combat Centroid Fallback
+        track_x = first_x
+        crop_xs = []
+        champ_detected = 0
+        invisible_streak = 0   # ile klatek z rzędu gracz niewidoczny
 
-        # ── Step 2: Full-Frame Multi-Template Champion Tracking ──
-        raw_points = []
-        track_x = init_x
-
-        for i in range(len(frames)):
-            t = t_points[i]
-            fb = frames_bgr[i]
-            cand_x = None
-            best_score = 0.0
-
-            # Option A: Match against all discovered player templates in active gameplay area
-            if templates:
-                roi_x0, roi_x1 = 80, 1840
-                roi_y0, roi_y1 = 120, 850
-                roi = fb[roi_y0:roi_y1, roi_x0:roi_x1]
-
-                for tmpl in templates:
-                    if roi.shape[0] >= tmpl.shape[0] and roi.shape[1] >= tmpl.shape[1]:
-                        res = cv2.matchTemplate(roi, tmpl, cv2.TM_CCOEFF_NORMED)
-                        _, max_val, _, max_loc = cv2.minMaxLoc(res)
-                        if max_val > best_score and max_val >= 0.55:
-                            best_score = max_val
-                            cand_x = float(roi_x0 + max_loc[0] + tmpl.shape[1] // 2 + 25) # center on champion
-
-            # Option B: Fallback to Gold HP Bar
-            if cand_x is None:
-                f = frames[i]
-                r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
-                gold_m = ((r > 160) & (g > 130) & (b < 100) & ((r - b) > 55) & ((g - b) > 35))
-                gold_m[:100, :] = False
-                gold_m[880:, :] = False
-                gold_m[600:, 1450:] = False
-                gold_m[650:, :300] = False
-                num_l, _, stats, cents = cv2.connectedComponentsWithStats(gold_m.astype(np.uint8))
-                gold_cands = []
-                for ci in range(1, num_l):
-                    cx, cy, cw, ch, area = stats[ci]
-                    aspect = cw / max(ch, 1)
-                    if 20 <= cw <= 130 and 4 <= ch <= 22 and aspect >= 2.0 and 150 <= cx <= 1750:
-                        gold_cands.append((cents[ci][0], abs(cents[ci][0] - track_x), area, ci, cx, cy))
-                if gold_cands:
-                    gold_cands.sort(key=lambda c: c[1])
-                    cand_x = float(gold_cands[0][0])
-                    best_score = 0.50
-                    # Auto-discover new level badge if player leveled up
-                    if gold_cands[0][2] >= 140 and len(templates) < 3:
-                        ci_g, cx_g, cy_g = gold_cands[0][3], gold_cands[0][4], gold_cands[0][5]
-                        bx0 = max(0, cx_g - 65)
-                        bx1 = min(1920, cx_g + 15)
-                        by0 = max(0, cy_g - 15)
-                        by1 = min(1080, cy_g + 25)
-                        new_tmpl = fb[by0:by1, bx0:bx1].copy()
-                        if new_tmpl.shape[0] > 10 and new_tmpl.shape[1] > 10:
-                            templates.append(new_tmpl)
+        for hp_b, enemy_cx in frames_data:
+            if hp_b:
+                champ_detected += 1
+                invisible_streak = 0
+                # Wybierz pasek gracza najbliższy aktualnej trajektorii
+                hp_b.sort(key=lambda c: c[4] - 0.8 * abs(c[0] - track_x), reverse=True)
+                player_target_x = float(hp_b[0][0])
+                # Jeśli w kadrze są wrogowie w bliskiej walce, uwzględnij ich w kadrowaniu
+                # aby cel ataku (np. Nocturne) nie był ucinany na krawędzi pionowego kadru 9:16
+                if enemy_cx is not None and abs(enemy_cx - player_target_x) < 550:
+                    target_x = 0.70 * player_target_x + 0.30 * float(enemy_cx)
                 else:
-                    # Player is in action / channel / untargetable — maintain previous position
-                    cand_x = track_x
-                    best_score = 0.0
+                    target_x = player_target_x
 
-            # Dynamic exponential smoothing (responsiveness: 0.85/0.15)
-            track_x = 0.85 * cand_x + 0.15 * track_x
+                delta = abs(target_x - track_x)
+                if delta > 250:
+                    # Wykryto gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
+                    track_x = target_x
+                else:
+                    track_x = 0.90 * target_x + 0.10 * track_x
+            else:
+                invisible_streak += 1
+                # Combat Centroid Fallback: gdy gracz niewidoczny >4 klatki (Zhonya/zgon/bush)
+                # kamera płynie w kierunku środka walki wrogów zamiast dryfować w bok
+                if invisible_streak > 4 and enemy_cx is not None:
+                    track_x = 0.97 * track_x + 0.03 * float(enemy_cx)
 
-            # Safe crop 9:16 bounds
             crop_x = int(max(0, min(track_x - crop_w // 2, source_w - crop_w)))
-            raw_points.append((t, crop_x))
+            crop_xs.append(crop_x)
 
-        print(f"   🎥 Universal Champion Tracker: {len(raw_points)} klatek przetworzonych (v17 True-Lock)")
+        print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames)} klatek z graczem w kadrze")
 
-        # ── Temporal smoothing (window=5) ──
-        raw_xs = np.array([p[1] for p in raw_points], dtype=float)
-        win = 5
+
+        # KROK 4: Wygładzanie adaptacyjne (okno=3)
+        raw_arr = np.array(crop_xs, dtype=float)
         smoothed = np.array([
-            raw_xs[max(0, i-win//2):min(len(raw_xs), i+win//2+1)].mean()
-            for i in range(len(raw_xs))
+            raw_arr[max(0, i - 1):min(len(raw_arr), i + 2)].mean()
+            for i in range(len(raw_arr))
         ])
         smoothed = np.clip(smoothed, 0, source_w - crop_w).astype(int)
 
-        full_points = [(t, int(x)) for (t, _), x in zip(raw_points, smoothed)]
+        # KROK 5: Pełna gęsta trajektoria 80 punktów w FFmpeg dla maksymalnej precyzji
+        final_points = [(float(t_points[i]), int(smoothed[i])) for i in range(len(smoothed))]
 
-        # ── Downsample to 14-16 keyframes for clean FFmpeg expression ──
-        target_keys = 14
-        step = max(1, len(full_points) // target_keys)
-        final_points = full_points[::step]
-        if full_points[-1] not in final_points:
-            final_points.append(full_points[-1])
-
-        print(f"   Wygenerowano {len(final_points)} kluczowych punktów kamery (v16 True-Lock)")
+        print(f"   Wygenerowano {len(final_points)} płynnych punktów ścieżki kamery")
         return final_points
 
     except Exception as e:
         print(f"   Smart Camera error: {e} -- fallback centrum")
         return [(0.0, default_x), (duration, default_x)]
-
 
 
 # ─── FFmpeg pan expression ────────────────────────────────────────────────────

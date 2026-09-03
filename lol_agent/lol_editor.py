@@ -9,11 +9,18 @@ import subprocess
 import glob
 import shutil
 from typing import Optional
-from lol_config import (
-    LOL_MUSIC_DIR, LOL_TEMP_DIR,
-    OUTPUT_WIDTH, OUTPUT_HEIGHT, OUTPUT_FPS,
-    MUSIC_VOLUME, GAME_AUDIO_VOLUME, SHORT_MAX_DURATION, SMOOTH_SLOWMO
-)
+try:
+    from lol_agent.lol_config import (
+        LOL_MUSIC_DIR, LOL_TEMP_DIR,
+        OUTPUT_WIDTH, OUTPUT_HEIGHT, OUTPUT_FPS,
+        MUSIC_VOLUME, GAME_AUDIO_VOLUME, SHORT_MAX_DURATION, SMOOTH_SLOWMO
+    )
+except ImportError:
+    from lol_config import (
+        LOL_MUSIC_DIR, LOL_TEMP_DIR,
+        OUTPUT_WIDTH, OUTPUT_HEIGHT, OUTPUT_FPS,
+        MUSIC_VOLUME, GAME_AUDIO_VOLUME, SHORT_MAX_DURATION, SMOOTH_SLOWMO
+    )
 import json
 
 def get_performance_insights() -> dict:
@@ -30,19 +37,27 @@ def get_performance_insights() -> dict:
 
 # librosa beat detector — auto-detects drop from any MP3
 try:
-    from lol_beat_detector import get_drop_time as _get_drop_time
+    from lol_agent.lol_beat_detector import get_drop_time as _get_drop_time
     BEAT_DETECTOR_OK = True
 except ImportError:
-    BEAT_DETECTOR_OK = False
-    _get_drop_time = None
+    try:
+        from lol_beat_detector import get_drop_time as _get_drop_time
+        BEAT_DETECTOR_OK = True
+    except ImportError:
+        BEAT_DETECTOR_OK = False
+        _get_drop_time = None
 
 # Smart camera — import z obsługą błędu jeśli brak numpy/PIL
 try:
-    from smart_camera import find_action_crop_x, find_action_path, generate_ffmpeg_pan_expression
+    from lol_agent.smart_camera import find_action_crop_x, find_action_path, generate_ffmpeg_pan_expression
     SMART_CAMERA_AVAILABLE = True
 except ImportError:
-    SMART_CAMERA_AVAILABLE = False
-    print("⚠️  Smart camera niedostępna (brak numpy/PIL) — używam centrum")
+    try:
+        from smart_camera import find_action_crop_x, find_action_path, generate_ffmpeg_pan_expression
+        SMART_CAMERA_AVAILABLE = True
+    except ImportError:
+        SMART_CAMERA_AVAILABLE = False
+        print("⚠️  Smart camera niedostępna (brak numpy/PIL) — używam centrum")
 
 # Hardware acceleration & GPU auto-detection
 try:
@@ -269,48 +284,22 @@ def apply_editor_effects(input_path: str, output_path: str,
     normal_crop = f"crop={crop_w}:{crop_h}:'{crop_x_expr}':0"
 
     segs = []
-    # Wykryj 'dead air' / chase gaps (> 9.0s) pomiędzy killami (np. 12s biegania między Quadra a Penta)
-    # Zabezpieczenie: NIE przyspieszaj normalnych wymian / trade'ów (5-7s) — widz musi widzieć całą walkę!
-    chase_gaps = []
-    if not (intermediate_peaks is not None and getattr(apply_editor_effects, "_in_combat_seg_mode", False)):
-        valid_intermediate = [p for p in (intermediate_peaks or []) if 0.5 < p < peak_moment - 1.0]
-        all_pks = sorted(valid_intermediate + [peak_moment])
-        for p_idx in range(len(all_pks) - 1):
-            p_curr = all_pks[p_idx]
-            p_next = all_pks[p_idx + 1]
-            if (p_next - p_curr) > 9.0:  # Tylko gigantyczne przerwy >9s (bieg przez rzekę/bazę)
-                c_start = p_curr + 1.5
-                c_end = max(c_start + 1.0, p_next - 2.0)
-                if c_end > c_start + 2.0:
-                    chase_gaps.append((c_start, c_end))
-
-    # Segmenty przed głównym peakiem (z uwzględnieniem ewentualnego chase fast-forward 2.8x)
-    cur_t = t0
-    if chase_gaps:
-        print(f"⚡ Chase fast-forward active for gaps (>9s): {chase_gaps}")
-        for (c_start, c_end) in chase_gaps:
-            if c_start > cur_t + 0.05:
-                segs.append({"start": cur_t, "end": min(c_start, t1), "speed": 1.0, "crop": normal_crop})
-            if c_end > c_start and c_start < t1:
-                segs.append({"start": c_start, "end": min(c_end, t1), "speed": 2.8, "crop": normal_crop})
-            cur_t = max(cur_t, c_end)
-        if t1 > cur_t + 0.05:
-            segs.append({"start": cur_t, "end": t1, "speed": 1.0, "crop": normal_crop})
-    elif t1 > t0 + 0.05:
+    # Segment 1: Naturalny, dynamiczny przebieg walki (1.0x, 60 FPS)
+    if t1 > t0 + 0.05:
         segs.append({"start": t0, "end": t1, "speed": 1.0, "crop": normal_crop})
 
-    # Segment peak akcji: slow-mo + zoom-punch (PENTA)
+    # Segment 2: Kulminacyjny decydujący cios (slow-mo + subtelny zoom-punch na gracza)
     if t2 > t1 + 0.05:
         segs.append({
             "start": t1, "end": t2, "speed": slowmo_speed,
             "crop": f"crop={crop_w_zoom}:{crop_h_zoom}:'{crop_x_expr_zoom}':{crop_y_zoom}"
         })
 
-    # Segment po-peak: slow-mo bez zoomu
+    # Segment 3: Płynne wyjście ze spowolnienia (slow-mo bez zoomu)
     if t3 > t2 + 0.05:
         segs.append({"start": t2, "end": t3, "speed": slowmo_speed, "crop": normal_crop})
 
-    # Reszta klipu: 1x
+    # Segment 4: Finisz i zakończenie akcji w tempie 1.0x
     if t4 > t3 + 0.05:
         segs.append({"start": t3, "end": t4, "speed": 1.0, "crop": normal_crop})
 
@@ -634,17 +623,50 @@ def add_dynamic_captions(
             caption_items[i]["end"] = max(caption_items[i]["start"] + 0.3, next_start - 0.05)
 
     drawtext_filters = []
-    for item in caption_items:
+    total_kills = len(caption_items)
+
+    for idx, item in enumerate(caption_items):
         t_start = item["start"]
         t_end   = item["end"]
         clean_label = item["label"]
         style = item["style"]
 
-        # P3 FIX: tło drawbox pod kill label
-        # UWAGA: drawbox NIE ma dostępu do text_w (tylko drawtext ma).
-        # Używamy iw (frame width) i ih (frame height) zamiast w/h.
-        # UWAGA2: FFmpeg nie obsługuje // (Python floor div) — używaj trunc()
-        # box_w = przybliżona szerokość etykiety (size * znaki * 0.7), min 400px
+        # ── A. Dynamic Kill Streak Counter HUD (np. [ 💀 1 / 3 ] -> [ 👑 TRIPLE ]) ──
+        if total_kills >= 2:
+            is_final_kill = (idx == total_kills - 1)
+            hud_text = f"KILL {idx + 1}/{total_kills}" if not is_final_kill else f"FINAL KILL {idx + 1}/{total_kills}"
+            hud_color = "0xFFD700" if is_final_kill else ("0xFFA500" if idx > 0 else "white")
+            hud_box_w = 340 if is_final_kill else 260
+            hud_box_h = 44
+            hud_y_pos = "trunc(ih*0.13)"
+
+            hud_dbox = (
+                f"drawbox="
+                f"x=trunc((iw-{hud_box_w})/2)"
+                f":y={hud_y_pos}"
+                f":w={hud_box_w}"
+                f":h={hud_box_h}"
+                f":color=black@0.65"
+                f":t=fill"
+                f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
+            )
+            hud_dt = (
+                f"drawtext="
+                f"fontfile='{font_safe}'"
+                f":text='{hud_text}'"
+                f":x=(w-text_w)/2"
+                f":y=h*0.135"
+                f":fontsize=32"
+                f":fontcolor={hud_color}"
+                f":borderw=3"
+                f":bordercolor=black"
+                f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
+                f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
+            )
+            drawtext_filters.append(hud_dbox)
+            drawtext_filters.append(hud_dt)
+
+        # ── B. Główny Kill Banner w strefie centralnej ────────────────────────
         box_h = style['size'] + 20
         approx_box_w = min(max(int(style['size'] * max(len(clean_label), 6) * 0.72), 400), 1020)
         box_x_expr = f"trunc((iw-{approx_box_w})/2)"
@@ -664,7 +686,6 @@ def add_dynamic_captions(
             f"fontfile='{font_safe}'"
             f":text='{clean_label}'"
             f":x=(w-text_w)/2"
-            # Y=0.55 — bezpieczna strefa Shorts (powyżej zasłoniętego UI dolnego pasa)
             f":y=h*0.55"
             f":fontsize={style['size']}"
             f":fontcolor={style['color']}"
@@ -675,7 +696,19 @@ def add_dynamic_captions(
         )
         drawtext_filters.append(dbox)
         drawtext_filters.append(dt)
-        print(f"   🗨️  {label} @ {t_in_clip:.1f}s — rozmiar {style['size']}px")
+        print(f"   🗨️  {clean_label} (kill {idx+1}/{total_kills}) @ {t_in_clip:.1f}s — {style['size']}px")
+
+    # ── C. Neon Loop Progress Scrubber (Złoty pasek na dole pod zapętlenie) ─────
+    progress_bar = (
+        f"drawbox="
+        f"x=0"
+        f":y=ih-5"
+        f":w='trunc(iw*min(1.0,t/{max(0.1, video_duration):.2f}))'"
+        f":h=5"
+        f":color=0xC89B3C@0.90"
+        f":t=fill"
+    )
+    drawtext_filters.append(progress_bar)
 
     if not drawtext_filters:
         import shutil as _sh
@@ -691,7 +724,7 @@ def add_dynamic_captions(
         "-c:a", "copy",
         output_path
     ]
-    print(f"🎬 Renderuję {len(drawtext_filters)} dynamicznych napisów...")
+    print(f"🎬 Renderuję {len(drawtext_filters)} filtrów wizualnych (HUD, banery, neon progress bar)...")
     r = subprocess.run(cmd, capture_output=True)
     if r.returncode != 0:
         err = r.stderr.decode('utf-8', errors='replace')[:600]
@@ -705,7 +738,9 @@ def merge_music(video_path: str, music_path: Optional[str],
                 output_path: str, video_duration: float,
                 video_peak_time: float,
                 game_audio_path: Optional[str] = None,
-                kill_peaks: list = None) -> str:
+                kill_peaks: list = None,
+                music_volume: Optional[float] = None,
+                game_volume: Optional[float] = None) -> str:
     """Nakłada muzykę i miesza ją z oryginalnym dźwiękiem gry.
 
     video_path      = wideo bez audio (step4 po apply_editor_effects)
@@ -748,31 +783,35 @@ def merge_music(video_path: str, music_path: Optional[str],
 
     if has_game_audio and GAME_AUDIO_VOLUME > 0.0:
         # ── Miksuj dźwięk gry + muzykę przez amix ──────────────────────────────────
-        game_vol  = GAME_AUDIO_VOLUME
-        music_vol = MUSIC_VOLUME
+        game_vol  = game_volume if game_volume is not None else GAME_AUDIO_VOLUME
+        music_vol = music_volume if music_volume is not None else MUSIC_VOLUME
 
-        # Generuj dynamiczny boost audio gry przy kilach (po loudnorm = bez kompensacji)
+        # Generuj dynamiczny boost audio gry przy killach (krzyk, announcer, uderzenie czaru)
         def _game_boost_expr(base, peaks):
             if not peaks:
-                return str(base)
+                return f"{base:.2f}"
             parts = []
             for t, label in (peaks or []):
-                dur   = 1.5 if label == "PENTAKILL" else 1.0
-                boost = 3.0 if label == "PENTAKILL" else 2.5
+                dur = 1.6 if "PENTA" in label else (1.4 if "QUADRA" in label else 1.1)
+                boost = 3.2 if "PENTA" in label else 2.4
                 parts.append(f"between(t,{t:.2f},{t+dur:.2f})*{boost-1:.1f}")
-            return f"min(3.0,{base:.2f}*(1+{'+ '.join(parts)}))"
+            if not parts:
+                return f"{base:.2f}"
+            return f"min(3.5,{base:.2f}*(1+{'+'.join(parts)}))"
 
-        # Wycisz muzykę podczas PENTAKILL żeby głos announcera byl slyszalny
+        # Dynamiczne wyciszanie muzyki (sidechain ducking) na KAŻDYM killu
         def _music_duck_expr(base, peaks):
             if not peaks:
-                return str(base)
+                return f"{base:.2f}"
             duck_parts = []
             for t, label in (peaks or []):
-                if label == "PENTAKILL":
-                    duck_parts.append(f"between(t,{t:.2f},{t+1.8:.2f})*0.7")
+                dur = 1.6 if "PENTA" in label else 1.2
+                duck_factor = 0.65 if "PENTA" in label else 0.45
+                duck_parts.append(f"between(t,{t:.2f},{t+dur:.2f})*{duck_factor:.2f}")
             if not duck_parts:
-                return str(base)
-            return f"max(0.05,{base:.2f}*(1-{'- '.join(duck_parts)}))"
+                return f"{base:.2f}"
+            combined = "+".join(duck_parts)
+            return f"max(0.10,{base:.2f}*(1-min(0.70,{combined})))"
 
         game_boost = _game_boost_expr(game_vol, kill_peaks)
         music_duck  = _music_duck_expr(music_vol, kill_peaks)
@@ -857,27 +896,24 @@ def add_cta_overlay(
     t_start = max(0.0, video_duration - show_duration)
     t_end   = video_duration
 
-    # P4 FIX (2026-08-12): tło drawbox pod CTA żeby tekst nie ginął w jasnych scenach
-    # UWAGA: w drawbox używamy iw/ih (frame width/height) zamiast w/h
-    # bo w i h są nazwami parametrów drawbox i kolidują z wyrażeniami.
+    # Dolna bezpieczna strefa (y=ih*0.74) — nad HUDem gracza, nie zasłania banerów killi u góry
     cta_box = (
         f"drawbox="
         f"x=0"
-        f":y=ih*0.10"
+        f":y=ih*0.74"
         f":w=iw"
-        f":h=ih*0.10"
+        f":h=ih*0.08"
         f":color=black@0.50"
         f":t=fill"
         f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
-    # Górna bezpieczna strefa (y=h*0.08) — widoczna na wszystkich telefonach
     drawtext = (
         f"drawtext="
         f"fontfile='{font_safe}'"
         f":text='{clean_cta}'"
         f":x=(w-text_w)/2"
-        f":y=h*0.14"  # poniżej UI YouTube Shorts (Back/Search/Camera są w górnych 10%)
-        f":fontsize=65"
+        f":y=h*0.76"
+        f":fontsize=55"
         f":fontcolor=white"
         f":borderw=4"
         f":bordercolor=black"
@@ -987,16 +1023,23 @@ def render_short(
         # ── Remapuj peaks na nową oś czasu po połączeniu ──────────────────
         if combat_segments:
             clip_duration = sum(e - s for s, e in combat_segments)
+            orig_clip_start = clip_start
             clip_start = 0.0
             clip_end = clip_duration
             if peaks:
                 remapped = []
                 cursor = 0.0
+                # Sprawdź czy peaks są względne do początku całego klipu
+                is_relative = (peaks[0][0] < orig_clip_start)
+                norm_peaks = [
+                    (round(orig_clip_start + pk_t, 3), pk_lbl) if is_relative else (pk_t, pk_lbl)
+                    for (pk_t, pk_lbl) in peaks
+                ]
                 for seg_path, seg_s, seg_e in seg_files:
                     seg_dur = seg_e - seg_s
-                    for (pk_t, pk_lbl) in (peaks or []):
-                        if seg_s <= pk_t < seg_e:
-                            new_t = cursor + (pk_t - seg_s)
+                    for (abs_pk_t, pk_lbl) in norm_peaks:
+                        if seg_s <= abs_pk_t <= seg_e:
+                            new_t = cursor + (abs_pk_t - seg_s)
                             remapped.append((round(new_t, 3), pk_lbl))
                     cursor += seg_dur
                 if remapped:
@@ -1084,26 +1127,23 @@ def render_short(
     # KROK 3: Zastosuj efekty wizualne — parametry dopasowane do wagi akcji
     print("\n[3/4] Nakładanie efektów (crop, zoom, speed ramp)...")
 
-    # Dynamiczna adaptacja parametrów na podstawie najnowszych wniosków (performance insights)
-    insights = get_performance_insights()
-    act_stats = insights.get(action_type, {})
-    weighted_avg = act_stats.get("weighted_avg", act_stats.get("avg_views", 0))
+    # Załaduj parametry z aktywnego profilu (Ekstremalnie Szybkie / Zbalansowane / Cinematic)
+    try:
+        from lol_agent.tuning_manager import get_pacing_parameters
+    except ImportError:
+        try:
+            from tuning_manager import get_pacing_parameters
+        except ImportError:
+            get_pacing_parameters = lambda: {}
 
-    if action_type in ("pentakill", "quadrakill"):
-        _zoom_level   = 1.20   # wyraźny zoom-punch
-        _slowmo_speed = 0.50   # 50% tempa = dynamiczne spowolnienie
-        _slowmo_dur   = 1.5    # 1.5s zwolnienia na decydujący cios (bez przeciągania ogona)
-    elif action_type in ("triple", "oneshot", "clutch", "outplay"):
-        _zoom_level   = 1.18 if weighted_avg > 1500 else 1.15
-        _slowmo_speed = 0.48 if weighted_avg > 1500 else 0.50
-        _slowmo_dur   = 1.5
-    else:
-        _zoom_level   = 1.10
-        _slowmo_speed = 0.50
-        _slowmo_dur   = 1.5
+    tuning_p = get_pacing_parameters()
+    _zoom_level   = float(tuning_p.get("zoom_aggression", 1.20))
+    _slowmo_dur   = float(tuning_p.get("slowmo_duration", 1.4))
+    _music_vol    = float(tuning_p.get("music_balance", 0.85))
+    _game_vol     = float(tuning_p.get("game_sound_balance", 0.65))
+    _slowmo_speed = 0.50
 
-    if weighted_avg > 0:
-        print(f"   💡 Insights ({action_type}): weighted avg {weighted_avg} views -> zoom={_zoom_level}x, slowmo={_slowmo_speed}x ({_slowmo_dur}s)")
+    print(f"   ⚙️  Profil montażu ({tuning_p.get('id', 'default')}): zoom={_zoom_level:.2f}x, slowmo={_slowmo_dur:.1f}s, muzyka={int(_music_vol*100)}%, gra={int(_game_vol*100)}%")
 
     # Intermediate peaks: wszystkie kille PRZED ostatnim (PENTA) -> mini slow-mo 0.8x/0.5s
     _all_kill_rel = sorted([t_k - clip_start for (t_k, _) in (peaks or [])])
@@ -1130,7 +1170,8 @@ def render_short(
     # Przekazuj step1 (surowy wycinek z audio gry) jako game_audio_path
     # step4 nie ma audio (apply_editor_effects mapuje tylko [v_final])
     merge_music(step4, music, step5_music, final_duration, peak_moment,
-                game_audio_path=step1, kill_peaks=peaks or [])
+                game_audio_path=step1, kill_peaks=peaks or [],
+                music_volume=_music_vol, game_volume=_game_vol)
 
     # KROK 5: Dynamiczne napisy kill-by-kill
     _peaks = peaks or []

@@ -10,6 +10,8 @@ import {
   Flame,
   Radio,
   SlidersHorizontal,
+  Brain,
+  Calendar,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -21,9 +23,11 @@ export default function Sidebar({ backendConnected, pipelineRunning = false }: S
   const navItems = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/clips', label: 'Studio Klipów', icon: Film, badge: 'Drop' },
+    { to: '/calendar', label: 'Kalendarz & Sloty', icon: Calendar, badge: 'Peak ⚡' },
     { to: '/render', label: 'Render Monitor', icon: Cpu, activeGlow: pipelineRunning },
     { to: '/outputs', label: 'Biblioteka Shorts', icon: Video },
-    { to: '/analytics', label: 'Analityka ROI', icon: BarChart3 },
+    { to: '/analytics', label: 'Analityka Kanału', icon: BarChart3 },
+    { to: '/dark', label: 'Strategia & Wnioski', icon: Brain, badge: 'Dwannellenga' },
     { to: '/tuning', label: 'Styl & Feedback', icon: SlidersHorizontal },
     { to: '/settings', label: 'Ustawienia', icon: Settings },
   ];

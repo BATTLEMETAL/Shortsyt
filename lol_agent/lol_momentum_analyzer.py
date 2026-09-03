@@ -44,39 +44,33 @@ except ImportError:
 
 # Regiony OCR LoL:
 # 1. Główny złoty baner na środku góry ekranu (Double/Triple/Quadra/Pentakill, Ace, Shutdown)
-KILL_BANNER_REGION = (0.12, 0.36, 0.22, 0.78)
+KILL_BANNER_REGION = (0.04, 0.28, 0.18, 0.82)
 # 2. Kill feed w prawym górnym rogu
-KILL_FEED_REGION   = (0.04, 0.24, 0.68, 0.98)
+KILL_FEED_REGION   = (0.04, 0.25, 0.65, 0.98)
+# 3. Chat / kill announcement log w lewym dolnym rogu
+CHAT_LOG_REGION    = (0.72, 0.96, 0.04, 0.40)
 
 # Próbkowanie klatek
 SAMPLE_EVERY_N_FRAMES = 4   # co 4 klatki (~15fps próbek przy 60fps wideo)
 OCR_EVERY_N_FRAMES    = 8   # OCR co 8 klatek (~7.5 próbek/s) — tekst kill trwa min 1.5s więc i tak trafimy
 
-# Kill text keywords and weights (English LoL client)
-KILL_KEYWORDS: Dict[str, Tuple[int, str]] = {
-    "pentakill":     (100, "PENTAKILL"),
-    "penta kill":    (100, "PENTAKILL"),
-    "penta":         (95,  "PENTAKILL"),
-    "quadra kill":   (80,  "QUADRAKILL"),
-    "quadrakill":    (80,  "QUADRAKILL"),
-    "quadra":        (70,  "QUADRAKILL"),
-    "triple kill":   (60,  "TRIPLE KILL"),
-    "triplekill":    (60,  "TRIPLE KILL"),
-    "triple":        (50,  "TRIPLE KILL"),
-    "double kill":   (40,  "DOUBLE KILL"),
-    "doublekill":    (40,  "DOUBLE KILL"),
-    "double":        (30,  "DOUBLE KILL"),
-    "first blood":   (35,  "FIRST BLOOD"),
-    "shut down":     (35,  "SHUTDOWN"),
-    "shutdown":      (35,  "SHUTDOWN"),
-    "has been slain":(25,  "KILL"),
-    "slain":         (20,  "KILL"),
-    "killing spree": (25,  "KILLING SPREE"),
-    "dominating":    (30,  "UNSTOPPABLE"),
-    "unstoppable":   (40,  "UNSTOPPABLE"),
-    "legendary":     (50,  "LEGENDARY"),
-    "godlike":       (60,  "GODLIKE"),
-}
+import re as _re_init
+
+# Kill text regex patterns and weights (covers standard client and OCR font variations)
+KILL_PATTERNS: List[Tuple[object, Tuple[int, str]]] = [
+    (_re_init.compile(r'penta(?:kill|kut|kit|kil|ktl|\s*kill)?', _re_init.I), (100, "PENTAKILL")),
+    (_re_init.compile(r'quadra(?:kill|kut|kit|kil|ktl|\s*kill)?', _re_init.I), (80,  "QUADRAKILL")),
+    (_re_init.compile(r'triple(?:kill|kut|kit|kil|ktl|\s*kill|\s*kut|\s*kit)?', _re_init.I), (60,  "TRIPLE KILL")),
+    (_re_init.compile(r'double(?:kill|kut|kit|kil|ktl|\s*kill|\s*kut|\s*kit)?', _re_init.I), (40,  "DOUBLE KILL")),
+    (_re_init.compile(r'first\s*blood', _re_init.I), (35,  "FIRST BLOOD")),
+    (_re_init.compile(r'shut\s*down|shutdown', _re_init.I), (35,  "SHUTDOWN")),
+    (_re_init.compile(r'unstoppable', _re_init.I), (40,  "UNSTOPPABLE")),
+    (_re_init.compile(r'dominat(?:ing|ion)?', _re_init.I), (30,  "UNSTOPPABLE")),
+    (_re_init.compile(r'godlike', _re_init.I), (60,  "GODLIKE")),
+    (_re_init.compile(r'legendary', _re_init.I), (50,  "LEGENDARY")),
+    (_re_init.compile(r'killing\s*spree', _re_init.I), (25,  "KILLING SPREE")),
+    (_re_init.compile(r'(?:has\s*slain|slain|you\s*have\s*slain)', _re_init.I), (25,  "KILL")),
+]
 
 # Wagi sygnałów w finalnej krzywej momentum
 W_MOTION = 0.35
@@ -205,8 +199,8 @@ def _quick_kill_color_check(roi_hsv: np.ndarray) -> Tuple[bool, np.ndarray]:
 
 def _detect_kill_text_ocr(frame: np.ndarray) -> Tuple[float, str]:
     """
-    Uruchamia OCR na górnym regionie klatki (baner centralny + kill feed).
-    Wykorzystuje binaryzację luminancji (biały/złoty tekst) + wzorce multikilli i nagród za złoto.
+    Uruchamia OCR na kluczowych regionach klatki (baner centralny, kill feed, chat log).
+    Wykorzystuje binaryzację luminancji + regexy na multikille i komunikaty zabójstw.
     """
     if not OCR_AVAILABLE:
         return 0.0, ""
@@ -215,10 +209,11 @@ def _detect_kill_text_ocr(frame: np.ndarray) -> Tuple[float, str]:
 
     h, w = frame.shape[:2]
 
-    # Sprawdź kolejno 1. Banner centralny (główny kill/multikill), 2. Kill feed
+    # Sprawdź kolejno: 1. Banner centralny, 2. Kill feed, 3. Chat log
     regions = [
         KILL_BANNER_REGION,
         KILL_FEED_REGION,
+        CHAT_LOG_REGION,
     ]
 
     for reg in regions:
@@ -228,14 +223,15 @@ def _detect_kill_text_ocr(frame: np.ndarray) -> Tuple[float, str]:
         xe = int(w * reg[3])
         roi = frame[ys:ye, xs:xe]
 
-        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        has_color, mask = _quick_kill_color_check(hsv)
-        if not has_color:
-            continue
+        if reg != CHAT_LOG_REGION:
+            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+            has_color, mask = _quick_kill_color_check(hsv)
+            if not has_color:
+                continue
 
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        # Binaryzacja luminancji: napisy kill w LoL mają jasność > 185
-        _, thresh = cv2.threshold(gray, 185, 255, cv2.THRESH_BINARY)
+        # Binaryzacja luminancji: napisy kill w LoL mają jasność > 180
+        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
         thresh_big = cv2.resize(thresh, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
 
         text = ""
@@ -253,12 +249,12 @@ def _detect_kill_text_ocr(frame: np.ndarray) -> Tuple[float, str]:
         if not text:
             continue
 
-        # 1. Sprawdź słowa kluczowe (PENTAKILL, QUADRA, TRIPLE, DOUBLE, SHUTDOWN)
-        for keyword, (bonus, label) in KILL_KEYWORDS.items():
-            if keyword in text:
+        # 1. Sprawdź wzorce regex (PENTAKILL, QUADRA, TRIPLE, DOUBLE, SHUTDOWN, UNSTOPPABLE itd.)
+        for pat, (bonus, label) in KILL_PATTERNS:
+            if pat.search(text):
                 return float(bonus), label
 
-        # 2. Sprawdź wzorce nagród za zabójstwo championa w LoL (+150, +300, +500, +1000 itp.) lub słowa slain / shut
+        # 2. Sprawdź wzorce nagród za złoto w LoL (+150, +300 itp.) lub słowa slain / shut
         if _re.search(r'\+([1-9]\d{2,3})', text) or 'slain' in text or 'shut' in text:
             return 35.0, "KILL"
 
@@ -573,36 +569,43 @@ def analyze_momentum(
     # ── Trim ─────────────────────────────────────────────────────────────────
     if kills:
         # LoL kill sequence: DOUBLE → TRIPLE → QUADRA → PENTA
-        # Climax is always the last kill. Cut tightly at last_kill + AFTER_PEAK!
-        main_peak_t = kills[-1][0]
-        first_kill_t = kills[0][0]
-        last_label = kills[-1][1]
+        # Znajdź szczytowy tier sekwencji zabójstw (PENTA > QUADRA > TRIPLE > DOUBLE > KILL)
+        tier_prio = {
+            "PENTAKILL": 5,
+            "QUADRAKILL": 4,
+            "TRIPLE KILL": 3,
+            "DOUBLE KILL": 2,
+            "UNSTOPPABLE": 2,
+            "GODLIKE": 3,
+            "LEGENDARY": 3,
+            "KILLING SPREE": 1,
+            "FIRST BLOOD": 1,
+            "SHUTDOWN": 2,
+            "KILL": 1,
+        }
+        max_tier_val = max(tier_prio.get(k[1], 1) for k in kills)
+        climax_candidates = [k for k in kills if tier_prio.get(k[1], 1) == max_tier_val]
+        main_peak_t, last_label = climax_candidates[-1]
 
-        # Multi-kill climax: 1.5s after last kill → baner widoczny + czyste zakończenie dla pętli
-        after_k = 1.5
+        # Kille powiązane z tą walką (maksymalnie do 18s przed punktem kulminacyjnym)
+        relevant_kills = [k for k in kills if k[0] <= main_peak_t and (main_peak_t - k[0]) <= 18.0]
+        first_kill_t = relevant_kills[0][0] if relevant_kills else max(0.0, main_peak_t - 8.0)
+
+        # Multi-kill climax: 1.2s po ostatnim fragu/banerze → punchy koniec bez bicia wieży/biegania
+        after_k = 1.2
         trim_end = min(duration, main_peak_t + after_k)
         trim_start = max(0.0, first_kill_t - 2.5)
 
-        # Ensure minimum duration ~10s
-        if trim_end - trim_start < 10.0:
-            trim_start = max(0.0, trim_end - 12.0)
+        # Jeśli okno za krótkie (<7s) rozszerz lekko w lewo
+        if trim_end - trim_start < 7.0:
+            trim_start = max(0.0, trim_end - 9.0)
 
-        # ── 15-SECOND SNAP RULE ──────────────────────────────────────────────
-        # Klipy 15s: skracaj TYLKO jeśli nie ucinamy setupu pierwszego killa (min 2.5s buforu)
-        raw_window = trim_end - trim_start
-        if 15.5 <= raw_window <= 18.0:
-            target_s = max(0.0, trim_end - 14.0)
-            # Stosuj tylko jeśli zostaje minimum 2.5s przed pierwszym killem
-            if first_kill_t - target_s >= 2.5:
-                trim_start = target_s
-                print(f"   ⚡ 15s SNAP: okno {raw_window:.1f}s → docięto do {trim_end - trim_start:.1f}s raw (~15s po slow-mo)")
-
-        # If still over max_duration, clamp (ale zachowaj minimum 2.0s przed pierwszym killem)
+        # Jeśli okno > max_duration → przytnij bufor wejścia, ale zostaw min 1.5s przed 1. fragiem
         if trim_end - trim_start > max_duration:
-            trim_start = max(0.0, min(first_kill_t - 2.0, trim_end - max_duration))
+            trim_start = max(0.0, min(first_kill_t - 1.5, trim_end - max_duration))
 
         main_peak_in_clip = max(0.0, main_peak_t - trim_start)
-        print(f"\n✂️  Precyzyjne cięcie: {trim_start:.1f}s → {trim_end:.1f}s ({trim_end - trim_start:.1f}s, finisz +{after_k:.1f}s po killu)")
+        print(f"\n✂️  Precyzyjne cięcie (Climax [{last_label}] @ {main_peak_t:.1f}s): {trim_start:.1f}s → {trim_end:.1f}s ({trim_end - trim_start:.1f}s, finisz +{after_k:.1f}s po killu)")
     elif duration <= max_duration:
         # ── VFX-BASED TRIM gdy brak OCR kills ───────────────────────────────
         # Używamy TYLKO sygnału VFX (nasycenie kolorów czarów/eksplozji).

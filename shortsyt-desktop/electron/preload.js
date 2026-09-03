@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld('electronApp', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   showItemInFolder: (fullPath) => ipcRenderer.invoke('show-item-in-folder', fullPath),
   openPath: (fullPath) => ipcRenderer.invoke('open-path', fullPath),
+  selectDirectory: () => ipcRenderer.invoke('select-directory'),
 });

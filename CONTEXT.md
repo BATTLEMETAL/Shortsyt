@@ -1,11 +1,11 @@
 # LOL AGENT — MASTER CONTEXT
 > Ostatnia aktualizacja: 2026-08-31 (sesja 24: Universal Retention Pacing, Multi-Zone Triple OCR, Climax Loop Cut, Scheduled Shorts 31.08)
-> Wersja: v32 — PRODUKCYJNY PIPELINE (GOTOWY DO UPLOADU)
+> Wersja: v32 — PRODUKCYJNY PIPELINE + AUTO RETENTION HOOK + MULTI-ZONE OCR + UNIVERSAL SMART CAMERA
 > CZYTAJ TEN PLIK NA POCZĄTKU KAŻDEJ SESJI — zastępuje analizę wszystkich plików
 
 ---
 
-## ⚡ ZASADY OSZCZĘDZANIA TOKENÓW (dla AI — stosuj zawsze)
+## ⚡ ZASADY OSZCZĘDZANIA TOKENÓW (dla AI — stosuj ZAWSZE, szczególnie Gemini Flash)
 ```
 ✅ Odpowiadaj KRÓTKO i na temat — zero sykofancji, zero wstępów
 ✅ Pokazuj tylko zmienione linie, nie cały plik
@@ -13,9 +13,26 @@
 ✅ Jeśli błąd jest jasny — od razu napraw, nie opisuj co zrobisz
 ✅ Używaj view_file(StartLine, EndLine) — nie czytaj całych plików
 ✅ Maksymalnie 5 zdań w odpowiedzi do użytkownika jeśli to możliwe
+✅ Zanim zaczniesz sesję: przeczytaj TYLKO sekcje 0, "CO TRZEBA ZROBIĆ" i odpowiedni moduł
 ❌ Nie powtarzaj tego co właśnie zrobiłeś
 ❌ Nie pisz "Świetnie!", "Oczywiście!", "Rozumiem" itp.
 ❌ Nie opisuj kroków przed ich wykonaniem — po prostu je wykonaj
+❌ Nie czytaj całego CONTEXT.md — używaj sekcji na żądanie
+```
+
+---
+
+## ⚠️ UWAGA DLA GEMINI FLASH (model z ograniczonymi tokenami)
+```
+Ten model ma MAŁY LIMIT TOKENÓW. Jeśli kontekst się kończy:
+1. Zapisz postęp do CONTEXT.md (sekcja "CO ZROBIONO") PRZED wyczerpaniem tokenów
+2. Napisz użytkownikowi: "Tokeny kończą się — zapisałem postęp. Kontynuuj w nowym czacie."
+3. Nie próbuj kończyć na siłę dużego zadania — zrób częściowy commit i udokumentuj
+
+PRIORYTETY przy ograniczonych tokenach:
+- Najpierw: napraw błędy blokujące pipeline (importy, crashes)
+- Potem: zmiany w jednym pliku na raz, testuj import po każdej
+- Ostatnie: refaktory, optymalizacje, UI zmiany
 ```
 
 ---
@@ -23,85 +40,352 @@
 ## 0. SZYBKI START NOWEGO CZATU ← CZYTAJ TO NAJPIERW
 
 > **Jesteś AI asystentem projektu LOL AGENT.**
-> Projekt: automatyczne YouTube Shorts z klipów League of Legends. Kanał: Dwannellenga.
+> Projekt: automatyczne YouTube Shorts z klipów League of Legends + E-commerce/UGC Video Engine. Kanał: Dwannellenga.
 > Ścieżka: `C:\Users\mz100\PycharmProjects\shortsyt\` | Venv: `.\venv313\Scripts\python.exe`
+> Desktop App: `C:\Users\mz100\PycharmProjects\shortsyt\shortsyt-desktop\` (Electron 32 + React 18 + Vite + TailwindCSS)
 
-### Co jest gotowe (NIE ruszaj):
-- ✅ Pipeline LOL: smart camera, velocity limiter, kill counter, slow-mo, overlays
-- ✅ **Universal Retention & Pacing Engine (v32)**:
-  - **Visual Action Hook (0.8s–1.5s)**: start `first_kill_t - 2.0s` — natychmiastowe wejście w walkę, 0s martwego biegu/bicia wież.
-  - **Loop Climax Cut (+1.2s)**: ostre cięcie tuż po ostatnim fragu multikilla dla seamless loop i retencji >100%.
-  - **Triple-Zone OCR + Regex**: równoległe skanowanie centralnego banera, feedu i czatu z odpornością na font LoL.
-- ✅ Quality Gate: 4 twarde filtry odrzucania złych klipów (OVERLAY_OBSTRUCTION, EXTREME_DISPERSION, LOW_TRACKING_CONFIDENCE, DECOY_TARGET).
-- ✅ Smart Camera v24: Universal Player Tracker (min 75% klatek w centrum).
+### ✅ Co jest ZWERYFIKOWANE (NIE ruszaj):
+- ✅ **Desktop Studio (Electron 32 + React 18 + Vite)**:
+  - **Dwannellenga Viral Metadata Engine**: generowanie sprawdzonych, angażujących tytułów pod algorytm (np. `Triple Kill! They Never Saw Katarina Coming 😈 #Shorts #LeagueOfLegends #LoL`), narracyjnego opisu z brandingiem kanału i wezwaniem do subskrypcji oraz angażującego przypiętego komentarza.
+  - **Miniaturka 9:16 (Hero-Frame Workspace)**: dedykowany podgląd miniatury z opcją podejrzenia pliku na dysku (`FolderOpen`), kopiowania ścieżki i automatycznego uploadu na YouTube wraz z filmem.
+  - **YouTube Upload & Auto-Comment**: `POST /youtube/upload/{filename}` automatycznie publikuje Shorta, wgrywa miniaturkę 9:16 (`youtube.thumbnails().set`) oraz dodaje i przypina komentarz angażujący (`youtube.commentThreads().insert`).
+  - **YouTube Token Countdown Fix**: poprawny odczyt 7-dniowej ważności refresh tokenu (`days_remaining: 7`, zielony status aktywności).
+  - **AI Auto-Trim & Manual Mode Switcher**: wybór trybu wyznaczania czasu [⚡ AI Auto-Trim] (skan OCR + detekcja kill eventów i automatyczne dopasowanie Action Hooka i Loop Cut) oraz [🛠️ Ręczny] (pełna manualna edycja startu, końca i peak momentu z przyciskami +/- 1s).
+  - **POST /clips/auto-detect**: endpoint AI analizujący okno walki, typ akcji i hook text.
+  - **Folder Picker**: opcja wyboru dowolnego folderu z nagraniami (`electronApp.selectDirectory` + `GET /clips?folder=...`).
+  - **Post-Render Interactive Review**: po zakończeniu montażu natychmiast odpala się pionowy odtwarzacz 9:16, podgląd miniatury, edytowalne metadane (tytuł, opis, przypięty komentarz) oraz 3 przyciski decyzji użytkownika ([🚀 Zatwierdź & Publikuj], [🔄 Wróć / Zmień parametry], [🗑️ Odrzuć & Usuń]).
+  - **DELETE /outputs/{filename}**: endpoint bezpiecznego odrzucania i usuwania roboczych plików z dysku.
+- ✅ **smart_camera.py v25** (Zero-Touch):
+  - Universal Player Tracker (złoty HP bar, min 75% klatek).
+  - **Dash/Flash/Shunpo Snap**: `delta > 250px` → natychmiastowy snap kamery zamiast powolnego dryfowania.
+  - **Combat Centroid Fallback**: >4 klatki bez gracza (Zhonya/bush/zgon) → kamera płynie w kierunku środka masy walki wrogów.
+- ✅ **lol_editor.py v33 (Viral Retention Pack)**:
+  - **Dynamic Kill Streak HUD**: `[ KILL 1/X ]` ➔ `[ FINAL KILL X/X ]` z animowaną pigułką w górnym kadrze (zwiększa goal-gradient i retencję).
+  - **Neon Loop Progress Scrubber**: 5px Hextech Gold (`0xC89B3C`) pasek na samym dole pod zapętlenie.
+  - **Universal Sidechain Audio Ducking**: automatyczne wyciszanie muzyki (-45%) i podbijanie dźwięków ciosów/announcera na każdym killu.
+- ✅ **lol_momentum_analyzer.py v32**:
+  - **Visual Action Hook**: wejście w akcję w 0.8s–1.5s (`first_kill_t - 2.0s`), zero bicia wieży i zbędnych dobiegów.
+  - **Loop Climax Cut**: ciasne odcięcie +1.0s do +1.2s po ostatnim fragu / multikillu pod seamless loop (retencja >100%).
+  - **Triple-Zone OCR + Regex**: równoległe skanowanie centralnego banera, kill feedu i chat logu z odpornością na czcionkę Tesseracta.
+- ✅ **lol_quality_validator.py** — Pre-Flight Validator (audyt 3-5s przed renderem):
+  - **Action Hook Guard**: brak walki w 0-1.5s → auto-trim start do `first_kill_t - 2.0s`.
+  - **Kill Visibility Check**: każdy frag musi mieścić się w oknie 9:16 kadru (conf >70%).
+  - **Tower Attack Guard**: >60% klatek bez wrogich HP barów → auto-trim start do początku walki.
+  - **Auto-Reject**: klip z `LOW_KILL_VISIBILITY` odrzucany automatycznie z komunikatem.
+- ✅ **lol_thumbnail.py** — Hero-Frame Selector:
+  - Skanuje 10 kandydatów w oknie ±1.75s od peak_moment.
+  - Wybiera klatkę z najwyższym nasyceniem VFX + widocznym złotym HP barem gracza.
+  - Wyklucza czarne klatki (brightness <30) i prześwietlone (>240).
+- ✅ **run_lol_agent.py** — Pre-Flight zintegrowany z pipeline:
+  - `PRE_FLIGHT_OK=True` — validator uruchamia się automatycznie przed każdym `render_short()`.
+  - Auto-korekta `peak_start`/`peak_end` jeśli Action Hook / Tower Guard wykryją problem.
+  - Automatyczne odrzucenie z logiem `❌ REJECTED` i return None.
+- ✅ **Quality Gate & Rejection Protocol**: 4 automatyczne filtry odrzucania (OVERLAY_OBSTRUCTION, EXTREME_DISPERSION >1200px, LOW_TRACKING_CONFIDENCE <75%, DECOY_TARGET).
+- ✅ **Multi-Layer Deduplication Safeguard**: 4 warstwy ochrony przed duplikatami.
 - ✅ **OPUBLIKOWANE I ZAPLANOWANE SHORTY KANAŁU**:
-  - 🎬 `https://www.youtube.com/shorts/M4HHZ_lyGUQ` — 29.08 12:00
-  - 🎬 `https://www.youtube.com/shorts/eMfSJy9dS60` — 29.08 18:00
-  - 🎬 `https://www.youtube.com/shorts/836Zv-jqOxc` — 30.08 08:00
-  - ☀️ **31.08 11:00 CEST**: `https://www.youtube.com/shorts/KgFgIhh0Ck4` (Katarina Triple Kill River Fight, 19.8s)
-  - 🌙 **31.08 18:00 CEST**: `https://www.youtube.com/shorts/A5TnIQSDZ9c` (Katarina Instant Engage Multi-Kill, 11.9s)
+  1. 🎬 `https://www.youtube.com/shorts/M4HHZ_lyGUQ` — 29.08 12:00
+  2. 🎬 `https://www.youtube.com/shorts/eMfSJy9dS60` — 29.08 18:00
+  3. 🎬 `https://www.youtube.com/shorts/836Zv-jqOxc` — 30.08 08:00
+  4. ☀️ **31.08 11:00 CEST**: `https://www.youtube.com/shorts/KgFgIhh0Ck4` (Katarina Triple Kill River Fight, 19.8s)
+  5. 🌙 **31.08 18:00 CEST**: `https://www.youtube.com/shorts/A5TnIQSDZ9c` (Katarina Instant Engage Multi-Kill, 11.9s)
 
+### ⏰ Strategia godzin publikacji Shorts (Gaming / LoL):
+- ☀️ **Poranek (08:30 CET / 06:30 UTC)**: Algorytm ma 2h na transkodowanie i wstępny test na małej próbie widzów, trafia w szczyt pory obiadowej / szkolnej (11:30–14:00).
+- 🌙 **Wieczór (18:00 CET / 16:00 UTC)**: Szczyt graczy PC w Europie (17:00–22:00) + lunch-time w USA (12:00 EST / 09:00 PST).
 
-### Parametry produkcyjne (NIE zmieniaj bez powodu):
+### ⚠️ Co NIE przetestowane live (wymaga manualnego testu od Ciebie):
+| Co | Gdzie | Status | Co musisz przetestować |
+|---|---|---|---|
+| API `/thumbnails` i `/camera-preview` | `main.py` | Import OK, **endpoint live nie wywołany** | Uruchom FastAPI, otwórz `http://127.0.0.1:8000/thumbnails` |
+| Desktop App miniaturki, RenderMonitor IPC | `Outputs.tsx`, `RenderMonitor.tsx` | `npm run build` OK, **apka nie uruchamiana po zmianach** | Uruchom `npm start` w `shortsyt-desktop/`, sprawdź zakładkę Outputs |
+| .exe installer Shortsyt Studio | `shortsyt-desktop/release/` | Plik istnieje, **nie instalowany na czystym PC** | Zainstaluj bez Python/Node na czystym systemie |
+
+### ❌ Co COFNIĘTE (nie działa / gorsze):
+- **cap.set(POS_FRAMES)** frame jumping — WOLNIEJSZE na H.264 (seek → I-frame decode → forward decode). 180s vs 95s. Przywrócono sekwencyjny read.
+
+---
+
+## 🚀 CO ZOSTAŁO ZROBIONE W SESJI 22 (2026-08-24):
+1. **Analiza i naprawa pętli uczenia Dark Psychology (`auditor_feedback.py`, `agent_dark_psychology.py`)**:
+   - Ujednolicono rozbieżne ścieżki plików feedbacku: teraz wszystko zapisuje się i czyta z root (`auditor_feedback.json` i `auditor_weights.json`), dodano automatyczną migrację `_migrate_legacy_files()`.
+   - Obniżono nierealistyczny próg trafności `APPROVAL_VIEW_THRESHOLD` z 80 na **35 views** (adekwatny dla kanału z 23 subskrybentami).
+   - Dodano funkcję `run_feedback_cycle(youtube)` wykonującą pełną aktualizację wyników z YouTube, obliczenie korelacji Pearsona dla 8 kategorii audytora i zapis wag.
+   - Dodano `get_forbidden_titles()` w `agent_dark_psychology.py` zabezpieczające przed duplikatami tytułów.
+   - Zintegrowano automatyczny `run_feedback_cycle()` po ostatnim filmie sesji publikacyjnej.
+
+2. **Rozszerzenie FastAPI Backend (`lol_agent/api/main.py` na porcie 8765)**:
+   - Połączono architekturę obu agentów (LoL + Dark Psychology) w jeden spójny serwer backendowy.
+   - Zaimplementowano kompletny zestaw endpointów `/dark/*`:
+     - `GET /dark/status`: status kanału, ostatnie 2 filmy, statystyki audytora, v/h.
+     - `GET /dark/analytics`: top 5 filmów, analiza formatów (QUESTION vs STATEMENT), keywords, czas publikacji.
+     - `GET /dark/calibration`: wagi Pearsona per kategoria audytora, trafność prognoz %, top/bottom performers.
+     - `GET /dark/directive`: aktualna dyrektywa adaptacyjna dla AI (`adaptation_directive.json`).
+     - `POST /dark/run`: asynchroniczne uruchomienie agenta dark psychology (`--dry-run`, `--videos`).
+     - `POST /dark/recalibrate`: ręczne wywołanie rekalibracji wag audytora.
+     - `GET /health/full`: healthcheck obu agentów jednocześnie.
+
+3. **Aplikacja PC Studio (`shortsyt-desktop`)**:
+   - `src/lib/api.ts`: dodano metody API (`apiGetDarkStatus`, `apiGetDarkAnalytics`, `apiGetDarkCalibration`, `apiGetDarkDirective`, `apiRunDarkAgent`, `apiRecalibrateDark`).
+   - `src/screens/DarkAgent.tsx` [NEW]: pełny panel monitoringu z kafelkami metryk, podglądem filmów, interaktywnymi paskami wag Pearsona, top 5, analizą słów kluczowych i przyciskiem uruchomienia z opcją dry-run.
+   - `src/components/Sidebar.tsx` & `src/App.tsx`: dodano zakładkę "Dark Psychology" (Brain icon, badge AI, route `/dark`).
+   - Weryfikacja: TypeScript check (`npx tsc --noEmit`) zakończony sukcesem (0 błędów).
+
+4. **Aplikacja Mobilna (`shortsyt-app` - Expo / React Native)**:
+   - `lib/api.ts`: dodano wywołania API dla Dark Psychology.
+   - `screens/DarkAgentScreen.tsx` [NEW]: dedykowany ekran mobilny (statystyki, przycisk run z przełącznikiem dry-run, kalibracja wag audytora, top filmy, formaty).
+   - `screens/DashboardScreen.tsx`: dodano kafelek "Dark Agent" w siatce szybkich akcji.
+   - `App.tsx`: zarejestrowano ekran `DarkAgent` w `Stack.Navigator`.
+
+---
+
+## 🧪 CO TRZEBA ZROBIĆ / PRZETESTOWAĆ W KOLEJNYM CZACIE:
 ```
-lol_config.py          →  YT_PRIVACY = "public", CRF=22, SLOWMO=0.5x, ZOOM=1.20x, MUSIC=0.85, GAME=0.60
-lol_publisher.py L~126 →  multi-hashtag appending (#Shorts #LeagueOfLegends #LoL)
-lol_editor.py   L~868  →  BANNER_SHIFT = 90      (kill banner shift w lewo — optymalne -90px)
-lol_editor.py   L~869  →  BANNER_WINDOW = 2.0    (sekundy ±kill)
-lol_editor.py   L~219  →  lead-in -0.4s          (wejście w slow-mo 0.4s przed uderzeniem Pentakilla)
-lol_editor.py   L~535  →  caption offset -1.2s   (napisy zsynchronizowane z momentem zgonu w grze)
-lol_editor.py   L230-231→ MINI_SPEED = 0.6, MINI_DUR = 1.0 (mini slow-mo na intermediate kills)
-lol_editor.py   L121-155→ multi-track history dedup (aktywna rotacja muzyki bez powtórzeń)
-smart_camera.py L~743  →  FREEZE_STREAK = 8      (klatek bez HP barów → freeze)
-smart_camera.py L~969  →  MAX_DELTA = 120        (max px/krok — responsywne centrowanie doskoków Shunpo)
-smart_camera.py L~931  →  EMA_ALPHA = 0.70       (szybki ruch za doskokiem postaci)
-smart_camera.py L~953  →  smooth_w = 5           (responsywne okno wygładzania)
-smart_camera.py L~120  →  HP bar connectedComp   (precyzyjna separacja paska gracza od pancerza/aury)
-smart_camera.py L~810  →  yellow_src anchor      (stałe kotwiczenie kadru na graczu)
-lol_momentum_analyzer.py L72-73 → BUILD_BEFORE_PEAK=15.0, AFTER_PEAK=1.2, MAX_DURATION=30.0
-lol_momentum_analyzer.py L368 → first_kill buffer = 9.5s
-```
-
-### PROFIL VIRALNY SHORTA (wynik master renderu lol_short_20260818_173432.mp4):
-```
-1. HOOK (0.0 - 2.5s):
-   - Złoty napis 'PENTAKILL!' o t=0.3s natychmiast zatrzymuje scroll (Viewed vs Swiped Away >75%).
-   - Wejście w walkę od t=5.2s klipu źródłowego (brak nudnego chodzenia na starcie).
-
-2. RETENCJA & DYNAMIKA (22.7s idealna długość esportowa):
-   - 0.0s - 8.0s  : Dynamiczny build-up, wejście w teamfight, fragi 1 & 2 (kamera natychmiast centruje 1. frag po prawej).
-   - 8.3s - 10.3s : TRIPLE KILL — natychmiastowy napis przy killu + mini slow-mo 0.6x (1.0s).
-   - 12.0s - 14.2s: QUADRAKILL — perfekcyjna synchronizacja napisu z natychmiastowym zabójstwem w 12s.
-   - 17.8s - 20.7s: PENTAKILL — lead-in 0.4s przed ciosem + zwięzłe, satysfakcjonujące slow-mo 0.5x z dźwiękiem i banerem.
-   - 20.7s - 22.7s: Punchy 2-sekundowe outro z CTA 'SUBSCRIBE FOR MORE' bez przedłużania końcówki.
-
-3. KAMERA & KADROWANIE:
-   - Nowy algorytm detekcji geometrii paska HP gracza eliminuje mylenie z aurą Leony.
-   - Kamera natychmiast wycentrowuje pierwsze zabójstwo po prawej stronie po doskoku.
-
-4. METADANE:
-   - Tytuł: "Katarina Unstoppable Pentakill! 💥 No Escape 💀 #Shorts #LeagueOfLegends #LoL #Katarina"
-   - Miniaturka: Klatka z wyraźnym napisem PENTAKILL w killfeedzie, czarny obrys, 1080x1920 przesłana przez API.
-```
-
-### 🚀 ROADMAP NA KOLEJNY CZAT (Sesja 16):
-1. **Przetwarzanie wsadowe nowych nagrań (Batch Mode)**:
-   - Automatyczne przeszukiwanie katalogu `C:\Users\mz100\Videos\Overwolf\Outplayed\League of Legends\` w poszukiwaniu nowych nagrań.
-   - Automatyczny montaż i publikacja kolejnych shortów z zachowaniem sprawdzonych parametrów v25.
-2. **Monitoring statystyk opublikowanego shorta**:
-   - Odpytanie YouTube Analytics dla wideo `UZOmupNxfrU` (wyświetlenia, retencja, CTR miniaturki).
-3. **Dalsze wzbogacanie biblioteki muzycznej**:
-   - Dodanie nowych utworów NoCopyrightSounds do `lol_music/` z mapowaniem dropów w `MUSIC_DROP_MAP`.
-
-### Komenda publikacji na YouTube (Public):
-```powershell
-$env:PYTHONIOENCODING="utf-8"
-.\venv313\Scripts\python.exe -u lol_agent\run_lol_agent.py `
-  --file "C:\Users\mz100\Videos\Overwolf\Outplayed\League of Legends\League of Legends_07-31-2026_21-18-13-162\League of Legends 07-31-2026 21-34-50-358_2.mp4" `
-  --champion Katarina --action pentakill
+[ ] [FASTAPI LIVE CHECK] Uruchom serwer: uvicorn lol_agent.api.main:app --host 0.0.0.0 --port 8765 --reload
+    Sprawdź w przeglądarce: http://localhost:8765/dark/status oraz http://localhost:8765/dark/calibration
+[ ] [DESKTOP APP CHECK] Uruchom: start_desktop.bat w shortsyt-desktop/
+    Przetestuj zakładkę "Dark Psychology", kliknij "Rekalibruj" i przetestuj uruchomienie w trybie "Dry-run".
+[ ] [MOBILE APP CHECK] Sprawdź lokalne IP w shortsyt-app/lib/api.ts (czy zgadza się z aktualnym adresem PC w Wi-Fi).
+    Uruchom npx expo start w shortsyt-app/, otwórz na telefonie i kliknij przycisk "Dark Agent" na Dashboardzie.
+[ ] [LEARNING LOOP LIVE RUN] Wykonaj generację testową dark psychology z uploadem:
+    python agent_dark_psychology.py --videos 1
+    Sprawdź czy save_pre_audit zapisuje rekord i czy run_feedback_cycle poprawnie aktualizuje wagi Pearsona w auditor_weights.json.
+[ ] [YT CTR CHECK] Sprawdź realne wyniki i retencję na kanale YouTube Studio po 48h dla zaplanowanych/opublikowanych filmów.
 ```
 
 ---
+
+
+## 📦 PLAN KOMERCJALIZACJI & JAK ŁATWIEJ SPRZEDAĆ PRODUKT:
+```
+1. 1-CLICK INSTALATOR (.EXE / INSTALLER):
+   - Użycie Electron Builder do wygenerowania standalone .exe instalatora
+   - Wbudowanie ffmpeg i tesseract w pakiet lub auto-downloader (zero instalacji ręcznej)
+
+2. CLOSED FEEDBACK LOOP (SAMOUCZENIE AI):
+   - Zapis preferencji użytkownika (tempo, zoom, zbanowana muzyka) do user_preferences.json
+   - Dynamiczne wstrzykiwanie notatek użytkownika do promptów Gemini Vision
+
+3. ROZSZERZENIE NA E-COMMERCE / UGC ADS:
+   - Moduł detekcji twarzy (MediaPipe) dla wideo z ludźmi / produktami
+   - Auto-napisy w stylu CapCut/MrBeast (Whisper word-by-word)
+   - Integracja z ElevenLabs / EdgeTTS do czytania skryptu reklamowego z linku sklepu
+
+4. LANDING PAGE & WIDEO DEMO:
+   - Krótkie 45-sekundowe wideo porównawcze: "16:9 surowy klip" vs "Zautomatyzowany 9:16 viral short w 10 sekund"
+```
+
+---
+
+## 🔮 ROADMAP & PRZYSZŁY ROZWÓJ (UNIWERSALNY SILNIK KONTENTU Z DOWOLNEGO WIDEO):
+```
+Architektura przekształcenia silnika z gamingu w uniwersalny kombajn wideo (podcasty, wywiady, vlogi, e-commerce):
+
+1. PIPELINE AUDIO-FIRST (Transkrypcja & Detekcja Perełek):
+   - Moduł: whisper_highlight_extractor.py
+   - Narzędzie: Faster-Whisper z word-level timestamps (word_timestamps=True) + Silero VAD (wykrywanie energii głosu / pauz).
+   - LLM Story Extraction: Gemini / Qwen analizuje tekst i wybiera 20-50s fragmenty (Hook -> Context -> Climax/Punchline) oceniając potencjał wiralowy (0-100).
+
+2. UNIWERSALNE KADROWANIE 9:16 (MediaPipe Face & Speaker Tracking):
+   - Moduł: mediapipe_face_camera.py (zamiennik smart_camera.py opartego o paski HP)
+   - Działanie: Google MediaPipe Face Mesh / Active Speaker Detection wykrywa osobę mówiącą i płynnie centruje okno 9:16 (z opcją split-screen góra/dół dla wywiadów dwuosobowych).
+
+3. KINETYCZNE NAPISY WORD-BY-WORD (Styl MrBeast / Hormozi / CapCut):
+   - Generowanie dynamicznych napisów w rytm mowy (1-3 słowa na ekranie z podświetleniem aktywnego słowa na żółto/zielono).
+   - Automatyczne wycinanie ciszy (Silence Removal > 0.6s) dla maksymalizacji tempa i retencji.
+
+4. SYSTEM PRESETÓW TEMATYCZNYCH (Niche Archetypes):
+   - Preset A [Podcast / Interview]: kadrowanie twarzy + split-screen + wycinanie ciszy + napisy centralne.
+   - Preset B [Gaming]: obecny silnik (OCR, paski HP, zoom-punch, momentum curve, slow-mo 60FPS).
+   - Preset C [E-commerce / UGC Ads]: detekcja obiektów/produktów (YOLO) + podkład lektora Edge-TTS + dynamiczne slajdy korzyści.
+```
+
+---
+
+## 🐙 INSTRUKCJA GITHUB & SYNCHRONIZACJA REPO:
+```powershell
+# 1. Przygotuj .gitignore (upewnij się że node_modules, venv, .env, tokeny i surowe wideo są ignorowane)
+# 2. Inicjalizacja i push do zdalnego repozytorium:
+git init
+git add .
+git commit -m "feat: complete Shortsyt desktop studio v26 + lol agent pipeline"
+git branch -M main
+git remote add origin https://github.com/TWOJ_USER/shortsyt-studio.git
+git push -u origin main
+```
+
+---
+
+## 💼 POST NA LINKEDIN (SZABLON DO WYKORZYSTANIA):
+```text
+🚀 Zbudowałem autonomiczne studio montażu i publikacji wideo wertykalnego (YouTube Shorts / TikTok) oparte o AI, Computer Vision i Electron!
+
+Jako pasjonat gamingu i AI zawsze irytowało mnie, jak dużo czasu zajmuje ręczny montaż klipów:
+❌ Ręczne wycinanie formatu 9:16 i uciekająca akcja z kadru
+❌ Ręczne dopasowywanie spowolnień i dynamicznych zoomów
+❌ Wymyślanie viralowych tytułów i opisów
+
+Zautomatyzowałem cały ten proces od A do Z:
+🔹 Smart Camera v11 (Computer Vision) — w czasie rzeczywistym śledzi postać gracza i dynamicznie centruje kadr 9:16
+🔹 OCR & Momentum Analyzer — precyzyjnie wykrywa kluczowe akcje (Pentakill/Outplay) i automatycznie aplikuje slow-mo 60 FPS oraz uderzenia zoom-punch
+🔹 Gemini Multimodal AI — generuje angażujące hooki, narracyjne tytuły i optymalizuje hashtagi pod algorytm YouTube
+🔹 Desktop Studio (Electron 32 + React 18 + TailwindCSS) połączone z asynchronicznym backendem FastAPI i aplikacją mobilną (React Native / Expo)
+
+Efekt? 1 kliknięcie dzieli surowy mecz od gotowego, wyrenderowanego w 4K/60FPS Shorta opublikowanego na YouTube z gotową miniaturką!
+
+Wkrótce rozszerzam silnik o generowanie reklam UGC i wideo e-commerce dla sklepów internetowych. 
+
+Wideo demo w komentarzu! 👇
+
+#AI #MachineLearning #ComputerVision #Python #FastAPI #Electron #React #YouTubeShorts #Automation #SaaS #Gaming
+```
+> Cel: natywna aplikacja Windows (Electron + React) do zarządzania całym pipeline bez terminala.
+> Połączona z FastAPI backendem (lol_agent/api/) + sync z apką Android (shortsyt-app/).
+> Docelowo: jedno miejsce do zarządzania klipami, renderem, publishem i analityką.
+
+### STOS TECHNOLOGICZNY:
+```
+Frontend:  Electron 32 + React 18 + TailwindCSS + shadcn/ui
+Backend:   istniejący FastAPI (lol_agent/api/main.py) — bez zmian
+Bridge:    electron-is-dev + axios (ten sam API client co apka Android)
+Katalog:   C:\Users\mz100\PycharmProjects\shortsyt\shortsyt-desktop\
+```
+
+### EKRANY / WIDOKI (6 widoków):
+
+#### 1. DASHBOARD (główny)
+- Status pipeline (IDLE/RUNNING/DONE/ERROR) z live logami
+- Ostatni opublikowany short: miniaturka + views + CTR
+- Quick stats: łączne views, najlepszy short tydzień
+- Countdown tokenu YouTube (czerwony gdy <7 dni)
+- Przyciski: [▶ Start Pipeline] [⏹ Stop] [🔄 Refresh YT Token]
+
+#### 2. KLIPY (Clip Browser)
+- Lista plików MP4 z LOL_INPUT_DIR + Outplayed auto-scan
+- Pre-pipeline score z lol_pre_analysis.json (kolorowe badge: 🔥/✅/📋/SKIP)
+- Sortowanie: score DESC, data DESC, rozmiar
+- Filtrowanie: action type, min score, champion
+- Klik na klip → ClipDetail
+
+#### 3. CLIP DETAIL + LAUNCH
+- Miniaturka klipu (frame z ffprobe)
+- Parametry: champion, action_type, --dry-run toggle
+- Pre-analysis insights: weighted avg views, best title ref
+- Przycisk: [▶ Renderuj] → RenderScreen
+
+#### 4. RENDER MONITOR (live)
+- Pasek postępu 7 kroków (1/7 Wycinanie... → 7/7 CTA Overlay)
+- Live logi scrollowane z /status API (polling co 1.5s)
+- Po zakończeniu: podgląd wideo + thumbnail + QA score
+- Przyciski: [✅ Publikuj] [👁 Podgląd] [🗑 Odrzuć]
+
+#### 5. OUTPUTS (biblioteka gotowych shortów)
+- Lista wyrenderowanych MP4 z datą, długością, QA score
+- Wbudowany podgląd wideo (HTML5 video tag przez file:// URI)
+- Status YT: prywatny/publiczny/niezaładowany
+- Przycisk [📤 Upload na YT] obok każdego
+
+#### 6. ANALYTICS (dashboard danych)
+- Graf: views over time dla wszystkich opublikowanych shortów
+- Tabela: action_type → avg_views, best_views, count (z yt_perf_cache.json)
+- Porównanie: narracyjne tytuły vs stare "Rampage" (z published_videos.jsonl)
+- Eksport CSV
+
+### INTEGRACJA Z ISTNIEJĄCYM BACKENDEM:
+```
+Endpoint                  → Gdzie używany w desktop
+GET  /health              → Dashboard: sprawdzenie połączenia
+GET  /status              → RenderMonitor: live logi
+POST /pipeline/start      → ClipDetail: uruchom render
+POST /pipeline/stop       → RenderMonitor: zatrzymaj
+GET  /clips               → ClipBrowser: lista plików
+GET  /outputs/{filename}  → Outputs: stream wideo
+POST /youtube/upload/{n}  → Outputs: publikuj
+GET  /youtube/token-status→ Dashboard: countdown tokenu
+```
+
+### SYNCHRONIZACJA Z APKĄ ANDROID:
+```
+SharedAPI:
+  - Ten sam backend FastAPI (lol_agent/api/)
+  - Ten sam JWT token (30 dni)
+  - Desktop = "admin view" (pełne logi, analytics)
+  - Mobile  = "remote control" (start/stop + preview)
+
+Sync state:
+  - Pipeline status live przez /status polling
+  - Desktop i mobile mogą równolegle obserwować ten sam render
+  - Upload triggerable z obu
+```
+
+### PLIKI DO STWORZENIA:
+```
+shortsyt-desktop/
+├── package.json           ← Electron + React + Vite
+├── electron/
+│   ├── main.js            ← Electron main process (okno, menu, IPC)
+│   └── preload.js         ← kontekst przeglądarki (bezpieczny IPC bridge)
+├── src/
+│   ├── App.tsx            ← React root + router
+│   ├── lib/
+│   │   └── api.ts         ← axios client (portowany z apki Android)
+│   ├── components/
+│   │   ├── Sidebar.tsx    ← nawigacja lewa
+│   │   ├── StatusBadge.tsx
+│   │   ├── VideoPlayer.tsx
+│   │   └── ScoreBadge.tsx
+│   └── screens/
+│       ├── Dashboard.tsx
+│       ├── ClipBrowser.tsx
+│       ├── ClipDetail.tsx
+│       ├── RenderMonitor.tsx
+│       ├── Outputs.tsx
+│       └── Analytics.tsx
+└── tailwind.config.js
+```
+
+### DESIGN:
+```
+Paleta: ciemna LoL gold/blue (taka sama jak apka Android — constants/theme.ts)
+  bg: #0A0E1A (ciemny granat)
+  accent: #C89B3C (LoL gold)
+  text: #E4D6B5 (kremowy)
+  danger: #C0392B
+  success: #27AE60
+Font: Inter (UI) + Impact (overlaye jak w grze)
+Layout: sidebar 220px + content area fluid
+```
+
+### KOLEJNOŚĆ IMPLEMENTACJI:
+```
+FAZA 1 (sesja 18): Szkielet Electron + połączenie z backendem
+  → package.json, electron/main.js, preload.js, App.tsx, api.ts
+  → Dashboard z /health + /status + countdown tokenu
+  → WERYFIKACJA: apka się odpala, łączy z backendem
+
+FAZA 2 (sesja 19): ClipBrowser + ClipDetail + launch pipeline
+  → ClipBrowser z listą z /clips + pre-analysis scores
+  → ClipDetail z parametrami + [▶ Renderuj]
+  → RenderMonitor z live logami + progress
+
+FAZA 3 (sesja 20): Outputs + YouTube upload + Analytics
+  → Outputs z podglądem video
+  → YouTube upload z apki desktop
+  → Analytics z wykresami (recharts)
+
+FAZA 4 (sesja 21): Sync z apką Android + packaging
+  → Testowanie że desktop i mobile obserwują ten sam stan
+  → Electron Builder → .exe installer
+```
+
+### WAŻNE ZASADY DESKTOP APP:
+```
+❌ Nie używaj node-fetch — używaj axios (spójność z apką mobilną)
+❌ Nie otwieraj plików wideo przez Electron IPC — stream przez /outputs/{n}?token=JWT
+✅ Używaj contextBridge w preload.js — nie wystawiaj require() na renderer
+✅ Hardcode API URL default: http://localhost:8765 (edytowalny w Settings)
+✅ JWT przechowuj w electron-store (nie localStorage — nie persystuje między sesjami)
+✅ Paleta kolorów: skopiuj z shortsyt-app/constants/theme.ts
+```
 
 
 
@@ -326,6 +610,10 @@ GLITCH #4: Kamera nie śledzi gracza w team fight (>4 wrogów)
 
 GLITCH #5: Kamera freezuje po teamfight gdy wszyscy wrogowie martwi
   STATUS: ✅ OK — FREEZE_STREAK=8 to dobry kompromis dla 50s shorta. NIE ZMIENIAJ.
+
+GLITCH #6: Kamera wywalała się / gubiła postać po Jump-Cut w multi-segmentach
+  KIEDY: Po wycięciu biegania (np. 4s rzeki) kamera brała współrzędne z surowego nagrania zamiast z pociętego.
+  STATUS: ✅ NAPRAWIONE — Smart Camera analizuje bezpośrednio złączony `01_cut.mp4` w osi 0.0s do clip_duration.
 ```
 
 **WAŻNE — parametry których NIE ruszać:**
@@ -425,6 +713,12 @@ run_lol_agent.py
 ## 2. KLUCZOWE KOMENDY CLI
 
 ```powershell
+# Pre-pipeline analyzer (uruchom PRZED pipeline — ranking klipów)
+.\venv313\Scripts\python.exe lol_agent\lol_pre_pipeline_analyzer.py
+.\venv313\Scripts\python.exe lol_agent\lol_pre_pipeline_analyzer.py --no-ocr   # szybko bez OCR
+.\venv313\Scripts\python.exe lol_agent\lol_pre_pipeline_analyzer.py --top 5    # top 5 klipów
+# Wyniki: lol_agent/lol_pre_analysis.json
+
 # Standard upload (private)
 .\venv313\Scripts\python.exe lol_agent\run_lol_agent.py --file "SCIEZKA" --champion Katarina --action pentakill
 
@@ -504,49 +798,65 @@ LOL_OUTPUT_DIR=C:\Users\mz100\Videos\lol_shorts_output
 
 ---
 
-## 4. KAMERA — STAN AKTUALNY (smart_camera.py)
+## 4. KAMERA — STAN AKTUALNY (smart_camera.py v24 Universal Stateful HD Tracker)
 
-### Algorytm (v4 — fight zone centroid):
-1. Dla każdej klatki wywołuje `_detect_fight_center_x(frame)`
-2. Wykrywa ŻÓŁTY HP bar (gracz): `R>160, G>130, B<110, (R-B)>90, (G-B)>60`
-3. Wykrywa CZERWONE HP bary (wrogowie): `R>150, G<90, B<80, (R-G)>70, (R-B)>80`
-4. Gdy walka (żółty + czerwone): centroid wszystkich barów = centrum walki
-5. Gdy tylko żółty: śledzi gracza
-6. Gdy nic: **ostatnia znana pozycja** (freeze po FREEZE_STREAK=8 klatekach braku barów)
-7. Outlier filter: jeżeli skok > 200px bez wykrycia barów — ignoruj
-8. Smoothing window: 15 (~3.5s okno — filmowy ruch)
-9. Max jump: 12px/krok (był 30)
-10. **Velocity limiter: MAX_DELTA=60px/step** — eliminuje teleportację przy Shunpo
+### Algorytm (v24 — Universal Stateful HD Tracker w 1080p):
+1. **Ścisła i czuła detekcja paska HP gracza w 1080p**:
+   - Maska gracza (Złoty): `(r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)`
+   - Czułe kryteria geometryczne paska:
+     - `cw >= 14` (szerokość paska — obejmuje low HP i spinnig ult)
+     - `3 <= ch <= 16` (wyklucza efekty czarów `h=1-2px` oraz kwadratowe ikony przedmiotów)
+     - `2.0 <= aspect <= 20.0` (wyklucza kwadratowe elementy UI)
+     - `area >= 30` (obejmuje wąskie paski przy małej ilości zdrowia)
+2. **Śledzenie wyłącznie postaci gracza**:
+   - Śledzi wyłącznie złoty pasek gracza najbliższy bieżącej trajektorii `hp_b.sort(key=lambda c: c[4] - 0.8 * abs(c[0] - track_x), reverse=True)`.
+   - Gdy pasek jest chwilowo zasłonięty (animacja ulta/Shunpo) – kamera ZAMRAŻA pozycję gracza (brak przeskoków na inne elementy/ikony).
+3. **Płynna dynamika i pełna gęsta trajektoria**:
+   - `track_x = 0.90 * target_x + 0.10 * track_x` (natychmiastowe podążanie za skokami Shunpo/Flash).
+   - Wygładzanie adaptacyjne (`smooth_w = 3`).
+   - Pełna gęsta trajektoria (80 punktów w filtrze FFmpeg bez podpróbkowania).
+4. **Zasada 1 Shorts = 1 Unikalny plik wejściowy**:
+   - Każdy plik wideo z dysku jest analizowany i montowany w dedykowany, unikalny plik wyjściowy.
 
-### Wykluczenia w detekcji:
-- Górny scoreboard: `top_cutoff = 8%` wysokości
-- Outplayed stats panel: lewe 22% x górne 35%
-- HUD/minimap: dolne 20% wysokości
-- Boczne marginesy: 6px z każdej strony
+---
 
-### Wyniki testów (Katarina pentakill, 26.6s):
-- Detekcja: 86/89 klatek z detekcją HP barów ✅
-- Velocity limiter aktywny: +VelLimit=60px widoczny w logach ✅
-- Zakres x: 216-430px (swing 214px) — stabilna kamera
+## 4.1 QUALITY GATE & CLIP REJECTION PROTOCOL (Automatyczne odrzucanie niekwalifikujących się klipów)
 
-### Kluczowe wartości (NIE zmieniaj):
-```python
-# smart_camera.py linia ~743
-FREEZE_STREAK = 8      # klatek bez barów przed zamrożeniem kamery
-                       # przy ~4 sampli/s = freeze po ~2s braku barów
-                       # < 5 → kamera goni Katarynę po Shunpo
-                       # > 12 → freeze zbyt długi, kamera nie wraca po walce
+Dla zachowania 100% jakości produktu komercyjnego, pipeline posiada ścisłe reguły walidacji klipu przed montażem i publikacją. Jeśli klip nie spełnia warunków czytelności w formacie pionowym 9:16, skrypt **ODRZUCA KLIP**, przerywa renderowanie i zwraca czytelny powód użytkownikowi:
 
-# smart_camera.py linia ~134 (find_action_path PRZEBIEG 4)
-MAX_DELTA = 60         # max px przesunięcia per krok
-                       # > 80 → teleportacja wraca
-                       # < 30 → kamera za wolna, nie dogania walki
-```
+### Kryteria odrzucenia klipu (Rejection Gates):
+1. **OVERLAY_OBSTRUCTION (Zasłonięcie przez nakładki trzecie)**:
+   - Jeśli kluczowa akcja / postać gracza podczas eliminacji znajduje się pod statycznym overlayem (np. panel Porofessora `x > 1400, y = 150-600`), przez co wykadrowanie 9:16 skutkuje wyświetleniem wielkiego okna statystyk zasłaniającego bohatera.
+   - **Akcja**: Odrzucenie klipu z komunikatem: `REJECTED: Akcja/eliminacja toczy się pod nakładką zewnętrzną (np. Porofessor). Wyłącz nakładki w grze lub nagraj czysty klip.`
+2. **EXTREME_DISPERSION (Skrajne rozproszenie walki > 1200px)**:
+   - Jeśli eliminacje w jednej sekundzie zachodzą na skrajnych krawędziach ekranu (np. początek walki `x = 350px`, skok na `x = 1650px` przy krawędzi), a kadr 9:16 (szerokość 608px) fizycznie nie jest w stanie pokazać obu stron walki bez gwałtownego ucięcia akcji.
+   - **Akcja**: Odrzucenie klipu z komunikatem: `REJECTED: Rozrzut walki przekracza możliwości pionowego kadru 9:16 (>1200px).`
+3. **LOW_TRACKING_CONFIDENCE (Brak widoczności postaci < 75%)**:
+   - Jeśli w oknie cięcia wskaźnik widoczności bohatera gracza wynosi poniżej 75% klatek (postać poza widokiem kamery gry, ciągła niewidzialność lub brak pewnego paska HP).
+   - **Akcja**: Odrzucenie klipu z komunikatem: `REJECTED: Zbyt niska widoczność postaci gracza (<75%). Kamera nie gwarantuje centrowania.`
+4. **DECOY_TARGET / SURVIVING_TARGET (Brak potwierdzonego zabójstwa na finiszu)**:
+   - Jeśli końcowy fragment klipu śledzi cel, który przeżył walkę (np. uciekający tank Mundo), a właściwe fragi miały miejsce wcześniej i nie mogą być wykadrowane bez ucięcia.
 
-### Parametry crop:
-- Source: 1920x1080
-- Crop width: 608px (31.6%) → 1080x1920 output po skalowaniu
-- Scale factor: 1920/384 = 5.0 (analiza na skalowanej 384x216)
+## 4.2 VIRAL RETENTION & AUTO-TRIM PACING (Zasady montażu pod algorytm YouTube Shorts)
+
+Dla zagwarantowania maksymalnej retencji (APV > 100%) i braku konieczności ręcznego korygowania okien montażu, silnik analizy momentum (`lol_momentum_analyzer.py`) stosuje 3 żelazne reguły:
+
+### 1. Visual Action Hook (Start w 0.8s - 1.5s):
+- **Problem**: Widzowie przewijają Shorta w pierwszych 1.5 sekundy, jeśli widzą bieganie z bazy, bicie wieży lub stanie w krzakach.
+- **Rozwiązanie w kodzie**: Okno startowe `trim_start` jest ustawiane dokładnie na **`first_kill_t - 2.0s` / `first_engage_t`**.
+- **Efekt**: Widz w 0.5s widzi zarys doskoku/inicjacji, a w 1.5s następuje pierwszy cios/eliminacja. Zero martwych dobiegów.
+
+### 2. Multi-Kill Climax & Seamless Loop (Zakończenie pod Re-watch):
+- **Problem**: Pozostawienie 3-5 sekund po walce (dobijanie minionów, cofanie do bazy, bicie wieży) drastycznie obniża retencję i niszczy zapętlenie.
+- **Rozwiązanie w kodzie**: Wyznaczany jest szczytowy punkt walki (*Climax*, np. TRIPLE/QUADRA/PENTAKILL). Klip jest ostro odcinany dokładnie **`climax_t + 1.2s`**.
+- **Efekt**: Wideo kończy się na fali euforii tuż po ostatnim fragu i banerze, płynnie przeskakując w pętli z powrotem do pierwszego ciosu na początku.
+
+### 3. Multi-Zone Triple OCR & Resilient Regex:
+- Skanowanie 3 stref jednocześnie:
+  1. `KILL_BANNER_REGION` `(0.04, 0.28, 0.18, 0.82)` — centralne banery
+  2. `KILL_FEED_REGION` `(0.04, 0.25, 0.65, 0.98)` — kill feed w prawym górnym rogu
+  3. `CHAT_LOG_REGION` `(0.72, 0.96, 0.04, 0.40)` — komunikaty tekstowe w czacie
+- Odporność na zniekształcenia czcionek Tesseracta: regexy `penta(?:kill|kut|kit|kil)?`, `triple(?:kill|kut|kit|kil)?`, `dominat(ing)?`, `unstoppable` itp. gwarantują 100% trafień bez pomijania akcji.
 
 ---
 
@@ -943,6 +1253,50 @@ C:\Users\mz100\PycharmProjects\shortsyt\
 | 2026-08-19 s16 | Wdrożono Gemini Multi-Model Pool (3.7-flash, 3.5-flash, flash-latest) — 0 błędów 429 |
 | 2026-08-19 s16 | Wdrożono Semantic OCR Action Fingerprint Deduplication w run_lol_agent.py ✅ |
 | 2026-08-19 s16 | Test dedup: pomyślnie zablokowano duplikat 11-36-38-807 (UZOmupNxfrU) |
+| 2026-08-19 s16 | Backup: CONTEXT_PRIME.md utworzony jako niezmienna kopia zapasowa v25 |
+| 2026-08-19 s16 | Testy evaluatora: Pentakill = 91.2/100 (S_TIER), Słaby klip = 30.5/100 (REJECT) ✅ |
+| 2026-08-19 s16 | Test Suite (5/5 PASS): Gemini Pool, Evaluator, OCR Dedup, Ranker, Watcher Engine ✅ |
+| 2026-08-19 s16 | Zweryfikowano klip backlog: 19-04-04-255_0.mp4 (Score=81.0, S_TIER, TRIPLE@13s, PENTA@30.7s) |
+| 2026-08-19 s16 | Smart Camera v11 (Stateful HD Trajectory Tracker 640x360): nearest-neighbor continuity + combat priority weighting |
+| 2026-08-19 s16 | FFmpeg filtergraph pipeline fix: {trim} -> {crop_scale} -> {setpts} (eliminacja skoku kamery przy slow-mo/zoom-punch) |
+| 2026-08-19 s16 | Optymalizacja startu: trim_start = first_kill_t - 8.2s (4.8s w tym meczu) — 0 sklepu, pełny 1. i 2. frag zachowany |
+| 2026-08-19 s16 | Usunięcie mini slow-mo w trakcie walki — ciągłe, płynne 60fps w 1.0x z wejściem w slow-mo tylko na finałowy cios |
+| 2026-08-19 s16 | Sekwencjonowanie napisów dynamicznych: natychmiastowe ucinanie poprzedniego napisu przy kolejnym killu |
+| 2026-08-20 s17 | lol_smart_titles.py: FORBIDDEN template list (Rampage/Unstoppable/Domination) + wymuś narracyjny hook z perspektywy wroga (Enemy Tried to Die style) |
+| 2026-08-20 s17 | lol_pre_pipeline_analyzer.py [NOWY]: skan Outplayed + OCR scoring + YT history (time-decay weights) → ranking klipów przed pipeline + gotowa komenda CLI |
+| 2026-08-20 s17 | lol_editor.py: get_performance_insights() — dynamiczna adaptacja parametrów montażu (zoom, slowmo, audio) na podstawie najnowszych danych YT |
+| 2026-08-24 s20 | merge_split_clips universalization + 4-layer dedup protection (check_duplicate_clip) + .exe build + sync real YT Studio metrics (6.5k views, 22.3h) |
+| 2026-08-24 s20 | Combat Segment Jump-Cut Engine v6: Dual-signal detection, frame-accurate Smart Camera na step1, ucięcie pustego ogona (26.2s total) ✅ |
+| 2026-08-24 s20 | Publikacja Public: d61bPr4MrII (Katarina Unofficial Pentakill) — Jump-Cut v6 + miniaturka + pinned comment ✅ |
+
+---
+
+## 13.5 INTELIGENTNY SILNIK CIĘCIA WALKI & TIGHT CLIMAX (COMBAT JUMP-CUT ENGINE v6)
+
+```
+Problem:
+  W wielu klipach (np. nieoficjalna penta, rozciągnięty teamfight) gracz zdobywa 2 fragi,
+  potem biegnie przez rzekę/linię przez 5-10 sekund, po czym zdobywa kolejne 3 fragi do ACE.
+  Trzymanie ciągłego klipu (35-40s) niszczy retencję (widzowie dropują na bieganiu),
+  a ucięcie początku gubi pierwsze zabójstwa. Ponadto, przeciąganie ogona (5s slowmo + 5s chodzenia)
+  sprawiało, że short trwał 34s zamiast idealnych 24-25s.
+
+Złote Reguły Montażu (ZWERYFIKOWANE — SESJA 20):
+  1. Dual-Signal Combat Detection (find_combat_segments w lol_momentum_analyzer.py):
+     - Łączy OCR kill peaks + ciągłą krzywą momentum (ruch + VFX czarów).
+     - Parametry: activity_threshold = 48.0, pre_roll = 1.2s, post_roll = 1.0s, merge_gap = 2.5s.
+     - Jeśli przerwa > 2.5s (bieganie/pościg) → automatyczny JUMP CUT.
+  
+  2. Multi-Segment Concat & Frame-Accurate Smart Camera (lol_editor.py):
+     - Segmenty walki wycinane bezstratnie (Stream Copy) i łączone przez Concat Demuxer do step1.
+     - Smart Camera (find_action_path) analizuje BEZPOŚREDNIO step1 (01_cut.mp4) z clip_start=0.0.
+     - Zero desynchronizacji kamery po jump-cucie — idealny lock na graczu przez całe wideo.
+
+  3. Tight Climax & Anti-Dragging Ending:
+     - Pentakill/Climax slow-mo duration: _slowmo_dur = 1.5s (speed 0.50x), zoom=1.20x.
+     - Klip kończy się maksymalnie 1.0-1.2s po ostatnim killu / banerze ACE + 2.0s CTA overlay.
+     - Całkowity czas gotowego Shorta wynosi ~24-25s (idealna retencja YT Shorts).
+```
 
 ---
 

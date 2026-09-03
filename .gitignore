@@ -53,13 +53,18 @@ thumbnails/
 node_modules/
 dist-app/
 dist-electron/
+dist-installer/
+*.exe
+*.blockmap
+*.7z
 shortsyt-desktop/node_modules/
 shortsyt-desktop/dist/
 shortsyt-desktop/dist-app/
 shortsyt-desktop/dist-electron/
+shortsyt-desktop/dist-installer/
 shortsyt-desktop/release/
-shortsyt-app/node_modules/
-shortsyt-app/.expo/
+shortsyt-app/
+data/
 
 # ML models
 *.pkl
@@ -121,6 +126,13 @@ _test_micro_shorts.py
 check_syntax.py
 custom_analysis.py
 fix_prehook.py
+analyze_camera.py
+fix_banner.py
+upload_rendered_short.py
+show_yt_cache.py
+complete_oauth.py
+open_port_8765.bat
+setup_token_refresh.ps1
 
 # Config / runtime files
 yt-dlp.conf

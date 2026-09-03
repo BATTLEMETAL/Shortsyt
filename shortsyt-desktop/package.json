@@ -4,6 +4,7 @@
   "description": "Shortsyt Desktop Application - League of Legends Shorts Automation",
   "main": "electron/main.js",
   "scripts": {
+    "start": "electron .",
     "dev:vite": "vite",
     "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
     "dev": "concurrently -k -r \"npm run dev:vite\" \"npm run dev:electron\"",
@@ -17,7 +18,7 @@
     "appId": "com.shortsyt.desktop",
     "productName": "Shortsyt Studio",
     "directories": {
-      "output": "release"
+      "output": "dist-installer"
     },
     "files": [
       "dist/**/*",
@@ -25,10 +26,7 @@
       "package.json"
     ],
     "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ]
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,

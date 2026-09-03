@@ -27,6 +27,7 @@ declare global {
       openExternal: (url: string) => Promise<void>;
       showItemInFolder: (fullPath: string) => Promise<void>;
       openPath: (fullPath: string) => Promise<void>;
+      selectDirectory: () => Promise<string | null>;
     };
   }
 }
@@ -148,6 +149,20 @@ export interface PipelineStateResponse {
   progress: number;
   current_step: string;
   output_path: string | null;
+  thumbnail_path?: string | null;
+  title?: string | null;
+  description?: string | null;
+  pinned_comment?: string | null;
+  champion_name?: string | null;
+  action_type?: string | null;
+  rank?: string | null;
+  source_path?: string | null;
+  clip_start?: number | null;
+  clip_end?: number | null;
+  combat_segments?: Array<[number, number]> | null;
+  qa_status?: 'PASS' | 'WARN' | 'FAIL';
+  qa_score?: number;
+  qa_details?: string[];
   error: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -174,6 +189,7 @@ export async function apiStartPipeline(params: {
   use_zoom_punch: boolean;
   use_smart_camera: boolean;
   expo_push_token?: string;
+  combat_segments?: Array<[number, number]> | null;
 }): Promise<void> {
   const client = await createClient();
   await client.post('/pipeline/start', params);
@@ -191,10 +207,34 @@ export interface ClipItem {
   modified: number;
 }
 
-export async function apiListClips(): Promise<ClipItem[]> {
+export interface AutoDetectResult {
+  clip_start: number;
+  clip_end: number;
+  peak_moment: number;
+  action_type: string;
+  hook_text: string;
+  total_duration: number;
+  detected_peaks: Array<[number, string]>;
+  confidence: string;
+  combat_segments?: Array<[number, number]> | null;
+  has_jump_cut?: boolean;
+}
+
+export async function apiListClips(folder?: string): Promise<ClipItem[]> {
   const client = await createClient();
-  const res = await client.get('/clips');
+  const url = folder ? `/clips?folder=${encodeURIComponent(folder)}` : '/clips';
+  const res = await client.get(url);
   return res.data.clips || [];
+}
+
+export async function apiAutoDetectClip(params: {
+  source_path: string;
+  action_type?: string;
+  champion_name?: string;
+}): Promise<AutoDetectResult> {
+  const client = await createClient();
+  const res = await client.post('/clips/auto-detect', params);
+  return res.data;
 }
 
 export interface OutputItem {
@@ -210,11 +250,51 @@ export async function apiListOutputs(): Promise<OutputItem[]> {
   return res.data.outputs || [];
 }
 
+export async function apiDeleteOutput(filename: string): Promise<void> {
+  const client = await createClient();
+  await client.delete(`/outputs/${encodeURIComponent(filename)}`);
+}
+
 export async function apiGetOutputUrl(filename: string): Promise<string> {
   const baseURL = await getServerUrl();
   const token = await getJwtToken();
   return `${baseURL}/outputs/${encodeURIComponent(filename)}?token=${token || ''}`;
 }
+
+export interface OutputMetadata {
+  filename: string;
+  title: string;
+  description: string;
+  tags: string[];
+  champion_name: string;
+  action_type: string;
+  hook_text: string;
+  clip_start: number;
+  clip_end: number;
+  peak_moment: number;
+  use_speed_ramp: boolean;
+  use_zoom_punch: boolean;
+  use_smart_camera: boolean;
+  source_path: string;
+  rendered_at: string | null;
+  frag_confidence: number | null;
+}
+
+export async function apiGetOutputMetadata(filename: string): Promise<OutputMetadata> {
+  const client = await createClient();
+  const res = await client.get(`/outputs/${encodeURIComponent(filename)}/metadata`);
+  return res.data;
+}
+
+export async function apiSaveOutputMetadata(
+  filename: string,
+  data: Partial<OutputMetadata>
+): Promise<{ status: string; needs_rerender: boolean }> {
+  const client = await createClient();
+  const res = await client.post(`/outputs/${encodeURIComponent(filename)}/metadata`, data);
+  return res.data;
+}
+
 
 export interface ThumbnailItem {
   filename: string;
@@ -273,12 +353,28 @@ export async function apiExchangeYtCode(code: string): Promise<any> {
   return res.data;
 }
 
+export interface PeakSlotInfo {
+  publish_at: string;
+  label: string;
+  local_time: string;
+  peak_slots: string[];
+}
+
+export async function apiGetNextPeakSlot(): Promise<PeakSlotInfo> {
+  const client = await createClient();
+  const res = await client.get('/youtube/next-peak-slot');
+  return res.data;
+}
+
 export async function apiUploadToYt(
   filename: string,
   title: string,
   description: string,
   tags: string[],
-  privacy: string
+  privacy: string = 'public',
+  pinned_comment?: string,
+  thumbnail_path?: string,
+  publish_at?: string
 ): Promise<any> {
   const client = await createClient();
   const res = await client.post(`/youtube/upload/${encodeURIComponent(filename)}`, {
@@ -287,13 +383,28 @@ export async function apiUploadToYt(
     description,
     tags,
     privacy,
+    pinned_comment,
+    thumbnail_path,
+    publish_at,
   });
   return res.data;
 }
 
-export async function apiGetAnalytics(range: string = '30d'): Promise<any> {
+export async function apiGetAnalytics(range: string = '30d', refresh: boolean = false): Promise<any> {
   const client = await createClient();
-  const res = await client.get(`/analytics?range=${range}`);
+  const res = await client.get(`/analytics?range=${range}${refresh ? '&refresh=true' : ''}`);
+  return res.data;
+}
+
+export async function apiGetTuningConfig(): Promise<any> {
+  const client = await createClient();
+  const res = await client.get('/config/tuning');
+  return res.data;
+}
+
+export async function apiSaveTuningConfig(config: any): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/config/tuning', config);
   return res.data;
 }
 
@@ -310,3 +421,167 @@ export async function apiHealthCheck(url?: string): Promise<{ ok: boolean; statu
     return { ok: false };
   }
 }
+
+// ── Dark Psychology Agent API ─────────────────────────────────────────────────
+
+export async function apiGetDarkStatus(): Promise<any> {
+  const client = await createClient();
+  const res = await client.get('/dark/status');
+  return res.data;
+}
+
+export async function apiGetDarkAnalytics(): Promise<any> {
+  const client = await createClient();
+  const res = await client.get('/dark/analytics');
+  return res.data;
+}
+
+export async function apiGetDarkCalibration(): Promise<any> {
+  const client = await createClient();
+  const res = await client.get('/dark/calibration');
+  return res.data;
+}
+
+export async function apiGetDarkDirective(): Promise<any> {
+  const client = await createClient();
+  const res = await client.get('/dark/directive');
+  return res.data;
+}
+
+export async function apiRunDarkAgent(params: { dry_run?: boolean; videos?: number }): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/dark/run', { dry_run: params.dry_run ?? false, videos: params.videos ?? 2 });
+  return res.data;
+}
+
+export async function apiRecalibrateDark(): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/dark/recalibrate');
+  return res.data;
+}
+
+// ── Calendar & Pipeline Slot Reservation API ─────────────────────────────────
+
+export interface CalendarSlot {
+  slot_id: string;
+  date: string;
+  time: string;
+  datetime_local: string;
+  datetime_utc: string;
+  is_peak: boolean;
+  is_past: boolean;
+  status: 'free' | 'reserved' | 'rendering' | 'ready' | 'scheduled' | 'published' | 'past';
+  title?: string;
+  champion?: string;
+  frag_type?: string;
+  source_clip?: string;
+  output_video?: string;
+  thumbnail_url?: string;
+  yt_video_id?: string;
+  yt_url?: string;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface FragAnalysis {
+  video_path: string;
+  duration: number;
+  detected_frag_type: 'pentakill' | 'quadrakill' | 'triple' | 'double' | 'clutch' | 'outplay';
+  confidence: number;
+  kill_count: number;
+  kills: Array<{ timestamp: number; label: string; tier: number }>;
+  min_hp_percentage: number;
+  is_clutch_1hp: boolean;
+  badge_label: string;
+  suggested_title_hook: string;
+  suggested_badge_color: string;
+}
+
+export async function apiGetCalendarSlots(startDate?: string, days: number = 14): Promise<{ slots: CalendarSlot[]; days: number; total: number }> {
+  const client = await createClient();
+  const params: any = { days };
+  if (startDate) params.start_date = startDate;
+  const res = await client.get('/calendar/slots', { params });
+  return res.data;
+}
+
+export async function apiReserveCalendarSlot(data: {
+  slot_id: string;
+  title?: string;
+  champion?: string;
+  frag_type?: string;
+  source_clip?: string;
+  output_video?: string;
+  notes?: string;
+}): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/calendar/reserve', data);
+  return res.data;
+}
+
+export async function apiDeleteCalendarSlot(slotId: string): Promise<any> {
+  const client = await createClient();
+  const res = await client.delete(`/calendar/slot/${encodeURIComponent(slotId)}`);
+  return res.data;
+}
+
+export async function apiPublishCalendarSlot(slotId: string): Promise<any> {
+  const client = await createClient();
+  const res = await client.post(`/calendar/slot/${encodeURIComponent(slotId)}/publish`);
+  return res.data;
+}
+
+export async function apiAutoFillCalendar(maxSlots: number = 4): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/calendar/auto-fill', { max_slots: maxSlots });
+  return res.data;
+}
+
+export async function apiAnalyzeFrag(clipPath: string): Promise<FragAnalysis> {
+  const client = await createClient();
+  const res = await client.post('/clips/analyze-frag', { clip_path: clipPath });
+  return res.data;
+}
+
+// ── Hardware Benchmark & Auto-Tuning API ─────────────────────────────────────
+
+export interface HardwareProfile {
+  scanned_at: string;
+  tier: 'high' | 'medium' | 'low';
+  tier_label: string;
+  tier_description: string;
+  hardware: {
+    cpu_name: string;
+    cpu_cores: number;
+    ram_total_gb: number;
+    ram_available_gb: number;
+    gpu_name: string;
+    gpu_vendor: string;
+    vram_gb: number;
+    detected_encoder: string;
+    os_version: string;
+  };
+  tuned_settings: {
+    encoder: string;
+    encoder_args: string[];
+    render_fps: number;
+    render_threads: number;
+    ocr_sample_fps: number;
+    max_ocr_workers: number;
+    enable_heavy_filters: boolean;
+  };
+}
+
+export async function apiGetHardwareInfo(): Promise<HardwareProfile> {
+  const client = await createClient();
+  const res = await client.get('/system/hardware-info');
+  return res.data;
+}
+
+export async function apiRunBenchmarkScan(): Promise<{ status: string; profile: HardwareProfile }> {
+  const client = await createClient();
+  const res = await client.post('/system/benchmark-scan');
+  return res.data;
+}
+
+

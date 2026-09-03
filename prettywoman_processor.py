@@ -302,20 +302,31 @@ def match_video_to_excel(video_name: str, excel_data: list) -> dict | None:
     return best_match
 
 
-# ── MAIN ─────────────────────────────────────────────────────────────────────
+# ── MAIN ───────────────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--folder", default=TIKTOK_FOLDER, help="Folder z filmami TikTok")
-    parser.add_argument("--test",   action="store_true",   help="Test na 1 pliku")
-    parser.add_argument("--no-music", action="store_true", help="Pomijaj dodawanie muzyki")
-    parser.add_argument("--style",  default="crop",        choices=["crop","blur","both"])
+    parser = argparse.ArgumentParser(description="Prettywoman Processor — Beauty re-edit dla YT Shorts")
+    parser.add_argument("--folder",         default=TIKTOK_FOLDER, help="Folder z filmami TikTok")
+    parser.add_argument("--test",           action="store_true",   help="Test na 1 pliku")
+    parser.add_argument("--no-music",       action="store_true",   help="Pomijaj dodawanie muzyki")
+    parser.add_argument("--style",          default="crop",        choices=["crop","blur","both"],
+                        help="Styl usuwania watermark (użyj TYLKO gdy plik ma watermark)")
+    parser.add_argument("--already-clean",  action="store_true",   default=True,
+                        help="[Default] Pliki ze snaptik.app — bez watermarku. Pomija FFmpeg crop.")
+    parser.add_argument("--force-crop",     action="store_true",
+                        help="Wymuś usuwanie watermarku przez crop (gdy plik ma watermark)")
     args = parser.parse_args()
 
+    # Logika: --force-crop nadpisuje --already-clean
+    already_clean = (not args.force_crop)
+
     print("=" * 60)
-    print("  🌸 PRETTYWOMAN PROCESSOR — Usuwanie watermark TikTok")
+    print("  🌸 PRETTYWOMAN PROCESSOR — Beauty re-edit dla YT Shorts")
     print(f"  Folder: {args.folder}")
     print(f"  Output: {OUTPUT_FOLDER}")
-    print(f"  Styl usuwania watermark: {args.style}")
+    if already_clean:
+        print("  ✅ Tryb: Pliki JUŻ BEZ watermarku (snaptik/download_addr) — pomijam crop")
+    else:
+        print(f"  ✂️  Tryb: Usuwanie watermarku FFmpeg [{args.style}] — może obniżyć jakość")
     print("=" * 60)
 
     # Wczytaj dane
@@ -350,12 +361,39 @@ def main():
             results.append({"input": v['name'], "output": final_path, "status": "skipped"})
             continue
 
-        # KROK 1: Usuń watermark
-        ok_wm = remove_tiktok_watermark(v['path'], nowm_path, style=args.style)
-        if not ok_wm:
-            print(f"  ❌ Watermark removal failed")
-            results.append({"input": v['name'], "output": "", "status": "failed"})
-            continue
+        # KROK 1: Watermark handling
+        if already_clean:
+            # Plik ze snaptik.app lub download_addr — JUŻ czysty.
+            # Zamiast niszczyć jakość przez crop, tylko aplikujemy warm beauty grading przez FFmpeg.
+            print(f"  🌸 Aplikuję beauty grading (bez cropu)...")
+            vf_beauty = (
+                "curves=r='0/0 0.5/0.55 1/1':g='0/0 0.5/0.50 1/0.97':b='0/0 0.5/0.45 1/0.90',"
+                "hue=s=1.05"
+            )
+            cmd_beauty = [
+                FFMPEG, "-y", "-nostdin",
+                "-i", v['path'],
+                "-vf", vf_beauty,
+                "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+                "-c:a", "copy",          # audio KOPIA — zero utraty
+                "-movflags", "+faststart",
+                nowm_path
+            ]
+            r = subprocess.run(cmd_beauty, capture_output=True, timeout=300)
+            if r.returncode != 0 or not os.path.exists(nowm_path):
+                # Fallback: skopiuj bez zmian
+                shutil.copy(v['path'], nowm_path)
+                print(f"  ⚠️  Beauty grading nie powiódł się — używam oryginału")
+            else:
+                size_mb = os.path.getsize(nowm_path) / 1024 / 1024
+                print(f"  ✅ Beauty grading OK ({size_mb:.1f}MB) — audio bez zmian")
+        else:
+            # --force-crop: plik MA watermark — użyj FFmpeg crop (utrata jakości)
+            ok_wm = remove_tiktok_watermark(v['path'], nowm_path, style=args.style)
+            if not ok_wm:
+                print(f"  ❌ Watermark removal failed")
+                results.append({"input": v['name'], "output": "", "status": "failed"})
+                continue
 
         # KROK 2: Dodaj muzykę
         if music_files and not args.no_music:

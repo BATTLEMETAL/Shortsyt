@@ -8,6 +8,8 @@ import Outputs from './screens/Outputs';
 import Analytics from './screens/Analytics';
 import FeedbackTuning from './screens/FeedbackTuning';
 import Settings from './screens/Settings';
+import DarkAgent from './screens/DarkAgent';
+import { CalendarScheduler } from './screens/CalendarScheduler';
 import { apiHealthCheck, apiGetStatus } from './lib/api';
 import { PipelineStatusType } from './components/StatusBadge';
 
@@ -54,13 +56,15 @@ export default function App() {
         <Sidebar backendConnected={backendConnected} pipelineRunning={pipelineRunning} />
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#0A0E1A]">
+        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#0A0E1A] p-6">
           <Routes>
             <Route path="/" element={<Dashboard onStatusChange={handleStatusChange} />} />
             <Route path="/clips" element={<ClipBrowser />} />
+            <Route path="/calendar" element={<CalendarScheduler />} />
             <Route path="/render" element={<RenderMonitor />} />
             <Route path="/outputs" element={<Outputs />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/dark" element={<DarkAgent />} />
             <Route path="/tuning" element={<FeedbackTuning />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -77,6 +77,14 @@ try:
 except ImportError:
     PERF_TRACKER_OK = False
 
+# Pre-Flight Quality Validator — auto-korekta start/end i odrzucanie złych klipów
+try:
+    from lol_quality_validator import validate_pre_flight
+    PRE_FLIGHT_OK = True
+except ImportError:
+    PRE_FLIGHT_OK = False
+    print("⚠️  lol_quality_validator.py niedostępny — pre-flight wyłączony")
+
 
 LOG_FILE = os.path.join(os.path.dirname(__file__), "lol_agent.log")
 
@@ -534,6 +542,35 @@ def run_pipeline(
         peak_moment_in_clip = max(0.0, target_climax_t - analysis.get("peak_start", 0.0))
 
     log(f"   🎯 Zsynchronizowany Climax @ {peak_moment_in_clip:.1f}s (oryg: {target_climax_t:.1f}s)")
+
+    # ── Pre-Flight Quality Validator ─────────────────────────────────────────
+    # Automatycznie koryguje okno start/end (Action Hook Guard) i odrzuca złe klipy
+    if PRE_FLIGHT_OK:
+        log("   🔍 Pre-Flight Validator: audyt jakości klipu...")
+        try:
+            _vr = validate_pre_flight(
+                video_path=source_clip,
+                trim_start=analysis["peak_start"],
+                trim_end=analysis["peak_end"],
+                peaks=final_peaks,
+                min_tracking_confidence=0.70,
+            )
+            if not _vr.passed:
+                log(f"❌ REJECTED ({_vr.rejection_code}): {_vr.rejection_message}")
+                log("   ⏭️  Pipeline przerywa — klip odrzucony przez Pre-Flight Gate.")
+                return None
+            # Zaaplikuj auto-korekty okna (Action Hook Guard)
+            if abs(_vr.adjusted_trim_start - analysis["peak_start"]) > 0.3:
+                analysis["peak_start"] = _vr.adjusted_trim_start
+                analysis["clip_duration"] = _vr.adjusted_trim_end - _vr.adjusted_trim_start
+            if abs(_vr.adjusted_trim_end - analysis["peak_end"]) > 0.3:
+                analysis["peak_end"] = _vr.adjusted_trim_end
+                analysis["clip_duration"] = _vr.adjusted_trim_end - _vr.adjusted_trim_start
+            for _d in _vr.diagnostic_details:
+                log(f"   🔧 {_d}")
+            log(f"   ✅ Pre-Flight PASS | kille={_vr.kills_visible}/{_vr.total_kills} w kadrze | conf={_vr.tracking_confidence:.0%}")
+        except Exception as _e:
+            log(f"   ⚠️  Pre-Flight error (pomijam): {_e}")
 
     final_video = render_short(
         source_path=source_clip,

@@ -394,6 +394,27 @@ def get_forbidden_topics(profile_name: str, limit: int = 30) -> list:
     except:
         return []
 
+def get_forbidden_titles(profile_name: str, limit: int = 50) -> list:
+    """Zwraca tytuły ostatnich filmów — zapobiega duplikatom TYTUŁÓW (nie tylko skryptów)."""
+    if not os.path.exists(TOPIC_HISTORY_FILE):
+        return []
+    try:
+        with open(TOPIC_HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        profile_history = data.get(profile_name, [])
+        recent = profile_history[-limit:]
+        titles = []
+        for item in recent:
+            import re as _re_t
+            t = item.get("title", "").split("#")[0].strip()
+            t_clean = _re_t.sub(r'[^\w\s]', '', t).strip().lower()
+            if t_clean and len(t_clean) > 5:
+                titles.append(t_clean)
+        return list(dict.fromkeys(titles))
+    except:
+        return []
+
+
 def add_to_history(profile_name: str, title: str, script_text: str = ""):
     if not title: return
     data = {}
@@ -1082,6 +1103,16 @@ darkpsychology, manipulation, psychology, mindset, viral"""
                     save_pre_audit(upload_result, tytul, run_dark_agent_cycle._last_audit_result)
             except Exception as fb_err:
                 print(f"   ⚠️  [FEEDBACK] Nie udało się zapisać wyniku audytu: {fb_err}")
+            # ── FEEDBACK CYCLE: aktualizacja + kalibracja gdy ostatni film sesji ──
+            if video_index >= total_videos:
+                try:
+                    from auditor_feedback import run_feedback_cycle
+                    print("\n📊 [FEEDBACK CYCLE] Ostatni film sesji — sprawdzam stare wyniki z YT...")
+                    cycle_result = run_feedback_cycle(youtube)
+                    print(f"   ✅ Zaktualizowano: {cycle_result['updated_count']} film(ów) | "
+                          f"Wagi: {', '.join(f'{k}={v:.2f}x' for k,v in cycle_result.get('weights',{}).items())[:80]}")
+                except Exception as _fc_err:
+                    print(f"   ⚠️  [FEEDBACK CYCLE] Błąd: {_fc_err}")
         else:
             # ── FALLBACK: Dodaj do kolejki oczekujących ───────────────────
             print(f"\n❌ [UPLOAD NIEUDANY] Wszystkie próby wyczerpane. Błąd: {last_upload_error}")

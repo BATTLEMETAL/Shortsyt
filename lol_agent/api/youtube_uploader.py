@@ -57,7 +57,7 @@ def get_token_status() -> Dict[str, Any]:
             "message": "Brak tokenu — wymagana autoryzacja",
         }
 
-    # Odśwież jeśli wygasł
+    # Odśwież jeśli wygasł access token (1h)
     if creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
@@ -72,22 +72,26 @@ def get_token_status() -> Dict[str, Any]:
                 "message": f"Token nieważny, odświeżenie nie udało się: {e}",
             }
 
-    days_remaining = None
+    # creds.expiry to czas wygaśnięcia krótkotrwałego access tokenu (1 godzina).
+    # Dopóki creds.refresh_token istnieje, token odnawia się automatycznie w nieskończoność
+    # (w trybie Testing Google Cloud token wygasa po 7 dniach od autoryzacji).
+    days_remaining = 7
     expires_at = None
-    if creds.expiry:
-        # expiry jest naive UTC
-        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-        delta = creds.expiry - now_utc
-        days_remaining = max(0, int(delta.total_seconds() / 86400))
+    if YT_TOKEN_PATH.exists() and creds.refresh_token:
+        mtime = YT_TOKEN_PATH.stat().st_mtime
+        days_since_auth = (time.time() - mtime) / 86400.0
+        days_remaining = max(1, min(7, int(7 - days_since_auth) + (1 if (7 - days_since_auth) % 1 > 0.05 else 0)))
+        expires_at = datetime.fromtimestamp(mtime + 7 * 86400, timezone.utc).isoformat()
+    elif creds.expiry:
         expires_at = creds.expiry.isoformat()
 
     return {
         "has_token": True,
-        "is_valid": creds.valid,
+        "is_valid": creds.valid or bool(creds.refresh_token),
         "can_refresh": bool(creds.refresh_token),
         "expires_at": expires_at,
         "days_remaining": days_remaining,
-        "message": "Token aktywny" if creds.valid else "Token wygasł",
+        "message": f"Token aktywny (Autoodnawialny, {days_remaining} dni)" if (creds.valid or creds.refresh_token) else "Token wygasł",
     }
 
 
@@ -290,6 +294,50 @@ def exchange_auth_code(code: str) -> Dict[str, Any]:
     return get_token_status()
 
 
+PEAK_SLOTS_CET = ["08:30", "12:00", "18:30", "20:30"]
+
+
+def get_next_optimal_publish_time() -> Dict[str, Any]:
+    """
+    Oblicza najbliższy wolny slot godzinowy najwyższego ruchu (Peak Hours) dla YouTube Shorts.
+    Zwraca ISO UTC timestamp, czytelny label (np. 'Dziś, 18:30 CET') oraz godzinę.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        tz_cet = ZoneInfo("Europe/Warsaw")
+    except Exception:
+        tz_cet = timezone(timedelta(hours=2))
+
+    now = datetime.now(tz_cet)
+    
+    # Przejrzyj dzisiejsze sloty
+    target_dt = None
+    for slot in PEAK_SLOTS_CET:
+        h, m = map(int, slot.split(":"))
+        candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        # Musi być co najmniej 15 minut w przyszłości
+        if candidate > now + timedelta(minutes=15):
+            target_dt = candidate
+            label = f"Dzisiaj o {slot} CET (Peak Slot ⚡)"
+            break
+
+    # Jeśli wszystkie dzisiejsze sloty minęły, wybierz jutro 08:30
+    if target_dt is None:
+        tomorrow = now + timedelta(days=1)
+        target_dt = tomorrow.replace(hour=8, minute=30, second=0, microsecond=0)
+        label = "Jutro o 08:30 CET (Morning Peak 🌅)"
+
+    utc_dt = target_dt.astimezone(timezone.utc)
+    publish_at_iso = utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    return {
+        "publish_at": publish_at_iso,
+        "label": label,
+        "local_time": target_dt.strftime("%Y-%m-%d %H:%M"),
+        "peak_slots": PEAK_SLOTS_CET,
+    }
+
+
 def upload_video(
     video_path: str,
     title: str,
@@ -297,8 +345,11 @@ def upload_video(
     tags: list,
     privacy: str = "private",
     category_id: str = "20",
+    pinned_comment: Optional[str] = None,
+    thumbnail_path: Optional[str] = None,
+    publish_at: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Upload wideo na YouTube."""
+    """Upload wideo na YouTube z automatycznym komentarzem, miniaturką oraz opcjonalnym planowaniem (Peak Hours)."""
     creds = _load_credentials()
     if creds is None:
         raise ValueError("Brak tokenu YouTube — wymagana autoryzacja")
@@ -313,6 +364,25 @@ def upload_video(
     if not video_path.exists():
         raise FileNotFoundError(f"Plik nie istnieje: {video_path}")
 
+    # Konfiguracja statusu (publiczny / prywatny / zaplanowany publishAt)
+    status_body: Dict[str, Any] = {
+        "selfDeclaredMadeForKids": False,
+    }
+
+    if publish_at and publish_at.strip():
+        # Zgodnie ze specyfikacją YouTube API: zaplanowane filmy MUSZĄ mieć privacyStatus='private' i publishAt w RFC 3339 (UTC)
+        status_body["privacyStatus"] = "private"
+        # Upewnij się, że format to UTC ISO np. 2026-09-02T16:30:00Z
+        clean_pub = publish_at.strip()
+        try:
+            dt = datetime.fromisoformat(clean_pub.replace("Z", "+00:00"))
+            status_body["publishAt"] = dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            status_body["publishAt"] = clean_pub
+        print(f"[YouTube] ⏰ Zaplanowano publikację na slot: {status_body['publishAt']}")
+    else:
+        status_body["privacyStatus"] = privacy
+
     body = {
         "snippet": {
             "title": title,
@@ -320,10 +390,7 @@ def upload_video(
             "tags": tags,
             "categoryId": category_id,
         },
-        "status": {
-            "privacyStatus": privacy,
-            "selfDeclaredMadeForKids": False,
-        },
+        "status": status_body,
     }
 
     media = MediaFileUpload(
@@ -343,9 +410,50 @@ def upload_video(
     while response is None:
         status, response = request.next_chunk()
 
+    video_id = response["id"]
+    print(f"[YouTube] ✅ Wideo wgrane pomyślnie! ID: {video_id}")
+
+    # 1. Automatyczne wgrywanie miniaturki (jeśli podana lub istnieje plik _thumb.jpg)
+    thumb_target = thumbnail_path or str(video_path).replace(".mp4", "_thumb.jpg")
+    if Path(thumb_target).exists():
+        try:
+            thumb_media = MediaFileUpload(str(thumb_target), mimetype="image/jpeg")
+            youtube.thumbnails().set(
+                videoId=video_id,
+                media_body=thumb_media,
+            ).execute()
+            print(f"[YouTube] ✅ Miniaturka 9:16 została wgrana na YouTube: {thumb_target}")
+        except Exception as te:
+            print(f"[YouTube] ⚠️ Ostrzeżenie przy wgrywaniu miniaturki: {te}")
+
+    # 2. Automatyczne dodawanie przypiętego komentarza pod Shortem
+    comment_id = None
+    if pinned_comment and pinned_comment.strip():
+        try:
+            comment_body = {
+                "snippet": {
+                    "videoId": video_id,
+                    "topLevelComment": {
+                        "snippet": {
+                            "textOriginal": pinned_comment.strip()
+                        }
+                    }
+                }
+            }
+            comment_res = youtube.commentThreads().insert(
+                part="snippet",
+                body=comment_body
+            ).execute()
+            comment_id = comment_res.get("id")
+            print(f"[YouTube] ✅ Przypięty komentarz dodany pod filmem: '{pinned_comment[:50]}' (ID: {comment_id})")
+        except Exception as ce:
+            print(f"[YouTube] ⚠️ Ostrzeżenie przy publikacji komentarza: {ce}")
+
     return {
-        "video_id": response["id"],
-        "url": f"https://www.youtube.com/shorts/{response['id']}",
+        "video_id": video_id,
+        "url": f"https://www.youtube.com/shorts/{video_id}",
         "title": response["snippet"]["title"],
         "status": response["status"]["privacyStatus"],
+        "publish_at": response["status"].get("publishAt"),
+        "comment_id": comment_id,
     }

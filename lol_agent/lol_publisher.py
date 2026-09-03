@@ -14,13 +14,17 @@ if hasattr(sys.stdout, "reconfigure"):
 import types
 
 # Compatibility shim for older pickled Google Auth tokens
-if 'google.auth._regional_access_boundary_utils' not in sys.modules:
+try:
+    import google.auth._regional_access_boundary_utils
+except ImportError:
     class _DynamicDummyModule(types.ModuleType):
         def __getattr__(self, name):
             class Dummy:
                 def __init__(self, *args, **kwargs): pass
                 def __setstate__(self, state):
                     if isinstance(state, dict): self.__dict__.update(state)
+                def apply_headers(self, headers): pass
+                def __getattr__(self, name): return lambda *a, **k: None
             Dummy.__name__ = name
             setattr(self, name, Dummy)
             return Dummy
