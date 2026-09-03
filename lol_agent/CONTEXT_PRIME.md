@@ -494,7 +494,7 @@ GEMINI_MODEL        = "gemini-2.5-flash"
 
 ### .env — plik w root projektu (`C:\Users\mz100\PycharmProjects\shortsyt\.env`):
 ```
-GEMINI_API_KEY=AIzaSyAjs9ZHU8ktQ-ilzvrF3LFanZxH9Ig7Nyo
+GEMINI_API_KEY=your_gemini_api_key_here
 API_PASSWORD=shortsyt2026         <- hasło do apki Android (domyślne)
 JWT_SECRET=change_me_to_random_32char_secret_here
 API_PORT=8765
