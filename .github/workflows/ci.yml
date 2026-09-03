@@ -24,7 +24,7 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov python-dotenv
+          pip install -r requirements.txt
 
       - name: Run tests
         run: |
@@ -33,4 +33,4 @@ jobs:
       - name: Coverage (informational only)
         if: always()
         run: |
-          pytest tests/ --cov=quality_auditor --cov-report=term-missing || true
+          pytest tests/ --cov=lol_agent --cov-report=term-missing || true

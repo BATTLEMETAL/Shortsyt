@@ -138,3 +138,8 @@ setup_token_refresh.ps1
 yt-dlp.conf
 update_schedule_19h.ps1
 
+# Archive of legacy experiments & scrapers
+_archive/
+auth_url.txt
+*auth_url*.txt
+

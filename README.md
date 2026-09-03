@@ -5,7 +5,7 @@
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](.)
 [![OpenCV](https://img.shields.io/badge/OpenCV-Computer%20Vision-5C3EE8?logo=opencv&logoColor=white)](.)
 [![FastAPI](https://img.shields.io/badge/FastAPI-v2-009688?logo=fastapi&logoColor=white)](.)
-[![YouTube](https://img.shields.io/badge/YouTube-Dwannellenga-FF0000?logo=youtube)](https://youtube.com/@Dwannellenga/shorts)
+[![YouTube](https://img.shields.io/badge/YouTube-dwannellenga471-FF0000?logo=youtube)](https://www.youtube.com/@dwannellenga471/shorts)
 [![Quality Score](https://img.shields.io/badge/Quality%20Score-91%2F100-brightgreen)](.)
 
 > **Autonomous AI-driven YouTube Shorts generation and publishing pipeline.** Built with Computer Vision (OpenCV HP-bar tracking), OCR momentum analysis (Tesseract), AI multimodal narrative engine (Gemini), dynamic FFmpeg rendering (9:16 vertical crop, auto-chase speedup, slow-mo 60FPS), and a native Electron Desktop Studio (React 18 + Vite + TailwindCSS).
@@ -28,7 +28,7 @@ Real YouTube Shorts rendered and published automatically by the pipeline:
 
 | Metric | Value |
 |---|---|
-| **Production Channel** | [Dwannellenga (@Dwannellenga)](https://youtube.com/@Dwannellenga/shorts) |
+| **Production Channel** | [Dwannellenga (@dwannellenga471)](https://www.youtube.com/@dwannellenga471/shorts) |
 | **Published Shorts** | **4+ Verified Production Shorts** (Fully Automated Runs) |
 | **Smart Camera Accuracy** | **100% Tracking Stability** (Weighted Combat Centroid Blending) |
 | **Average Quality Score** | **94–100 / 100** (Automated Pre-Flight & Post-Render QA) |
