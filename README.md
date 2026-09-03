@@ -85,17 +85,35 @@ Shortsyt includes a real-time pacing engine integrated with the Desktop Studio U
 
 ```mermaid
 flowchart TD
+    subgraph Ingestion & Analysis
     A[Raw 16:9 Gameplay Clip] --> B[Pre-Pipeline Analyzer & Ranker]
     B --> C[Computer Vision: Smart Camera v25]
-    B --> D[OCR Momentum Analyzer & Kill Detector]
-    C --> E[Dynamic FFmpeg 9:16 Video Editor v33]
-    D --> E
-    E --> F[AI Narrative & Hook Engine - Gemini 2.5 Flash]
-    F --> G[Hero-Frame Thumbnail Generator 1080x1920]
-    G --> H[Pre-Flight & Post-Render QA Validator]
-    H -->|Quality Score >= 90| I[YouTube Data API v3 Publisher]
+    B --> D[OCR Frag & Momentum Detector]
+    end
+
+    subgraph Tuning & Pacing
+    M[3-Mode Pacing Manager: tuning_manager] -.->|Buildup & Outro| D
+    M -.->|Zoom & Slow-Mo| E[Dynamic FFmpeg 9:16 Editor v33]
+    M -.->|Tone Hype/Story/Meme| F[AI Narrative & SEO: Gemini 2.5 Flash]
+    end
+
+    subgraph Render & QA
+    C -->|Trajectory X| E
+    D -->|Cut Windows & Peaks| E
+    N[GPU Hardware Accel: NVENC/QSV/CPU] --> E
+    E --> F
+    E --> G[Hero-Frame Thumbnail 1080x1920]
+    F --> H[Pre-Flight & Post-Render QA Validator]
+    G --> H
+    end
+
+    subgraph Deployment & Feedback Loop
+    H -->|QA Score >= 90| I[YouTube Data API v3 Publisher]
     H -->|Reject| J[Quarantine & Debug Log]
-    
+    I --> O[Auditor Feedback Loop: auditor_feedback]
+    O -.->|24h-48h Views & CTR Correlation| M
+    end
+
     subgraph Control Layer
     K[FastAPI Backend - Port 8765] <--> L[Electron Desktop Studio - React 18]
     K <--> I
@@ -104,16 +122,23 @@ flowchart TD
 
 ---
 
-## 💻 CLI Usage
+## 💻 Launch & CLI Usage
 
+### 🚀 1-Click Desktop Studio Launcher
+Start the FastAPI server and launch the Desktop GUI with a single click:
+```powershell
+.\Uruchom_Shortsyt_Studio.bat
+```
+
+### ⌨️ CLI Autonomous Runner
 Run the autonomous pipeline from terminal or command line:
 
 ```powershell
-# Standard run with automatic analysis and rendering
-.\venv313\Scripts\python.exe lol_agent\run_lol_agent.py --file "path\to\clip.mp4"
+# Standard run with automatic analysis, 9:16 rendering, and QA
+python lol_agent/run_lol_agent.py --file "path\to\clip.mp4"
 
 # Custom short parameters & fine control
-.\venv313\Scripts\python.exe lol_agent\run_lol_agent.py `
+python lol_agent/run_lol_agent.py `
   --file "path\to\clip.mp4" `
   --champion Katarina `
   --action pentakill `
@@ -122,20 +147,20 @@ Run the autonomous pipeline from terminal or command line:
   --music "ncs_alan_walker_fade.mp3" `
   --no-slowmo
 
-# Dry-run mode (render and QA without uploading to YouTube)
-.\venv313\Scripts\python.exe lol_agent\run_lol_agent.py --file "path\to\clip.mp4" --dry-run
+# Dry-run mode (render video, thumbnail, and metadata without uploading)
+python lol_agent/run_lol_agent.py --file "path\to\clip.mp4" --dry-run
 
-# Pre-pipeline ranker (find top clips automatically)
-.\venv313\Scripts\python.exe lol_agent\lol_pre_pipeline_analyzer.py --top 5
+# Pre-pipeline ranker (find top clips automatically from raw folder)
+python lol_agent/lol_pre_pipeline_analyzer.py --top 5
 ```
 
 ### CLI Options:
-- `--file <path>`: Source 16:9 video path (Medal/Outplayed/raw gameplay).
+- `--file <path>`: Source 16:9 video path (Medal/Outplayed/OBS raw gameplay).
 - `--champion <name>`: Champion whitelist override (prevents AI hallucination).
 - `--action <type>`: Action type (`pentakill`, `quadrakill`, `triple`, `outplay`, `clutch`).
 - `--start <sec>` / `--end <sec>`: Precise clip boundaries.
 - `--music <name>`: Custom background audio track selection.
-- `--no-slowmo`: Disable automatic 0.45x slow-motion on peak moments.
+- `--no-slowmo`: Disable automatic slow-motion on peak moments.
 - `--dry-run`: Render video, thumbnail, and metadata without publishing.
 - `--force`: Bypass deduplication fingerprint checks.
 
@@ -161,19 +186,20 @@ Run the autonomous pipeline from terminal or command line:
 
 ## 🛠️ Technology Stack
 
-| Layer | Technologies |
-|---|---|
-| **Computer Vision & Tracking** | OpenCV, NumPy, Color Space Segmentation |
-| **Action & Kill Detection** | Tesseract OCR (5.4.0), PyTesseract, Momentum Analyzers |
-| **Video Processing** | FFmpeg (60 FPS, Mininterpolate, 9:16 Smart Crop, Color EQ) |
-| **AI Metadata & Hooks** | Google Gemini Multimodal API (Narrative Titles & Tags) |
-| **Desktop Application** | Electron 32, React 18, Vite, TypeScript, TailwindCSS |
-| **Backend & Automation** | FastAPI, Uvicorn, Python 3.13, YouTube Data API v3 OAuth2 |
+| Layer | Technologies & Libraries | Key Responsibilities |
+|---|---|---|
+| **Computer Vision & Tracking** | OpenCV, NumPy, Color Space Segmentation | Real-time 1080p HP-bar tracking, weighted combat centroid blending, instant Shunpo snap |
+| **Action & Kill Detection** | Tesseract OCR (5.4.0), PyTesseract, Regex Analyzers | Triple-zone HUD scanning (kill banner, feed, chat), engage lead 3.5s buffer |
+| **Video & Audio Processing** | FFmpeg (NVENC GPU / CPU), Librosa, Pydub | Dynamic 9:16 smart pan, minterpolate 60FPS slow-mo, audio beat-sync, sidechain ducking |
+| **Pacing & Self-Optimization** | Python, SciPy Pearson Correlation, JSON Profiles | 3-mode pacing presets (Aggressive/Balanced/Cinematic), 48h YouTube retention feedback loop |
+| **AI Metadata & Hooks** | Google Gemini 2.5 Flash Multimodal API | Viral title generation, channel-specific descriptions, auto-pinned comments, SEO tags |
+| **Desktop Application** | Electron 32, React 18, Vite, TypeScript, TailwindCSS | Native GUI, interactive render monitor, clip browser, style tuner, calendar scheduler |
+| **Backend & Automation** | FastAPI, Uvicorn, Python 3.13, YouTube Data API v3 | REST endpoints, OAuth2 token rotation, automated upload & thumbnail publishing |
 
 ---
 
 ## 🔒 Privacy & Safety
 
 - Tokens, OAuth credentials (`accounts/`), `.env`, and raw video binaries are strictly excluded via `.gitignore`.
-- Video processing, computer vision analysis, and rendering happen 100% locally.
+- Video processing, computer vision analysis, and rendering happen 100% locally on your machine.
 
