@@ -38,22 +38,46 @@ Real YouTube Shorts rendered and published automatically by the pipeline:
 
 ---
 
-## 🎯 Smart Camera v11 — Computer Vision HP-Bar Tracking
+## 🎯 Smart Camera v25 — Zero-Touch Computer Vision & Combat Tracking
 
-### The Problem: Fast Dashing Champions
+### The Problem: Fast Dashing Champions & 9:16 Crop
 In fast-paced games like League of Legends, high-mobility champions (e.g., Katarina with Shunpo/blinks, Zed, Yasuo) instantly teleport across the screen. Traditional bounding-box tracking or centroid visual tracking fails:
-- **Teleportation glitches:** The camera jerks abruptly across the screen, causing disorientation in 9:16 vertical mode.
-- **VFX attraction:** Explosions, AOE abilities, and death animations pull visual centroids away from the champion.
-- **HUD occlusion:** Static minimap and scoreboard elements confuse naive object trackers.
+- **Teleportation glitches:** The camera jerks abruptly or lags behind, causing severe disorientation in 9:16 vertical mode.
+- **VFX & UI attraction:** Explosions, AOE circles, minimap icons, and death animations pull visual centroids away from the champion.
+- **Chat occlusion:** Chat messages in the bottom-left corner confuse naive optical flow algorithms.
 
-### The Solution: Multi-Layer Color-Space Tracking & Velocity Limiting
-`smart_camera.py` implements a specialized 4-stage tracking algorithm:
+### The Solution: Smart Camera v25 Algorithm
+`smart_camera.py` implements a specialized stateful tracking algorithm operating in full 1080p:
 
-1. **HP-Bar Detection:** Color-space segmentation isolating player gold (`R>160, G>130, B<110`) and ally green vs. enemy red HP bars.
-2. **Fight-Centroid Scoring:** Dynamic weighting between player position and teamfight density:
+1. **Precision Player HP-Bar Detection (1080p):**
+   Isolates player gold in color-space: `(r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)` with strict geometry filters (`aspect 2.0–20.0`, `height 3–16px`, `min_area 30`).
+2. **Instant Shunpo/Flash Snap:**
+   When champion blinks across the screen (`delta > 250px`), the camera snaps immediately instead of sluggishly dragging behind.
+3. **Combat Centroid Fallback:**
+   If the player is temporarily obscured (>4 frames during Zhonya, stealth, or brush), the camera smoothly transitions toward the enemy combat centroid:
    $$\text{Target}_X = \frac{2 \times \text{Player}_X + \text{FightCenter}_X}{3}$$
-3. **Adaptive Velocity Limiter:** Strict `MAX_DELTA = 60px/step` clamping prevents camera snapping during instant blinks/dashes while maintaining smooth cinematic pan.
-4. **Kill-Window & Streak Freeze:** `FREEZE_STREAK = 8` holds the camera steady during multi-kill sequences to guarantee kill banners remain fully framed (`BANNER_SHIFT = 160px`).
+4. **UI Exclusion Zones:**
+   Bottom-left chat (`y: 0.72–0.96, x: 0.04–0.40`) and bottom-right minimap are masked out from centroid calculations.
+5. **Multi-Kill Streak Freeze:**
+   Holds the camera steady during multi-kill banner popups (`FREEZE_STREAK = 8`, `BANNER_SHIFT = 160px`) so gold kill banners never get cut off.
+
+---
+
+## ⚡ 3-Mode Pacing & Viral Retention Engine (v33)
+
+Shortsyt includes a real-time pacing engine integrated with the Desktop Studio UI:
+
+| Pacing Mode | Target Duration | Zoom-Punch | Slow-Mo Duration | Music Balance | Game Sound | Title Tone |
+|---|---|---|---|---|---|---|
+| 🔥 **Aggressive** | **10.0 – 13.0s** | **1.30x** | **0.9s** | **90%** | 50% | `hype` (Viral & High Energy) |
+| ⚖️ **Balanced** | **14.0 – 17.0s** | **1.20x** | **1.4s** | **85%** | 65% | `narrative` (Storytelling & Clutch) |
+| 🎬 **Cinematic** | **20.0 – 25.0s** | **1.10x** | **2.2s** | **70%** | **80%** | `narrative` (Bass-Drop Focus) |
+
+### Key Retention Innovations:
+- **Jump-Cut with 3.5s Engage Lead:** Automatically detects dead running between fights and cuts it out, while preserving a 3.5-second lead buffer so the viewer sees the physical jump-in and ability casting before kills.
+- **Universal Sidechain Audio Ducking:** Automatically dips background music by -45% on kill sounds and announcer shouts.
+- **Neon Loop Progress Scrubber:** Hextech Gold (`0xC89B3C`) 5px progress bar at the bottom optimized for seamless YouTube Shorts looping.
+- **Pre-Flight Quality Gate (`lol_quality_validator.py`):** Rejection protocol that validates kill visibility (>70% confidence inside 9:16 window), action hook (<1.5s to first engage), and auto-rejects obscured clips.
 
 ---
 
@@ -61,19 +85,19 @@ In fast-paced games like League of Legends, high-mobility champions (e.g., Katar
 
 ```mermaid
 flowchart TD
-    A[Raw 16:9 Clip / Outplayed] --> B[Pre-Pipeline Analyzer & Ranker]
-    B --> C[Computer Vision: Smart Camera v11]
-    B --> D[OCR Momentum Analyzer - Tesseract]
-    C --> E[Dynamic FFmpeg 9:16 Video Editor]
+    A[Raw 16:9 Gameplay Clip] --> B[Pre-Pipeline Analyzer & Ranker]
+    B --> C[Computer Vision: Smart Camera v25]
+    B --> D[OCR Momentum Analyzer & Kill Detector]
+    C --> E[Dynamic FFmpeg 9:16 Video Editor v33]
     D --> E
-    E --> F[AI Narrative & Hook Engine - Gemini]
-    F --> G[Thumbnail Generator 1080x1920]
-    G --> H[Automated QA Scorer - 3 Checks]
-    H -->|Quality Score >= 90| I[YouTube Data API Publisher]
-    H -->|Reject| J[Debug Quarantine Log]
+    E --> F[AI Narrative & Hook Engine - Gemini 2.5 Flash]
+    F --> G[Hero-Frame Thumbnail Generator 1080x1920]
+    G --> H[Pre-Flight & Post-Render QA Validator]
+    H -->|Quality Score >= 90| I[YouTube Data API v3 Publisher]
+    H -->|Reject| J[Quarantine & Debug Log]
     
     subgraph Control Layer
-    K[FastAPI Backend v2 - Port 8765] <--> L[Electron Desktop Studio - React 18]
+    K[FastAPI Backend - Port 8765] <--> L[Electron Desktop Studio - React 18]
     K <--> I
     end
 ```
@@ -120,16 +144,18 @@ Run the autonomous pipeline from terminal or command line:
 ## 🖥️ Desktop Studio & API
 
 ### Electron Desktop Studio (`shortsyt-desktop/`)
-- **Built with:** Electron 32 + React 18 + Vite + TailwindCSS.
+- **Built with:** Electron 32 + React 18 + Vite + TypeScript + TailwindCSS.
 - **Features:**
-  - Live pipeline dashboard with real-time render progress (7 stages).
-  - Clip Browser with pre-analysis ranking and action score badges.
-  - Video preview player with thumbnail inspection and QA reports.
-  - One-click YouTube upload trigger and token lifetime countdown.
+  - **Live Pipeline Dashboard & Render Monitor:** Real-time 7-stage progress tracking with live log streaming.
+  - **Clip Browser & Pre-Analysis Ranking:** Automated action scoring, champion badge detection, and custom folder picker.
+  - **3-Mode Feedback & Pacing Tuning:** Interactive sliders for Zoom Aggression, Slow-Mo Duration, Audio Balance, and Title Tone (Hype / Narrative / Meme) with instant persistence.
+  - **Calendar Scheduler:** Daily publishing slots (08:30 / 11:30 / 18:00 CET) with queued rendering.
+  - **Interactive Post-Render Review:** Vertical 9:16 player, editable viral metadata, Hero-Frame thumbnail inspect, and one-click YouTube upload.
+  - **YouTube Token Guard:** Live OAuth token expiration countdown with one-click re-authorization.
 
 ### FastAPI Backend (`lol_agent/api/`)
-- 15 REST endpoints including `/health`, `/status`, `/clips`, `/thumbnails`, `/camera-preview`, `/youtube/upload`.
-- Asynchronous job execution and live log streaming.
+- REST endpoints including `/health`, `/status`, `/clips`, `/thumbnails`, `/camera-preview`, `/config/tuning`, `/youtube/upload`.
+- Asynchronous GPU-accelerated pipeline runner with NVENC support.
 
 ---
 
