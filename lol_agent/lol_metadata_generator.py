@@ -15,8 +15,8 @@ except ImportError:
         from lol_config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODELS, YT_BASE_TAGS, ACTION_LABELS
     except ImportError:
         GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-        GEMINI_MODEL = "gemini-2.0-flash"
-        GEMINI_FALLBACK_MODELS = ["gemini-1.5-flash"]
+        GEMINI_MODEL = "gemini-2.5-flash"
+        GEMINI_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"]
         YT_BASE_TAGS = ["shorts", "leagueoflegends", "lol", "gaming", "highlights", "outplay"]
         ACTION_LABELS = {
             "pentakill": "PENTAKILL",
