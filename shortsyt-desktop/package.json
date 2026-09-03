@@ -2,6 +2,12 @@
   "name": "shortsyt-desktop",
   "version": "1.0.0",
   "description": "Shortsyt Desktop Application - League of Legends Shorts Automation",
+  "author": "Michał Zalewski",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BATTLEMETAL/Shortsyt.git"
+  },
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",

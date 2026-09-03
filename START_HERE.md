@@ -1,19 +1,23 @@
-# 🎮 LOL AGENT — START TUTAJ
+# 🎮 Shortsyt Studio — Quickstart Guide
 
-## Kontekst projektu (czytaj jako pierwsze w nowym czacie):
-```
-C:\Users\mz100\PycharmProjects\shortsyt\lol_agent\CONTEXT.md
-```
-
-## Szybka komenda testowa:
+## 1. Quick Launch
+To start both the FastAPI backend and the Desktop Studio:
 ```powershell
-cd C:\Users\mz100\PycharmProjects\shortsyt
-.\venv313\Scripts\python.exe lol_agent\run_lol_agent.py --file "SCIEZKA_DO_KLIPU" --champion CHAMPION --action TYP --dry-run
+.\Uruchom_Shortsyt_Studio.bat
+```
+Or start manually via Python CLI:
+```powershell
+python lol_agent/run_lol_agent.py --file "path/to/clip.mp4" --champion Katarina --action triple --dry-run
 ```
 
-## Typy akcji: pentakill / quadrakill / triple / double / outplay / clutch
+## 2. Supported Action Types
+- `pentakill` — 5-kill continuous sequence with climax slow-mo
+- `quadrakill` — 4-kill momentum sequence
+- `triple` — 3-kill outplay
+- `double` — 2-kill fast turnaround
+- `clutch` — Low HP (<= 20%) survival outplay
+- `outplay` — Mechanical solo kill / shutdown
 
-## Folder z klipami Outplayed:
-```
-C:\Users\mz100\Videos\Overwolf\Outplayed\League of Legends\
-```
+## 3. Configuration
+- Copy `.env.example` to `.env` and provide your `GEMINI_API_KEY`.
+- Set your clips directory in `lol_agent/lol_config.py` or directly select via the Desktop Studio folder picker.
