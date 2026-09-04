@@ -466,7 +466,11 @@ async def auto_detect_clip(req: AutoDetectRequest, payload: dict = Depends(verif
             lambda: analyze_clip_frags(source_path, sample_fps=2.0)
         )
         detected_action = frag_res.detected_frag_type or "outplay"
-        clip_start, clip_end, peak_moment, combat_segs = compute_optimal_clip_window(frag_res, total_dur)
+        clip_start, clip_end, peak_moment, combat_segs = compute_optimal_clip_window(
+            frag_res, total_dur, action_type=req.action_type or detected_action
+        )
+        if detected_action == "solo_bolo" or req.action_type == "solo_bolo":
+            combat_segs = None
         confidence = f"OCR AI: {frag_res.badge_label} ({int(frag_res.confidence * 100)}%)"
         peaks = [(k["timestamp"], k["label"]) for k in frag_res.kills if (k.get("tier", 1) >= 2 or k.get("timestamp", 0) > 1.0)]
         print(f"[auto-detect] {frag_res.detected_frag_type} confidence={frag_res.confidence:.2f} kills={len(frag_res.kills)} window={clip_start:.1f}-{clip_end:.1f} segs={len(combat_segs) if combat_segs else 1}")
@@ -489,9 +493,10 @@ async def auto_detect_clip(req: AutoDetectRequest, payload: dict = Depends(verif
         "triple": "TRIPLE KILL! 🔥",
         "double": "DOUBLE KILL! ⚔️",
         "clutch": "1% HP CLUTCH! 💀",
+        "solo_bolo": "SOLO BOLO! 👑",
         "outplay": "CZY TO JEST MOŻLIWE? 😱",
     }
-    hook_text = HOOK_MAP.get(detected_action, f"{detected_action.upper()}! 💥")
+    hook_text = HOOK_MAP.get(detected_action, f"{detected_action.upper().replace('_', ' ')}! 💥")
 
     return {
         "clip_start": clip_start,

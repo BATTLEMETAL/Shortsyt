@@ -85,6 +85,7 @@ ACTION_ENERGY = {
     "outplay": "medium",
     "oneshot": "medium",
     "clutch": "medium",
+    "solo_bolo": "medium",
     "escape": "low",
     "double": "any",
 }
@@ -988,6 +989,10 @@ def render_short(
     # ── KROK 1: Wycięcie fragmentu / segmentów ────────────────────────────────
     print("\n[1/4] Wycinanie fragmentu...")
 
+    # Dla SOLO BOLO wykluczamy jakiekolwiek cięcia jump-cut — cała walka ma być płynna od wejścia do finału
+    if action_type.lower() in ("solo_bolo", "solo", "1v1"):
+        combat_segments = None
+
     if combat_segments and len(combat_segments) > 1:
         # ── Multi-segment jump-cut ──────────────────────────────────────────
         print(f"   ✂️  Jump-cut mode: {len(combat_segments)} segmentów walki")
@@ -1213,7 +1218,8 @@ def render_short(
     # ── POST-RENDER 15s SNAP ─────────────────────────────────────────────────
     # Stosuj TYLKO dla pojedynczych wymian/akcji (15.5-18.0s), NIGDY nie niszcz multi-killów ani nie ucinaj pierwszego fraga!
     is_multikill = action_type in ("pentakill", "quadrakill") or (peaks and len(peaks) >= 3)
-    if 15.5 <= final_duration <= 18.0 and not is_multikill:
+    is_solo_fight = action_type.lower() in ("solo_bolo", "solo", "1v1")
+    if 15.5 <= final_duration <= 18.0 and not is_multikill and not is_solo_fight:
         trim_from_start = final_duration - 15.0
         first_peak_rel = min((t_k for (t_k, _) in (peaks or [])), default=999.0)
         # Przytnij tylko jeśli pierwszy kill jest bezpiecznie po punkcie cięcia

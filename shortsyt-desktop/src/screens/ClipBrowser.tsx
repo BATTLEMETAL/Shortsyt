@@ -96,7 +96,7 @@ export default function ClipBrowser() {
         use_speed_ramp: true,
         use_zoom_punch: true,
         use_smart_camera: true,
-        combat_segments: detected?.combat_segments ?? null,
+        combat_segments: (detected?.action_type === "solo_bolo") ? null : (detected?.combat_segments ?? null),
       });
       setAutoStage("done");
       setTimeout(() => navigate("/render"), 800);
@@ -143,6 +143,9 @@ export default function ClipBrowser() {
     setActionType(v);
     const m = ACTION_TYPES.find(a => a.id === v);
     if (m) setHookText(m.hook);
+    if (v === 'solo_bolo') {
+      setCombatSegments(null);
+    }
   };
 
   const handleLaunchRender = async () => {
@@ -155,7 +158,7 @@ export default function ClipBrowser() {
         action_type: actionType, champion_name: champion, rank: "Master",
         peak_moment: Number(peakMoment), hook_text: hookText, output_filename: outFile,
         use_speed_ramp: useSpeedRamp, use_zoom_punch: useZoomPunch, use_smart_camera: useSmartCamera,
-        combat_segments: combatSegments,
+        combat_segments: actionType === 'solo_bolo' ? null : combatSegments,
       });
       navigate("/render");
     } catch (err: any) {

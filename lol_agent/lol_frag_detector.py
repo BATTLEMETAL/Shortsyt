@@ -202,14 +202,100 @@ def _scan_ocr_for_kills(frame: np.ndarray) -> Tuple[int, str, bool]:
     return 0, "", False
 
 
+def find_solo_bolo_window(
+    video_path: str,
+    kill_t: float,
+    total_dur: float
+) -> Tuple[float, float, float]:
+    """
+    Wyznacza okno dla akcji SOLO BOLO (1v1):
+      - Wejście z buta: ~1.2s przed doskokiem / zagraniem skilli
+      - Cała walka bez żadnych cięć (bez jump-cut)
+      - Koniec klipu: ~2.5s po fragu (emotka / mastery / bounty)
+      - Długość: 11.0 - 17.0s
+    """
+    if not video_path or not os.path.exists(video_path):
+        start_t = max(0.0, round(kill_t - 7.5, 1))
+        end_t = min(round(total_dur, 1), round(kill_t + 2.5, 1))
+        return start_t, end_t, max(1.0, round(kill_t - start_t, 1))
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        start_t = max(0.0, round(kill_t - 7.5, 1))
+        end_t = min(round(total_dur, 1), round(kill_t + 2.5, 1))
+        return start_t, end_t, max(1.0, round(kill_t - start_t, 1))
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    search_start = max(0.0, kill_t - 9.5)
+    search_end = max(search_start + 1.0, kill_t - 2.0)
+
+    prev_gray = None
+    motion_history = []
+
+    for t in np.arange(search_start, search_end, 0.25):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            break
+        h, w = frame.shape[:2]
+        play_area = frame[int(h * 0.15):int(h * 0.80), int(w * 0.20):int(w * 0.80)]
+        gray = cv2.cvtColor(cv2.resize(play_area, (320, 180)), cv2.COLOR_BGR2GRAY)
+
+        hsv = cv2.cvtColor(play_area, cv2.COLOR_BGR2HSV)
+        m1 = cv2.inRange(hsv, (0, 140, 130), (10, 255, 255))
+        m2 = cv2.inRange(hsv, (170, 140, 130), (180, 255, 255))
+        red_cnt = cv2.countNonZero(cv2.bitwise_or(m1, m2))
+
+        m_score = 0.0
+        if prev_gray is not None:
+            m_score = float(np.mean(cv2.absdiff(gray, prev_gray)))
+        prev_gray = gray
+        motion_history.append((t, m_score, red_cnt))
+
+    cap.release()
+
+    engage_t = None
+    for t, m, r in motion_history:
+        if m >= 9.5 or r >= 7000:
+            engage_t = t
+            break
+
+    if engage_t is not None:
+        start_t = max(0.0, round(engage_t - 1.2, 1))
+    else:
+        start_t = max(0.0, round(kill_t - 7.5, 1))
+
+    end_t = min(round(total_dur, 1), round(kill_t + 2.5, 1))
+
+    dur = end_t - start_t
+    if dur < 11.0:
+        start_t = max(0.0, round(end_t - 12.0, 1))
+    elif dur > 18.0:
+        start_t = max(0.0, round(end_t - 18.0, 1))
+
+    peak_moment = max(1.0, round(kill_t - start_t, 1))
+    return round(start_t, 1), round(end_t, 1), peak_moment
+
+
 def compute_optimal_clip_window(
     frag_res: FragAnalysisResult,
-    total_dur: float
+    total_dur: float,
+    action_type: Optional[str] = None
 ) -> Tuple[float, float, float, Optional[List[Tuple[float, float]]]]:
     """
     Wyznacza optymalne okno czasowe (clip_start, clip_end, peak_moment) oraz segmenty jump-cut
     na podstawie detekcji OCR i aktywnego profilu pacingu (Ekstremalnie Szybkie / Zbalansowane / Cinematic).
+    Dla SOLO BOLO (1v1) gwarantuje brak cięć (ciągła walka) oraz wejście z buta ~1.2s przed doskokiem.
     """
+    act = (action_type or frag_res.detected_frag_type or "").lower()
+    real_kills = [k for k in frag_res.kills if k.get("tier", 1) >= 2 or k.get("timestamp", 0) > 1.0]
+
+    # ── SPECJALNY TRYB SOLO BOLO (1v1) ──
+    if "solo" in act or "1v1" in act or act == "solo_bolo":
+        kill_t = real_kills[-1]["timestamp"] if real_kills else (total_dur * 0.65)
+        s, e, p = find_solo_bolo_window(frag_res.video_path, kill_t, total_dur)
+        return s, e, p, None  # Brak jump-cutów! Cała walka bez cięć
+
     try:
         from lol_agent.tuning_manager import get_pacing_parameters
     except ImportError:
@@ -226,8 +312,6 @@ def compute_optimal_clip_window(
     outro = float(p.get("outro_sec", 1.5))
     min_dur = float(p.get("target_min_dur", 10.0))
     max_dur = float(p.get("target_max_dur", 13.0))
-
-    real_kills = [k for k in frag_res.kills if k.get("tier", 1) >= 2 or k.get("timestamp", 0) > 1.0]
 
     if real_kills:
         # Sprawdź czy kille dzielą się na oddzielne klastry walki rozdzielone przerwą > 3.5s
@@ -396,16 +480,29 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 3.0) -> FragAnalysis
             if t <= 1.2 and k_tier < 2:
                 continue
 
-            if (t - last_kill_t) > 1.2 or k_tier > max_kill_tier:
+            # Debounce: Baner killa w LoL wisi na ekranie przez 2.5-3.0s.
+            # Kolejny frag o tym samym lub niższym tierze wymaga co najmniej 3.2s odstępu.
+            is_new_kill = (t - last_kill_t) > 3.2
+            is_tier_upgrade = k_tier > max_kill_tier
+
+            if is_new_kill:
                 kills_detected.append({
                     "timestamp": round(float(t), 2),
                     "label": k_label,
                     "tier": k_tier,
                 })
-                if k_tier > max_kill_tier:
-                    max_kill_tier = k_tier
-                    highest_label = k_label
                 last_kill_t = t
+            elif is_tier_upgrade and kills_detected:
+                kills_detected[-1] = {
+                    "timestamp": round(float(t), 2),
+                    "label": k_label,
+                    "tier": k_tier,
+                }
+                last_kill_t = t
+
+            if k_tier > max_kill_tier:
+                max_kill_tier = k_tier
+                highest_label = k_label
         elif k_label == "PLAYER_DEATH":
             # Zarejestruj śmierć gracza — nie może być oznaczona jako udany clutch
             hp_readings.append(0.0)
@@ -452,36 +549,20 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 3.0) -> FragAnalysis
         color = "#a855f7"  # Fioletowy
         hook = "Insane Multi-Kill Sequence 💥"
         conf = 0.87
-    elif max_kill_tier == 2 or len(kills_detected) == 2:
+    elif max_kill_tier == 2:
+        # Tylko gdy gra faktycznie wyświetliła baner DOUBLE KILL
         detected_type = "double"
         badge = "DOUBLE KILL"
         color = "#06b6d4"  # Turkusowy
         hook = "Clean Double Kill ⚔️"
         conf = 0.85
-    elif len(kills_detected) == 1 and max_kill_tier == 1 and not is_clutch:
-        # Solo Kill / Solo Bolo: dokładnie 1 frag, brak multi-killa, brak HP clutcha.
-        # Sprawdź czy w etykiecie kill jest sygnał solo (shut down, legendary, you have slain).
-        highest_lbl = (highest_label or "").upper()
-        is_solo_bolo = (
-            "SHUT DOWN" in highest_lbl or
-            "SHUTDOWN" in highest_lbl or
-            "LEGENDARY" in highest_lbl or
-            "GODLIKE" in highest_lbl or
-            "UNSTOPPABLE" in highest_lbl or
-            len(kills_detected) == 1
-        )
-        if is_solo_bolo:
-            detected_type = "solo_bolo"
-            badge = "SOLO BOLO 👑"
-            color = "#FF1744"  # Neonowa czerwień
-            hook = "Clean Solo Bolo – 1v1 Masterclass 👑"
-            conf = 0.82
-        else:
-            detected_type = "outplay"
-            badge = "INSANE OUTPLAY"
-            color = "#3b82f6"
-            hook = "Frame-Perfect Mechanical Outplay"
-            conf = 0.80
+    elif max_kill_tier <= 1 and not is_clutch:
+        # Solo Kill / Solo Bolo: 1v1 eliminacja lub brak banerów multi-kill
+        detected_type = "solo_bolo"
+        badge = "SOLO BOLO 👑"
+        color = "#FF1744"  # Neonowa czerwień
+        hook = "Clean Solo Bolo – 1v1 Masterclass 👑"
+        conf = 0.88
     else:
         detected_type = "outplay"
         badge = "INSANE OUTPLAY"

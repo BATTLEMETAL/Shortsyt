@@ -220,7 +220,10 @@ def _run_pipeline(
             peaks = []
 
         # Sprawdź czy kille mają lukę > 3.5s (martwe bieganie) i czy potrzeba jump-cut
-        if not combat_segments and peaks and len(peaks) >= 2:
+        # Dla SOLO BOLO nigdy nie stosujemy jump-cutów — cała walka 1v1 musi być ciągła
+        if action_type.lower() in ("solo_bolo", "solo", "1v1"):
+            combat_segments = None
+        elif not combat_segments and peaks and len(peaks) >= 2:
             sorted_p = sorted(peaks, key=lambda x: x[0])
             gaps = [sorted_p[i+1][0] - sorted_p[i][0] for i in range(len(sorted_p)-1)]
             if any(g > 3.5 for g in gaps):

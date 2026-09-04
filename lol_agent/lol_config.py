@@ -73,6 +73,7 @@ ACTION_LABELS = {
     "triple": "TRIPLE KILL 💥",
     "double": "DOUBLE KILL",
     "outplay": "OUTPLAY 🎯",
+    "solo_bolo": "SOLO BOLO 👑",
     "clutch": "CLUTCH PLAY 👑",
     "escape": "IMPOSSIBLE ESCAPE 🚀",
     "oneshot": "ONE SHOT 💀",
