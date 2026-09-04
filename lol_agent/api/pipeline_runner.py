@@ -268,12 +268,16 @@ def _run_pipeline(
                     action_type = qa_res.corrected_action_type
                     _update("Korekta typu akcji", 17, f"Skorygowano akcję na {action_type.upper()}")
 
-                if qa_res.suggested_combat_segments and not combat_segments:
+                is_solo = action_type.lower() in ("solo_bolo", "solo", "1v1")
+                if not is_solo and qa_res.suggested_combat_segments and not combat_segments:
                     combat_segments = qa_res.suggested_combat_segments
                     _update("Jump-Cut z QA", 18, f"QA zaleciło segmenty jump-cut: {combat_segments}")
 
-                if qa_res.adjusted_trim_start > clip_start and not combat_segments:
+                if not is_solo and qa_res.adjusted_trim_start > clip_start and not combat_segments:
                     clip_start = qa_res.adjusted_trim_start
+
+                if is_solo:
+                    combat_segments = None
 
                 _update("QA Pre-Flight", 19, f"QA {qa_status} ({qa_score}/100) — {len(qa_details)} uwag")
             except Exception as qe:

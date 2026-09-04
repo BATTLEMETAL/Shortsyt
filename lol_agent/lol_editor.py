@@ -267,8 +267,9 @@ def apply_editor_effects(input_path: str, output_path: str,
     out_w, out_h = 1080, 1920
 
     t0 = 0.0
-    # Anticipation lead-in: zwolnienie zaczyna się 0.4s przed decydującym ciosem
-    t1 = max(t0, peak_moment - 0.4)
+    # Anticipation lead-in: zwolnienie zaczyna się 0.25s-0.4s przed decydującym ciosem
+    lead_in = 0.25 if slowmo_speed >= 0.65 else 0.40
+    t1 = max(t0, peak_moment - lead_in)
     t2 = peak_moment + zoom_duration
     t3 = peak_moment + slowmo_duration
     t4 = clip_duration
@@ -1052,10 +1053,15 @@ def render_short(
                     peaks = remapped
                     peak_moment = max(0.0, peaks[-1][0] - 0.5)
     else:
+        orig_clip_start = clip_start
         cut_clip(source_path, clip_start, clip_end, step1)
         # Remapuj peaks do czasu lokalnego step1 (0.0 -> clip_duration)
         if peaks:
-            peaks = [(round(t_k - clip_start, 3), lbl) for (t_k, lbl) in peaks]
+            peaks = [(round(t_k - orig_clip_start, 3), lbl) for (t_k, lbl) in peaks]
+        if peak_moment > clip_duration and peak_moment >= orig_clip_start:
+            peak_moment = max(0.5, min(clip_duration - 0.5, peak_moment - orig_clip_start))
+        elif peaks and (peak_moment <= 0.0 or peak_moment > clip_duration):
+            peak_moment = max(0.5, min(clip_duration - 0.5, peaks[-1][0]))
         clip_start = 0.0
         clip_end = clip_duration
 
@@ -1142,13 +1148,25 @@ def render_short(
             get_pacing_parameters = lambda: {}
 
     tuning_p = get_pacing_parameters()
-    _zoom_level   = float(tuning_p.get("zoom_aggression", 1.20))
-    _slowmo_dur   = float(tuning_p.get("slowmo_duration", 1.4))
+    is_solo_fight = action_type.lower() in ("solo_bolo", "solo", "1v1")
+
+    if is_solo_fight:
+        # SOLO BOLO: Walka 1v1 ma być dynamiczna i płynna (60 FPS) od 1-ego tradu do zabójstwa.
+        # Krótkie, punktowe uderzenie na śmiertelny cios zamiast 4 sekund powolnego trupa.
+        _zoom_level   = 1.15
+        _zoom_dur     = 0.45
+        _slowmo_dur   = 0.55
+        _slowmo_speed = 0.70
+    else:
+        _zoom_level   = float(tuning_p.get("zoom_aggression", 1.20))
+        _zoom_dur     = 0.80
+        _slowmo_dur   = float(tuning_p.get("slowmo_duration", 1.4))
+        _slowmo_speed = 0.50
+
     _music_vol    = float(tuning_p.get("music_balance", 0.85))
     _game_vol     = float(tuning_p.get("game_sound_balance", 0.65))
-    _slowmo_speed = 0.50
 
-    print(f"   ⚙️  Profil montażu ({tuning_p.get('id', 'default')}): zoom={_zoom_level:.2f}x, slowmo={_slowmo_dur:.1f}s, muzyka={int(_music_vol*100)}%, gra={int(_game_vol*100)}%")
+    print(f"   ⚙️  Profil montażu ({'SOLO BOLO' if is_solo_fight else tuning_p.get('id', 'default')}): zoom={_zoom_level:.2f}x, slowmo={_slowmo_dur:.1f}s ({_slowmo_speed}x), muzyka={int(_music_vol*100)}%, gra={int(_game_vol*100)}%")
 
     # Intermediate peaks: wszystkie kille PRZED ostatnim (PENTA) -> mini slow-mo 0.8x/0.5s
     _all_kill_rel = sorted([t_k - clip_start for (t_k, _) in (peaks or [])])
@@ -1163,7 +1181,7 @@ def render_short(
         crop_x=crop_x_expr,
         peak_moment=peak_moment,
         zoom_level=_zoom_level if use_zoom_punch else 1.0,
-        zoom_duration=0.8,
+        zoom_duration=_zoom_dur,
         slowmo_speed=_slowmo_speed if use_speed_ramp else 1.0,
         slowmo_duration=_slowmo_dur,
         intermediate_peaks=_inter_peaks if use_speed_ramp else []

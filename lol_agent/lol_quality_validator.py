@@ -109,6 +109,8 @@ def validate_pre_flight(
             qa_score = max(60, qa_score - 15)
             diag.append(f"Action Guard: Wykryto {k_count} killi bez banera Pentakill. Skorygowano akcję na {corrected_action.upper()}.")
 
+    is_solo = bool(action_type and action_type.lower() in ("solo_bolo", "solo", "1v1"))
+
     # ── 1. Action Hook Guard (Sprawdź pierwsze 1.5s) ───────────────────────────
     adj_start = max(0.0, trim_start)
     adj_end = min(dur, trim_end)
@@ -119,25 +121,28 @@ def validate_pre_flight(
         abs_t = kt if (kt >= adj_start or adj_start == 0.0) else (adj_start + kt)
         abs_peaks.append((round(abs_t, 2), lbl))
     
-    sample_times = [adj_start + 0.3, adj_start + 0.8, adj_start + 1.4]
-    combat_detected_at_start = False
-    
-    for st in sample_times:
-        if st < dur:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, int(st * fps))
-            ret, fr = cap.read()
-            if ret:
-                has_combat, px, _ = _check_enemy_combat_in_frame(fr)
-                if has_combat:
-                    combat_detected_at_start = True
-                    break
-    
-    if not combat_detected_at_start and abs_peaks:
-        first_k_t = abs_peaks[0][0]
-        if first_k_t - adj_start > 3.0:
-            new_start = max(0.0, first_k_t - 2.0)
-            diag.append(f"Action Hook Guard: przesunięto start z {adj_start:.1f}s na {new_start:.1f}s (wycięto martwy bieg/wieżę)")
-            adj_start = new_start
+    if is_solo:
+        diag.append("Solo Bolo Mode: pełna walka 1v1 od wyznaczonego początku (0.0s) bez wycinania lead-inu.")
+    else:
+        sample_times = [adj_start + 0.3, adj_start + 0.8, adj_start + 1.4]
+        combat_detected_at_start = False
+        
+        for st in sample_times:
+            if st < dur:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, int(st * fps))
+                ret, fr = cap.read()
+                if ret:
+                    has_combat, px, _ = _check_enemy_combat_in_frame(fr)
+                    if has_combat:
+                        combat_detected_at_start = True
+                        break
+        
+        if not combat_detected_at_start and abs_peaks:
+            first_k_t = abs_peaks[0][0]
+            if first_k_t - adj_start > 3.0:
+                new_start = max(0.0, first_k_t - 2.0)
+                diag.append(f"Action Hook Guard: przesunięto start z {adj_start:.1f}s na {new_start:.1f}s (wycięto martwy bieg/wieżę)")
+                adj_start = new_start
 
     # ── 2. Dead Running & Jump-Cut Guard ──────────────────────────────────────
     all_peaks_sorted = sorted(abs_peaks, key=lambda x: x[0])
@@ -155,7 +160,9 @@ def validate_pre_flight(
     if curr_c:
         clusters.append(curr_c)
 
-    if len(clusters) >= 2:
+    if is_solo:
+        suggested_segments = None
+    elif len(clusters) >= 2:
         gap = clusters[1][0][0] - clusters[0][-1][0]
         if not combat_segments or len(combat_segments) <= 1:
             qa_status = "WARN"
@@ -202,28 +209,29 @@ def validate_pre_flight(
             visible_kills += 1
 
     # ── 4. Tower Attack Guard ─────────────────────────────────────────────────
-    tower_check_end = adj_start + (adj_end - adj_start) * 0.50
-    tower_samples = np.linspace(adj_start + 0.5, tower_check_end, 8)
-    tower_combat_frames = 0
-    tower_first_combat_t = None
-    for ts in tower_samples:
-        if ts >= dur:
-            break
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(ts * fps))
-        ret, fr = cap.read()
-        if ret:
-            has_c, px, _ = _check_enemy_combat_in_frame(fr)
-            if has_c and px > 150:
-                tower_combat_frames += 1
-                if tower_first_combat_t is None:
-                    tower_first_combat_t = ts
-    
-    tower_ratio = tower_combat_frames / max(1, len(tower_samples))
-    if tower_ratio < 0.40 and tower_first_combat_t is not None:
-        new_start = max(adj_start, tower_first_combat_t - 1.5)
-        if new_start > adj_start + 1.0:
-            diag.append(f"Tower Guard: przesunięto start z {adj_start:.1f}s na {new_start:.1f}s (walka zaczyna się @ {tower_first_combat_t:.1f}s)")
-            adj_start = new_start
+    if not is_solo:
+        tower_check_end = adj_start + (adj_end - adj_start) * 0.50
+        tower_samples = np.linspace(adj_start + 0.5, tower_check_end, 8)
+        tower_combat_frames = 0
+        tower_first_combat_t = None
+        for ts in tower_samples:
+            if ts >= dur:
+                break
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(ts * fps))
+            ret, fr = cap.read()
+            if ret:
+                has_c, px, _ = _check_enemy_combat_in_frame(fr)
+                if has_c and px > 150:
+                    tower_combat_frames += 1
+                    if tower_first_combat_t is None:
+                        tower_first_combat_t = ts
+        
+        tower_ratio = tower_combat_frames / max(1, len(tower_samples))
+        if tower_ratio < 0.40 and tower_first_combat_t is not None:
+            new_start = max(adj_start, tower_first_combat_t - 1.5)
+            if new_start > adj_start + 1.0:
+                diag.append(f"Tower Guard: przesunięto start z {adj_start:.1f}s na {new_start:.1f}s (walka zaczyna się @ {tower_first_combat_t:.1f}s)")
+                adj_start = new_start
 
     cap.release()
 
