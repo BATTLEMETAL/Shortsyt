@@ -42,9 +42,9 @@ ACTION_WEIGHTS = {
     "double":      0.85,
 }
 
-OPTIMAL_MIN = 18
+OPTIMAL_MIN = 12
 OPTIMAL_MAX = 35
-MIN_KILL_COUNT = 3
+MIN_KILL_COUNT = 2
 # Akcje które nie wymagają multi-killa — historycznie outperformują pentakill (4k vs 1k avg views)
 SINGLE_KILL_ACTIONS = {"outplay", "clutch", "escape", "oneshot"}
 
@@ -264,6 +264,8 @@ def detect_action_ocr(filepath: str) -> dict:
             return {"action_type": "quadrakill", "kill_count": 4, "peaks": [], "duration_s": 0, "clip_window": 25}
         if "triple" in fname_lower:
             return {"action_type": "triple",     "kill_count": 3, "peaks": [], "duration_s": 0, "clip_window": 22}
+        if "double" in fname_lower:
+            return {"action_type": "double",     "kill_count": 2, "peaks": [], "duration_s": 0, "clip_window": 16}
         return {"action_type": "outplay", "kill_count": 1, "peaks": [], "duration_s": 0, "clip_window": 0}
 
 

@@ -9,7 +9,7 @@ import StatusBadge, { PipelineStatusType } from '../components/StatusBadge';
 import {
   Cpu, Square, Terminal, RefreshCw, Layers, CheckCircle2, Trash2,
   ArrowLeft, Upload, Play, Film, MessageSquare, Sparkles, FolderOpen, Video, ExternalLink,
-  Clock, Calendar, Zap, ShieldCheck
+  Clock, Calendar, Zap, ShieldCheck, Globe, Lock, AlertCircle
 } from 'lucide-react';
 
 export default function RenderMonitor() {
@@ -32,11 +32,11 @@ export default function RenderMonitor() {
   const [title, setTitle] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [pinnedComment, setPinnedComment] = useState<string>('');
-  const [publishMode, setPublishMode] = useState<'peak' | 'now' | 'custom' | 'private'>('peak');
+  const [publishMode, setPublishMode] = useState<'now' | 'peak' | 'custom' | 'private'>('now');
   const [peakSlot, setPeakSlot] = useState<PeakSlotInfo | null>(null);
   const [customPublishTime, setCustomPublishTime] = useState<string>('');
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
-  const [publishResult, setPublishResult] = useState<{ ok: boolean; url?: string; error?: string; scheduledFor?: string } | null>(null);
+  const [publishResult, setPublishResult] = useState<{ ok: boolean; url?: string; error?: string; scheduledFor?: string; privacy?: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const logsContainerRef = useRef<HTMLDivElement>(null);
@@ -138,6 +138,7 @@ export default function RenderMonitor() {
         ok: true,
         url: res.url || `https://youtube.com/shorts/${res.video_id}`,
         scheduledFor: scheduledLabel,
+        privacy: finalPrivacy,
       });
     } catch (err: any) {
       setPublishResult({
@@ -422,58 +423,72 @@ export default function RenderMonitor() {
                       Harmonogram & Godziny Publikacji (Peak Hours Engine):
                     </label>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {/* Option 1: AI Peak Hours */}
-                      <button
-                        type="button"
-                        onClick={() => setPublishMode('peak')}
-                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
-                          publishMode === 'peak'
-                            ? 'bg-[#C89B3C]/15 border-[#C89B3C] text-[#E4D6B5] shadow-md shadow-[#C89B3C]/10'
-                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#C89B3C]/40'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold flex items-center gap-1 text-[#C89B3C]">
-                            <Zap className="w-3.5 h-3.5" />
-                            AI Peak Slot (Zalecane)
-                          </span>
-                          <span className="text-[10px] bg-[#2ECC71]/20 text-[#2ECC71] px-1.5 py-0.5 rounded font-bold">
-                            TOP TRAFFIC
-                          </span>
-                        </div>
-                        <div className="text-xs font-semibold text-[#E4D6B5] mt-1.5">
-                          {peakSlot?.label || 'Dziś o 18:30 CET'}
-                        </div>
-                        <div className="text-[10px] text-[#8B8FA8] mt-0.5">
-                          Automatyczna publikacja w oknie największego ruchu
-                        </div>
-                      </button>
-
-                      {/* Option 2: Publish Now */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {/* Option 1: Publish Now (Default) */}
                       <button
                         type="button"
                         onClick={() => setPublishMode('now')}
-                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                        className={`p-3.5 rounded-xl border-2 text-left flex flex-col justify-between transition-all cursor-pointer ${
                           publishMode === 'now'
-                            ? 'bg-[#2ECC71]/15 border-[#2ECC71] text-[#E4D6B5] shadow-md'
-                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#2ECC71]/40'
+                            ? 'bg-[#2ECC71]/20 border-[#2ECC71] text-[#E4D6B5] shadow-lg shadow-[#2ECC71]/15 ring-2 ring-[#2ECC71]/30 scale-[1.01]'
+                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#2ECC71]/50 opacity-75 hover:opacity-100'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold flex items-center gap-1 text-[#2ECC71]">
-                            <Upload className="w-3.5 h-3.5" />
+                          <span className={`text-xs font-bold flex items-center gap-1.5 ${publishMode === 'now' ? 'text-[#2ECC71]' : 'text-[#8B8FA8]'}`}>
+                            <Globe className="w-4 h-4" />
                             Opublikuj Teraz
                           </span>
-                          <span className="text-[10px] bg-[#2ECC71]/20 text-[#2ECC71] px-1.5 py-0.5 rounded font-bold">
-                            PUBLICZNY
-                          </span>
+                          {publishMode === 'now' ? (
+                            <span className="text-[10px] bg-[#2ECC71] text-[#0A0E1A] px-2 py-0.5 rounded-full font-black flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              WYBRANO: PUBLICZNY
+                            </span>
+                          ) : (
+                            <span className="text-[10px] bg-[#1E2438] text-[#8B8FA8] px-2 py-0.5 rounded font-bold">
+                              PUBLICZNY
+                            </span>
+                          )}
                         </div>
-                        <div className="text-xs font-semibold text-[#E4D6B5] mt-1.5">
+                        <div className={`text-xs font-bold mt-1.5 ${publishMode === 'now' ? 'text-[#E4D6B5]' : 'text-[#8B8FA8]'}`}>
                           Natychmiast (Publiczny)
                         </div>
-                        <div className="text-[10px] text-[#8B8FA8] mt-0.5">
-                          Film od razu widoczny dla wszystkich widzów
+                        <div className={`text-[10px] mt-0.5 ${publishMode === 'now' ? 'text-[#A0E8B5]' : 'text-[#50546A]'}`}>
+                          Film od razu widoczny dla wszystkich widzów na kanale!
+                        </div>
+                      </button>
+
+                      {/* Option 2: AI Peak Hours */}
+                      <button
+                        type="button"
+                        onClick={() => setPublishMode('peak')}
+                        className={`p-3.5 rounded-xl border-2 text-left flex flex-col justify-between transition-all cursor-pointer ${
+                          publishMode === 'peak'
+                            ? 'bg-[#C89B3C]/20 border-[#C89B3C] text-[#E4D6B5] shadow-lg shadow-[#C89B3C]/15 ring-2 ring-[#C89B3C]/30 scale-[1.01]'
+                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#C89B3C]/50 opacity-75 hover:opacity-100'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={`text-xs font-bold flex items-center gap-1.5 ${publishMode === 'peak' ? 'text-[#C89B3C]' : 'text-[#8B8FA8]'}`}>
+                            <Zap className="w-4 h-4" />
+                            AI Peak Slot
+                          </span>
+                          {publishMode === 'peak' ? (
+                            <span className="text-[10px] bg-[#C89B3C] text-[#0A0E1A] px-2 py-0.5 rounded-full font-black flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              WYBRANO: ZAPLANUJ
+                            </span>
+                          ) : (
+                            <span className="text-[10px] bg-[#1E2438] text-[#8B8FA8] px-2 py-0.5 rounded font-bold">
+                              ZAPLANUJ
+                            </span>
+                          )}
+                        </div>
+                        <div className={`text-xs font-bold mt-1.5 ${publishMode === 'peak' ? 'text-[#E4D6B5]' : 'text-[#8B8FA8]'}`}>
+                          {peakSlot?.label || 'Dziś o 18:30 CET'}
+                        </div>
+                        <div className={`text-[10px] mt-0.5 ${publishMode === 'peak' ? 'text-[#E4D6B5]/90' : 'text-[#50546A]'}`}>
+                          Wgrywa jako prywatny i upublicznia w oknie ruchu
                         </div>
                       </button>
 
@@ -481,26 +496,38 @@ export default function RenderMonitor() {
                       <button
                         type="button"
                         onClick={() => setPublishMode('private')}
-                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
                           publishMode === 'private'
-                            ? 'bg-[#1E2438] border-[#C89B3C]/50 text-[#E4D6B5]'
-                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#1E2438]'
+                            ? 'bg-[#1E2438] border-2 border-[#8B8FA8] text-[#E4D6B5] ring-2 ring-[#8B8FA8]/30 font-bold'
+                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#1E2438] opacity-75 hover:opacity-100'
                         }`}
                       >
-                        <span className="text-xs font-semibold">🔒 Wgraj jako Prywatny (Do wglądu)</span>
+                        <span className="text-xs flex items-center gap-1.5">
+                          <Lock className="w-3.5 h-3.5" />
+                          Wgraj jako Prywatny (Do wglądu)
+                        </span>
+                        {publishMode === 'private' && (
+                          <span className="text-[9px] bg-[#8B8FA8] text-[#0A0E1A] px-1.5 py-0.5 rounded font-bold">WYBRANO</span>
+                        )}
                       </button>
 
                       {/* Option 4: Custom Date/Time */}
                       <button
                         type="button"
                         onClick={() => setPublishMode('custom')}
-                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
                           publishMode === 'custom'
-                            ? 'bg-[#1E2438] border-[#C89B3C] text-[#E4D6B5]'
-                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#1E2438]'
+                            ? 'bg-[#1E2438] border-2 border-[#2A7FD4] text-[#E4D6B5] ring-2 ring-[#2A7FD4]/30 font-bold'
+                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#1E2438] opacity-75 hover:opacity-100'
                         }`}
                       >
-                        <span className="text-xs font-semibold">🗓️ Własna data / godzina</span>
+                        <span className="text-xs flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5" />
+                          Własna data / godzina
+                        </span>
+                        {publishMode === 'custom' && (
+                          <span className="text-[9px] bg-[#2A7FD4] text-white px-1.5 py-0.5 rounded font-bold">WYBRANO</span>
+                        )}
                       </button>
                     </div>
 
@@ -520,14 +547,44 @@ export default function RenderMonitor() {
                   </div>
                 </div>
 
-                {/* Publish Result Alert */}
+                {/* Publish Result Alert with explicit status report */}
                 {publishResult && (
-                  <div className={`p-4 rounded-xl border text-xs font-semibold flex items-center justify-between gap-3 ${publishResult.ok ? 'bg-[#2ECC71]/10 border-[#2ECC71]/40 text-[#55E88D]' : 'bg-[#E84040]/10 border-[#E84040]/40 text-[#FF6060]'}`}>
-                    <div>
-                      <div>{publishResult.ok ? '🎉 Pomyślnie wgrano na kanał YouTube!' : `Błąd publikacji: ${publishResult.error}`}</div>
-                      {publishResult.scheduledFor && (
-                        <div className="text-[11px] text-[#C89B3C] font-normal mt-0.5">
-                          ⏰ Zaplanowano na: <b>{publishResult.scheduledFor}</b>
+                  <div className={`p-4 rounded-xl border text-xs font-semibold flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                    publishResult.ok
+                      ? publishResult.privacy === 'public'
+                        ? 'bg-[#2ECC71]/15 border-2 border-[#2ECC71] text-[#E4D6B5] shadow-lg shadow-[#2ECC71]/10'
+                        : 'bg-[#C89B3C]/15 border-2 border-[#C89B3C] text-[#E4D6B5] shadow-lg shadow-[#C89B3C]/10'
+                      : 'bg-[#E84040]/15 border border-[#E84040]/40 text-[#FF6060]'
+                  }`}>
+                    <div className="space-y-1">
+                      {publishResult.ok ? (
+                        <>
+                          {publishResult.privacy === 'public' ? (
+                            <div className="flex items-center gap-2 text-sm font-black text-[#2ECC71]">
+                              <CheckCircle2 className="w-5 h-5 text-[#2ECC71] shrink-0" />
+                              <span>🎉 Opublikowano pomyślnie jako PUBLICZNY!</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-sm font-black text-[#C89B3C]">
+                              <Clock className="w-5 h-5 text-[#C89B3C] shrink-0" />
+                              <span>⏰ Short został wgrany i ZAPLANOWANY!</span>
+                            </div>
+                          )}
+
+                          {publishResult.privacy === 'public' ? (
+                            <p className="text-[11px] text-[#A0E8B5] font-medium">
+                              ✅ Film jest od razu publiczny i widoczny dla wszystkich na Twoim kanale YouTube.
+                            </p>
+                          ) : (
+                            <p className="text-[11px] text-[#E4D6B5] font-medium">
+                              🔒 Film jest obecnie <b>prywatny</b>. Zostanie automatycznie upubliczniony: <b>{publishResult.scheduledFor || 'o zaplanowanej godzinie'}</b>.
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2 text-red-400 font-bold">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>Błąd publikacji: {publishResult.error}</span>
                         </div>
                       )}
                     </div>
@@ -536,9 +593,10 @@ export default function RenderMonitor() {
                         href={publishResult.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-1 px-3 py-1 bg-[#2ECC71] text-[#0A0E1A] rounded-lg font-bold hover:bg-[#55E88D] transition-colors shrink-0"
+                        className="flex items-center gap-1.5 px-4 py-2 bg-[#2ECC71] text-[#0A0E1A] rounded-xl font-black hover:bg-[#55E88D] shadow-md transition-all shrink-0 cursor-pointer text-xs"
                       >
-                        <span>Otwórz Short</span>
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Otwórz Short na YouTube</span>
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     )}
@@ -547,14 +605,46 @@ export default function RenderMonitor() {
 
                 {/* USER DECISION ACTION BUTTONS (The 3 Choices) */}
                 <div className="pt-4 border-t border-[#1E2438] flex flex-col sm:flex-row items-center gap-3">
-                  {/* Choice 1: Accept & Publish */}
+                  {/* Choice 1: Dynamic Accept & Publish Button */}
                   <button
                     onClick={handlePublish}
                     disabled={isPublishing}
-                    className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-[#C89B3C] to-[#E5C269] hover:from-[#E5C269] hover:to-[#F3D78A] text-[#0A0E1A] font-black text-xs flex items-center justify-center gap-2 shadow-lg hover:shadow-[#C89B3C]/20 transition-all cursor-pointer"
+                    className={`w-full sm:flex-1 py-3.5 px-5 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer ${
+                      publishMode === 'now'
+                        ? 'bg-gradient-to-r from-[#2ECC71] to-[#27AE60] hover:from-[#55E88D] hover:to-[#2ECC71] text-[#0A0E1A] shadow-[#2ECC71]/20'
+                        : publishMode === 'peak'
+                        ? 'bg-gradient-to-r from-[#C89B3C] to-[#E5C269] hover:from-[#E5C269] hover:to-[#F3D78A] text-[#0A0E1A] shadow-[#C89B3C]/20'
+                        : publishMode === 'private'
+                        ? 'bg-[#1E2438] hover:bg-[#2A2D40] text-[#E4D6B5] border border-[#8B8FA8]/40'
+                        : 'bg-[#2A7FD4] hover:bg-[#3B92E8] text-white shadow-[#2A7FD4]/20'
+                    }`}
                   >
-                    <Upload className="w-4 h-4" />
-                    <span>{isPublishing ? 'Publikowanie na YouTube...' : '🚀 Zatwierdź i Publikuj na YouTube'}</span>
+                    {isPublishing ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Publikowanie na YouTube...</span>
+                      </>
+                    ) : publishMode === 'now' ? (
+                      <>
+                        <Globe className="w-4 h-4" />
+                        <span>🚀 Opublikuj TERAZ na YouTube (Publiczny — widoczny od razu)</span>
+                      </>
+                    ) : publishMode === 'peak' ? (
+                      <>
+                        <Zap className="w-4 h-4" />
+                        <span>⏰ Zaplanuj na {peakSlot?.label || '18:30 CET'} (AI Peak Slot)</span>
+                      </>
+                    ) : publishMode === 'private' ? (
+                      <>
+                        <Lock className="w-4 h-4" />
+                        <span>🔒 Wgraj jako PRYWATNY (Niewidoczny dla widzów)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Calendar className="w-4 h-4" />
+                        <span>🗓️ Zaplanuj na {customPublishTime || 'wybraną datę'}</span>
+                      </>
+                    )}
                   </button>
 
                   {/* Choice 2: Return to Editor & Adjust */}

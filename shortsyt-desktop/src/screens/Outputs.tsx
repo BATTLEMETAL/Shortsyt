@@ -16,7 +16,7 @@ const ACTION_TYPES = [
   {id:"pentakill",label:"PENTAKILL 🔥"},
   {id:"quadrakill",label:"QUADRAKILL ⚡"},
   {id:"triple",label:"TRIPLE KILL 🎯"},
-  {id:"double",label:"DOUBLE KILL 🎯"},
+  {id:"double",label:"DOUBLE KILL ⚔️"},
   {id:"outplay",label:"OUTPLAY 🧠"},
   {id:"clutch",label:"CLUTCH 1% HP 💀"},
 ];
