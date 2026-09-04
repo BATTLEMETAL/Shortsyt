@@ -280,6 +280,11 @@ def generate_thumbnail(
         stroke_inner = "#FFA0B5"
         accent_color = "#FF2A55"
         bar_color = (255, 42, 85, 240)
+    elif "SOLO" in action_label or "BOLO" in action_label:
+        text_fill = "#FF1744"
+        stroke_inner = "#FF8A80"
+        accent_color = "#FF1744"
+        bar_color = (255, 23, 68, 240)
     else:
         text_fill = "#00E5FF"
         stroke_inner = "#A0F8FF"

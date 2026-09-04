@@ -40,13 +40,14 @@ ACTION_WEIGHTS = {
     "outplay":     1.30,
     "clutch":      1.25,
     "double":      0.85,
+    "solo_bolo":   1.20,  # 1v1 clean kill — viral na tym kanale
 }
 
 OPTIMAL_MIN = 12
 OPTIMAL_MAX = 35
 MIN_KILL_COUNT = 2
 # Akcje które nie wymagają multi-killa — historycznie outperformują pentakill (4k vs 1k avg views)
-SINGLE_KILL_ACTIONS = {"outplay", "clutch", "escape", "oneshot"}
+SINGLE_KILL_ACTIONS = {"outplay", "clutch", "escape", "oneshot", "solo_bolo"}
 
 
 PUBLISHED_LOG = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
@@ -266,6 +267,8 @@ def detect_action_ocr(filepath: str) -> dict:
             return {"action_type": "triple",     "kill_count": 3, "peaks": [], "duration_s": 0, "clip_window": 22}
         if "double" in fname_lower:
             return {"action_type": "double",     "kill_count": 2, "peaks": [], "duration_s": 0, "clip_window": 16}
+        if "solo" in fname_lower or "1v1" in fname_lower or "bolo" in fname_lower:
+            return {"action_type": "solo_bolo",  "kill_count": 1, "peaks": [], "duration_s": 0, "clip_window": 18}
         return {"action_type": "outplay", "kill_count": 1, "peaks": [], "duration_s": 0, "clip_window": 0}
 
 

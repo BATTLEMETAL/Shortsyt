@@ -458,6 +458,30 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 3.0) -> FragAnalysis
         color = "#06b6d4"  # Turkusowy
         hook = "Clean Double Kill ⚔️"
         conf = 0.85
+    elif len(kills_detected) == 1 and max_kill_tier == 1 and not is_clutch:
+        # Solo Kill / Solo Bolo: dokładnie 1 frag, brak multi-killa, brak HP clutcha.
+        # Sprawdź czy w etykiecie kill jest sygnał solo (shut down, legendary, you have slain).
+        highest_lbl = (highest_label or "").upper()
+        is_solo_bolo = (
+            "SHUT DOWN" in highest_lbl or
+            "SHUTDOWN" in highest_lbl or
+            "LEGENDARY" in highest_lbl or
+            "GODLIKE" in highest_lbl or
+            "UNSTOPPABLE" in highest_lbl or
+            len(kills_detected) == 1
+        )
+        if is_solo_bolo:
+            detected_type = "solo_bolo"
+            badge = "SOLO BOLO 👑"
+            color = "#FF1744"  # Neonowa czerwień
+            hook = "Clean Solo Bolo – 1v1 Masterclass 👑"
+            conf = 0.82
+        else:
+            detected_type = "outplay"
+            badge = "INSANE OUTPLAY"
+            color = "#3b82f6"
+            hook = "Frame-Perfect Mechanical Outplay"
+            conf = 0.80
     else:
         detected_type = "outplay"
         badge = "INSANE OUTPLAY"

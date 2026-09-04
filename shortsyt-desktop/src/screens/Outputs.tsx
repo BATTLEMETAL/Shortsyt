@@ -17,6 +17,7 @@ const ACTION_TYPES = [
   {id:"quadrakill",label:"QUADRAKILL ⚡"},
   {id:"triple",label:"TRIPLE KILL 🎯"},
   {id:"double",label:"DOUBLE KILL ⚔️"},
+  {id:"solo_bolo",label:"SOLO BOLO 👑"},
   {id:"outplay",label:"OUTPLAY 🧠"},
   {id:"clutch",label:"CLUTCH 1% HP 💀"},
 ];

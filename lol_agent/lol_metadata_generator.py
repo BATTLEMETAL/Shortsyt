@@ -23,6 +23,7 @@ except ImportError:
             "quadrakill": "QUADRAKILL",
             "triple": "TRIPLE KILL",
             "double": "DOUBLE KILL",
+            "solo_bolo": "SOLO BOLO 👑",
             "outplay": "OUTPLAY",
             "clutch": "CLUTCH",
         }
@@ -38,6 +39,8 @@ def _build_hashtags(champion: str = "Katarina", action_type: str = "outplay") ->
         "quadrakill": "#Quadrakill #QuadraKill",
         "triple": "#TripleKill",
         "double": "#DoubleKill",
+        "solo_bolo": "#SoloBolo #SoloKill #1v1 #Outplay",
+        "solo": "#SoloBolo #1v1",
         "outplay": "#Outplay #LoLOutplay",
         "clutch": "#Clutch #1PercentHP",
         "oneshot": "#OneShot",
@@ -114,7 +117,18 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             f"Two Enemies Down In A Blink ⚡ {champ} Double Kill #Shorts #LeagueOfLegends #LoL",
             f"Never Dive A Fed {champ}! 💀 Fast Double Kill #Shorts #LeagueOfLegends #LoL",
         ]
-    else:  # outplay / solo kill
+    elif "solo" in act or "bolo" in act or "1v1" in act:
+        templates = [
+            f"SOLO BOLO! 👑 The Disrespect on This 1v1 Outplay 💀 #Shorts #LeagueOfLegends #LoL",
+            f"Clean SOLO BOLO! 😈 They Really Thought They Won This 1v1? #Shorts #LeagueOfLegends #LoL",
+            f"The Most Disrespectful 1v1 SOLO BOLO in High Elo 💀 #Shorts #LeagueOfLegends #LoL",
+            f"Pure 1v1 Skill Check! {champ} SOLO BOLO Outplay 💥 #Shorts #LeagueOfLegends #LoL",
+            f"{champ} 1v1 SOLO BOLO! They Got Completely Schooled 👑 #Shorts #LeagueOfLegends #LoL",
+            f"They Ego Challenged {champ} 1v1... Instant SOLO BOLO! 💀 #Shorts #LeagueOfLegends #LoL",
+            f"Nobody Survives {champ} in a 1v1! Clean SOLO BOLO ⚡ #Shorts #LeagueOfLegends #LoL",
+            f"SOLO BOLO Turnaround! 🩸 {champ} Duel Masterclass #Shorts #LeagueOfLegends #LoL",
+        ]
+    else:  # outplay / general
         templates = [
             f"They Flashed In for the Kill... Bad Idea 😏 #Shorts #LeagueOfLegends #LoL",
             f"They Tried to Catch {champ} 💀 It Went Wrong 😏 #Shorts #LeagueOfLegends #LoL",
@@ -134,9 +148,22 @@ def build_channel_description(title: str, champion: str = "Katarina", action_typ
     mocnym wezwaniem do subskrypcji i kompletem hashtagów.
     """
     champ = champion or "Katarina"
-    act_clean = action_type.replace("_", " ").title()
+    act = action_type.lower()
+    act_clean = "Solo Bolo" if ("solo" in act or "bolo" in act) else action_type.replace("_", " ").title()
     hashtags = _build_hashtags(champ, action_type)
     
+    if "solo" in act or "bolo" in act or "1v1" in act:
+        return (
+            f"Pure 1v1 SOLO BOLO mechanics on {champ}! 🎮👑\n"
+            f"They thought they had the duel won... instant ego check and regret.\n\n"
+            f"🎮 League of Legends highlights & high-elo plays — Dwannellenga\n"
+            f"⚡ New viral shorts and clutch moments every day!\n\n"
+            f"👍 Drop a LIKE if this 1v1 was clean!\n"
+            f"🔔 SUBSCRIBE to Dwannellenga so you never miss a clip!\n"
+            f"💬 Rate this Solo Bolo 1-10 in the comments below! 👇\n\n"
+            f"{hashtags}"
+        )
+
     return (
         f"Insane {champ} {act_clean} in League of Legends! 🎮🔥\n"
         f"They thought they had the fight won, but {champ} turned everything around in seconds.\n\n"
@@ -154,6 +181,17 @@ def build_pinned_comment(champion: str = "Katarina", action_type: str = "outplay
     Generuje angażujący przypięty komentarz (Pinned Comment) z pytaniem zachęcającym do dyskusji.
     """
     champ = champion or "Katarina"
+    act = action_type.lower()
+
+    if "solo" in act or "bolo" in act or "1v1" in act:
+        comments = [
+            f"Was this SOLO BOLO pure mechanics or pure disrespect? 😈 Comment below! 👇",
+            f"Would you ever 1v1 this {champ}? Rate this solo kill 1-10! 👑👇",
+            f"Cleanest SOLO BOLO you'll see today? Drop your thoughts in the comments! 👇🔥",
+            f"Did the enemy misplay or was this {champ} 1v1 100% calculated? 🧠👇",
+        ]
+        return random.choice(comments)
+
     comments = [
         f"What would you have done in this situation? 👇 Rate this {champ} play 1-10! 🔥",
         f"Did the enemy team misplay or was this {champ} outplay 100% calculated? Let me know! 🧠👇",
