@@ -270,7 +270,7 @@ def generate_thumbnail(
         stroke_inner = "#FFA855"
         accent_color = "#FF6B00"
         bar_color = (255, 107, 0, 240)
-    elif "TRIPLE" in action_label:
+    elif "TRIPLE" in action_label or "DOUBLE" in action_label:
         text_fill = "#FFD700"
         stroke_inner = "#FFF8A0"
         accent_color = "#FFD700"
