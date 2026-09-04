@@ -336,6 +336,8 @@ export function CalendarScheduler() {
                       fragBadge = <span className="px-2 py-0.5 text-xs font-black rounded bg-purple-500/30 text-purple-300 border border-purple-500/40">⚔️ TRIPLE KILL</span>;
                     } else if (f.includes('double')) {
                       fragBadge = <span className="px-2 py-0.5 text-xs font-black rounded bg-cyan-500/30 text-cyan-300 border border-cyan-500/40">🎯 DOUBLE KILL</span>;
+                    } else if (f.includes('solo') || f.includes('bolo') || f.includes('1v1')) {
+                      fragBadge = <span className="px-2 py-0.5 text-xs font-black rounded bg-rose-500/30 text-rose-300 border border-rose-500/40">👑 SOLO BOLO</span>;
                     } else {
                       fragBadge = <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-500/30 text-blue-300 border border-blue-500/40">🔥 OUTPLAY</span>;
                     }
@@ -583,6 +585,7 @@ export function CalendarScheduler() {
                       { id: 'double', label: '🎯 Double' },
                       { id: 'clutch', label: '🩸 1% HP Clutch' },
                       { id: 'outplay', label: '🔥 Outplay' },
+                      { id: 'solo_bolo', label: '👑 Solo Bolo' },
                     ].map(f => (
                       <button
                         key={f.id}

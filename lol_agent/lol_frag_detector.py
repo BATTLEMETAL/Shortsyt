@@ -209,24 +209,32 @@ def find_solo_bolo_window(
 ) -> Tuple[float, float, float]:
     """
     Wyznacza okno dla akcji SOLO BOLO (1v1):
-      - Wejście z buta: ~1.2s przed doskokiem / zagraniem skilli
-      - Cała walka bez żadnych cięć (bez jump-cut)
-      - Koniec klipu: ~2.5s po fragu (emotka / mastery / bounty)
-      - Długość: 11.0 - 17.0s
+      - Gdy akcja rozpoczyna się od początku klipu lub kill jest w pierwszych 14.5s:
+        Bierzemy pierwsze 15 sekund (0.0s do 15.0s) bez żadnego wycinania początku!
+      - Cała walka bez żadnych cięć (bez jump-cut).
+      - Długość: idealnie 15.0s (złoty standard Shorts).
     """
+    # Jeśli kill jest w pierwszych 14.5 sekundach klipu:
+    # Akcja rozpoczyna się od samego początku — bierzemy dokładnie pierwsze 15 sekund bez wycinania!
+    if kill_t <= 14.5:
+        start_t = 0.0
+        end_t = min(round(total_dur, 1), 15.0)
+        peak_moment = max(1.0, round(kill_t, 1))
+        return start_t, end_t, peak_moment
+
     if not video_path or not os.path.exists(video_path):
-        start_t = max(0.0, round(kill_t - 7.5, 1))
+        start_t = max(0.0, round(kill_t - 12.0, 1))
         end_t = min(round(total_dur, 1), round(kill_t + 2.5, 1))
         return start_t, end_t, max(1.0, round(kill_t - start_t, 1))
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        start_t = max(0.0, round(kill_t - 7.5, 1))
+        start_t = max(0.0, round(kill_t - 12.0, 1))
         end_t = min(round(total_dur, 1), round(kill_t + 2.5, 1))
         return start_t, end_t, max(1.0, round(kill_t - start_t, 1))
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    search_start = max(0.0, kill_t - 9.5)
+    search_start = max(0.0, kill_t - 12.0)
     search_end = max(search_start + 1.0, kill_t - 2.0)
 
     prev_gray = None
@@ -240,38 +248,33 @@ def find_solo_bolo_window(
         h, w = frame.shape[:2]
         play_area = frame[int(h * 0.15):int(h * 0.80), int(w * 0.20):int(w * 0.80)]
         gray = cv2.cvtColor(cv2.resize(play_area, (320, 180)), cv2.COLOR_BGR2GRAY)
-
-        hsv = cv2.cvtColor(play_area, cv2.COLOR_BGR2HSV)
-        m1 = cv2.inRange(hsv, (0, 140, 130), (10, 255, 255))
-        m2 = cv2.inRange(hsv, (170, 140, 130), (180, 255, 255))
-        red_cnt = cv2.countNonZero(cv2.bitwise_or(m1, m2))
-
         m_score = 0.0
         if prev_gray is not None:
             m_score = float(np.mean(cv2.absdiff(gray, prev_gray)))
         prev_gray = gray
-        motion_history.append((t, m_score, red_cnt))
+        motion_history.append((t, m_score))
 
     cap.release()
 
     engage_t = None
-    for t, m, r in motion_history:
-        if m >= 9.5 or r >= 7000:
+    for t, m in motion_history:
+        if m >= 9.0:
             engage_t = t
             break
 
     if engage_t is not None:
-        start_t = max(0.0, round(engage_t - 1.2, 1))
+        start_t = max(0.0, round(engage_t - 1.5, 1))
     else:
-        start_t = max(0.0, round(kill_t - 7.5, 1))
+        start_t = max(0.0, round(kill_t - 12.0, 1))
+
+    # Jeśli start wypada blisko początku (<= 4.0s), bierzemy od 0.0s
+    if start_t <= 4.0:
+        start_t = 0.0
 
     end_t = min(round(total_dur, 1), round(kill_t + 2.5, 1))
-
     dur = end_t - start_t
-    if dur < 11.0:
-        start_t = max(0.0, round(end_t - 12.0, 1))
-    elif dur > 18.0:
-        start_t = max(0.0, round(end_t - 18.0, 1))
+    if dur > 16.0:
+        start_t = max(0.0, round(end_t - 15.0, 1))
 
     peak_moment = max(1.0, round(kill_t - start_t, 1))
     return round(start_t, 1), round(end_t, 1), peak_moment
