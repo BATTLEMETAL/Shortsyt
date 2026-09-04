@@ -679,8 +679,10 @@ def yt_exchange_code(req: YouTubeAuthCodeRequest, payload: dict = Depends(verify
 
 
 @app.post("/youtube/upload/{filename}", tags=["YouTube"])
-def yt_upload(filename: str, req: YouTubeUploadRequest, payload: dict = Depends(verify_token)):
-    """Upload Shorta na YouTube."""
+async def yt_upload(filename: str, req: YouTubeUploadRequest, payload: dict = Depends(verify_token)):
+    """Upload Shorta na YouTube (async — uruchamia upload w thread pool, nie blokuje event loopa)."""
+    import asyncio
+
     # Znajdź plik
     search_dirs = [LOL_TEMP_DIR, LOL_OUTPUT_DIR]
     video_path = None
@@ -694,15 +696,19 @@ def yt_upload(filename: str, req: YouTubeUploadRequest, payload: dict = Depends(
         raise HTTPException(status_code=404, detail=f"Plik nie znaleziony: {filename}")
 
     try:
-        result = upload_video(
-            video_path=video_path,
-            title=req.title,
-            description=req.description,
-            tags=req.tags,
-            privacy=req.privacy,
-            pinned_comment=req.pinned_comment,
-            thumbnail_path=req.thumbnail_path,
-            publish_at=req.publish_at,
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: upload_video(
+                video_path=video_path,
+                title=req.title,
+                description=req.description,
+                tags=req.tags,
+                privacy=req.privacy,
+                pinned_comment=req.pinned_comment,
+                thumbnail_path=req.thumbnail_path,
+                publish_at=req.publish_at,
+            )
         )
         return result
     except Exception as e:

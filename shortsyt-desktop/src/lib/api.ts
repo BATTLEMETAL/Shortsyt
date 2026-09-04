@@ -376,8 +376,19 @@ export async function apiUploadToYt(
   thumbnail_path?: string,
   publish_at?: string
 ): Promise<any> {
-  const client = await createClient();
-  const res = await client.post(`/youtube/upload/${encodeURIComponent(filename)}`, {
+  // YouTube upload takes 1-5 minutes for a typical Short (~20MB).
+  // Use a dedicated client with a 10-minute timeout to avoid premature failure.
+  const baseURL = await getServerUrl();
+  const token = await getJwtToken();
+  const uploadClient = axios.create({
+    baseURL,
+    timeout: 600000, // 10 minutes – enough for any Short file size
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  const res = await uploadClient.post(`/youtube/upload/${encodeURIComponent(filename)}`, {
     filename,
     title,
     description,
