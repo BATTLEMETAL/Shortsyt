@@ -766,7 +766,13 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
                 first_x = float(hp_b[0][0])
                 break
 
-        # KROK 3: Płynne, responsywne śledzenie gracza z Combat Centroid Fallback
+        # KROK 3: Płynne śledzenie gracza z Combat Centroid Fallback
+        # ── Parametry płynności ──────────────────────────────────────────────
+        LERP_ALPHA    = 0.30   # jak szybko kamera dogania gracza (0.30 = powolne, płynne)
+        MAX_PAN_PX    = 60     # max przesunięcie [px] na próbkę — eliminuje gwałtowne skoki
+        SNAP_DELTA    = 300    # powyżej tej różnicy → natychmiastowy snap (Flash/Shunpo)
+        # ─────────────────────────────────────────────────────────────────────
+
         track_x = first_x
         crop_xs = []
         champ_detected = 0
@@ -787,11 +793,14 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
                     target_x = player_target_x
 
                 delta = abs(target_x - track_x)
-                if delta > 250:
+                if delta > SNAP_DELTA:
                     # Wykryto gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
                     track_x = target_x
                 else:
-                    track_x = 0.90 * target_x + 0.10 * track_x
+                    # Płynne doganianie: lerp + limit prędkości
+                    desired = LERP_ALPHA * target_x + (1.0 - LERP_ALPHA) * track_x
+                    move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
+                    track_x = track_x + move
             else:
                 invisible_streak += 1
                 # Combat Centroid Fallback: gdy gracz niewidoczny >4 klatki (Zhonya/zgon/bush)
@@ -805,10 +814,11 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
         print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames)} klatek z graczem w kadrze")
 
 
-        # KROK 4: Wygładzanie adaptacyjne (okno=3)
+        # KROK 4: Wygładzanie adaptacyjne — okno=9 redukuje mikrodrgania
+        SMOOTH_WIN = 9
         raw_arr = np.array(crop_xs, dtype=float)
         smoothed = np.array([
-            raw_arr[max(0, i - 1):min(len(raw_arr), i + 2)].mean()
+            raw_arr[max(0, i - SMOOTH_WIN // 2):min(len(raw_arr), i + SMOOTH_WIN // 2 + 1)].mean()
             for i in range(len(raw_arr))
         ])
         smoothed = np.clip(smoothed, 0, source_w - crop_w).astype(int)
