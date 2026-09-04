@@ -401,6 +401,18 @@ export async function apiUploadToYt(
   return res.data;
 }
 
+export async function apiFlushPendingComments(): Promise<{ sent: any[]; still_pending: any[] }> {
+  const client = await createClient();
+  const res = await client.post('/youtube/flush-comments');
+  return res.data;
+}
+
+export async function apiPostComment(videoId: string, text: string): Promise<{ video_id: string; comment_id: string | null; ok: boolean }> {
+  const client = await createClient();
+  const res = await client.post(`/youtube/video/${encodeURIComponent(videoId)}/comment`, { text });
+  return res.data;
+}
+
 export async function apiGetAnalytics(range: string = '30d', refresh: boolean = false): Promise<any> {
   const client = await createClient();
   const res = await client.get(`/analytics?range=${range}${refresh ? '&refresh=true' : ''}`);

@@ -383,11 +383,16 @@ def upload_video(
     else:
         status_body["privacyStatus"] = privacy
 
+    # Dodaj hashtag #Shorts jeśli go brakuje (algorytm YouTube Shorts tego wymaga)
+    if "#shorts" not in title.lower():
+        if len(title) + 8 <= 100:
+            title = f"{title} #Shorts"
+
     body = {
         "snippet": {
-            "title": title,
-            "description": description,
-            "tags": tags,
+            "title": title[:100],
+            "description": description[:5000],
+            "tags": tags[:30],
             "categoryId": category_id,
         },
         "status": status_body,
@@ -413,41 +418,63 @@ def upload_video(
     video_id = response["id"]
     print(f"[YouTube] ✅ Wideo wgrane pomyślnie! ID: {video_id}")
 
-    # 1. Automatyczne wgrywanie miniaturki (jeśli podana lub istnieje plik _thumb.jpg)
+    # 1. Automatyczne wgrywanie miniaturki (z retry i zapisem kopii)
     thumb_target = thumbnail_path or str(video_path).replace(".mp4", "_thumb.jpg")
     if Path(thumb_target).exists():
+        import shutil
+        thumbs_dir = Path(__file__).parent.parent / "thumbnails"
+        thumbs_dir.mkdir(parents=True, exist_ok=True)
         try:
-            thumb_media = MediaFileUpload(str(thumb_target), mimetype="image/jpeg")
-            youtube.thumbnails().set(
-                videoId=video_id,
-                media_body=thumb_media,
-            ).execute()
-            print(f"[YouTube] ✅ Miniaturka 9:16 została wgrana na YouTube: {thumb_target}")
-        except Exception as te:
-            print(f"[YouTube] ⚠️ Ostrzeżenie przy wgrywaniu miniaturki: {te}")
+            shutil.copy2(thumb_target, thumbs_dir / f"{video_id}_thumb.jpg")
+            shutil.copy2(thumb_target, Path(__file__).parent.parent / "latest_thumbnail.jpg")
+        except Exception:
+            pass
+
+        thumb_uploaded = False
+        for attempt in range(1, 4):
+            try:
+                # Sprawdź czy przetwarzanie wideo nie blokuje miniaturki
+                v_info = youtube.videos().list(part="status,processingDetails", id=video_id).execute()
+                items = v_info.get("items", [])
+                if items:
+                    p_status = items[0].get("processingDetails", {}).get("processingStatus", "")
+                    if p_status == "processing":
+                        time.sleep(3)
+
+                thumb_media = MediaFileUpload(str(thumb_target), mimetype="image/jpeg")
+                youtube.thumbnails().set(
+                    videoId=video_id,
+                    media_body=thumb_media,
+                ).execute()
+                print(f"[YouTube] ✅ Miniaturka 9:16 wgrana na YouTube (próba {attempt}): {thumb_target}")
+                thumb_uploaded = True
+                break
+            except Exception as te:
+                print(f"[YouTube] ⚠️ Próba {attempt}/3 wgrywania miniaturki: {te}")
+                time.sleep(4)
+
+        if not thumb_uploaded:
+            print(f"[YouTube] ❌ Nie udało się automatycznie wgrać miniaturki po 3 próbach.")
 
     # 2. Automatyczne dodawanie przypiętego komentarza pod Shortem
+    # YouTube API nie pozwala dodawać komentarzy do filmów ze statusem private/scheduled (błąd 403 commentsDisabled).
+    # Dla filmów zaplanowanych komentarz trafia do kolejki (pending_comments.json) i zostanie
+    # wysłany automatycznie przez background task, gdy film stanie się publiczny.
+    import re
     comment_id = None
+    comment_pending = False
     if pinned_comment and pinned_comment.strip():
-        try:
-            comment_body = {
-                "snippet": {
-                    "videoId": video_id,
-                    "topLevelComment": {
-                        "snippet": {
-                            "textOriginal": pinned_comment.strip()
-                        }
-                    }
-                }
-            }
-            comment_res = youtube.commentThreads().insert(
-                part="snippet",
-                body=comment_body
-            ).execute()
-            comment_id = comment_res.get("id")
-            print(f"[YouTube] ✅ Przypięty komentarz dodany pod filmem: '{pinned_comment[:50]}' (ID: {comment_id})")
-        except Exception as ce:
-            print(f"[YouTube] ⚠️ Ostrzeżenie przy publikacji komentarza: {ce}")
+        clean_comment = re.sub(r'[\ud800-\udfff]', '', pinned_comment.strip())
+        is_scheduled = bool(publish_at and publish_at.strip())
+        is_live = (not is_scheduled) and (privacy in ("public", "unlisted"))
+
+        if is_live:
+            time.sleep(4)
+            comment_id = _post_comment_with_retry(youtube, video_id, clean_comment, retries=3)
+        else:
+            comment_pending = True
+            _save_pending_comment(video_id, clean_comment)
+            print(f"[YouTube] 📝 Komentarz zapisany do kolejki (film zaplanowany/prywatny) — zostanie opublikowany po upublicznieniu: '{clean_comment[:60]}'")
 
     return {
         "video_id": video_id,
@@ -456,4 +483,111 @@ def upload_video(
         "status": response["status"]["privacyStatus"],
         "publish_at": response["status"].get("publishAt"),
         "comment_id": comment_id,
+        "comment_pending": comment_pending,
     }
+
+
+def _post_comment_with_retry(youtube, video_id: str, text: str, retries: int = 3) -> Optional[str]:
+    """Próbuje dodać komentarz do filmu z retry (YouTube potrzebuje chwili na propagację)."""
+    for attempt in range(retries):
+        try:
+            comment_res = youtube.commentThreads().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "videoId": video_id,
+                        "topLevelComment": {
+                            "snippet": {"textOriginal": text}
+                        }
+                    }
+                }
+            ).execute()
+            cid = comment_res.get("id")
+            print(f"[YouTube] ✅ Komentarz dodany (próba {attempt+1}): '{text[:60]}' (ID: {cid})")
+            return cid
+        except Exception as ce:
+            print(f"[YouTube] ⚠️ Próba {attempt+1}/{retries} komentarza nieudana: {ce}")
+            if attempt < retries - 1:
+                time.sleep(8)
+    print(f"[YouTube] ❌ Nie udało się dodać komentarza po {retries} próbach.")
+    return None
+
+
+def _save_pending_comment(video_id: str, text: str) -> None:
+    """Zapisuje komentarz do pliku kolejki JSON (do późniejszego wysłania po upublicznieniu)."""
+    import json as _json
+    queue_path = ACCOUNTS_DIR / "pending_comments.json"
+    queue: list = []
+    if queue_path.exists():
+        try:
+            queue = _json.loads(queue_path.read_text(encoding="utf-8"))
+        except Exception:
+            queue = []
+    queue.append({"video_id": video_id, "text": text, "created_at": datetime.now(timezone.utc).isoformat()})
+    queue_path.write_text(_json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def post_pinned_comment(video_id: str, text: str) -> Dict[str, Any]:
+    """
+    Dodaj (lub ponów) przypięty komentarz do istniejącego publicznego filmu YouTube.
+    Używane po upublicznieniu zaplanowanego Shorta.
+    """
+    creds = _load_credentials()
+    if creds is None:
+        raise ValueError("Brak tokenu YouTube — wymagana autoryzacja")
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        _save_credentials(creds)
+    youtube = build("youtube", "v3", credentials=creds)
+    comment_id = _post_comment_with_retry(youtube, video_id, text, retries=3)
+    return {"video_id": video_id, "comment_id": comment_id, "ok": comment_id is not None}
+
+
+def flush_pending_comments() -> Dict[str, Any]:
+    """
+    Sprawdza kolejkę oczekujących komentarzy i próbuje je dodać do już publicznych filmów.
+    Wywołaj ręcznie lub automatycznie po upublicznieniu zaplanowanego Shorta.
+    Zwraca: {"sent": [...], "still_pending": [...]}
+    """
+    import json as _json
+    queue_path = ACCOUNTS_DIR / "pending_comments.json"
+    if not queue_path.exists():
+        return {"sent": [], "still_pending": []}
+
+    queue: list = _json.loads(queue_path.read_text(encoding="utf-8"))
+    if not queue:
+        return {"sent": [], "still_pending": []}
+
+    creds = _load_credentials()
+    if creds is None:
+        return {"sent": [], "still_pending": queue, "error": "Brak tokenu"}
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        _save_credentials(creds)
+    youtube = build("youtube", "v3", credentials=creds)
+
+    sent = []
+    still_pending = []
+    for item in queue:
+        vid = item["video_id"]
+        txt = item["text"]
+        # Sprawdź czy film jest już publiczny
+        try:
+            res = youtube.videos().list(part="status", id=vid).execute()
+            status = res["items"][0]["status"]["privacyStatus"] if res.get("items") else "unknown"
+        except Exception:
+            status = "unknown"
+
+        if status == "public":
+            cid = _post_comment_with_retry(youtube, vid, txt, retries=2)
+            if cid:
+                sent.append({"video_id": vid, "comment_id": cid})
+            else:
+                still_pending.append(item)
+        else:
+            still_pending.append(item)
+
+    # Zapisz tylko te które nadal czekają
+    queue_path.write_text(_json.dumps(still_pending, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"sent": sent, "still_pending": still_pending}
+

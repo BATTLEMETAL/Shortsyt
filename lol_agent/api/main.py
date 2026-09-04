@@ -27,7 +27,7 @@ from .config import (
 from . import pipeline_runner
 from .youtube_uploader import (
     get_token_status, get_auth_url, exchange_auth_code, upload_video,
-    get_next_optimal_publish_time
+    get_next_optimal_publish_time, post_pinned_comment, flush_pending_comments
 )
 
 app = FastAPI(
@@ -43,6 +43,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_comment_flusher():
+    """Uruchamia proces w tle sprawdzający co 60 sekund zaplanowane komentarze YouTube."""
+    import asyncio
+    async def _flusher_loop():
+        while True:
+            await asyncio.sleep(60)
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, flush_pending_comments)
+            except Exception:
+                pass
+    asyncio.create_task(_flusher_loop())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -84,6 +99,9 @@ class YouTubeUploadRequest(BaseModel):
     pinned_comment: Optional[str] = None
     thumbnail_path: Optional[str] = None
     publish_at: Optional[str] = None
+
+class PostCommentRequest(BaseModel):
+    text: str
 
 class RegisterPushTokenRequest(BaseModel):
     expo_token: str
@@ -144,6 +162,71 @@ def _load_meta(filename: str) -> dict:
         except Exception:
             pass
     return {}
+
+
+def _record_publication(video_path: str, filename: str, result: dict, req: YouTubeUploadRequest) -> None:
+    """Zapisuje fakt publikacji w published_videos.jsonl, processed_hashes.json oraz aktualizuje .meta.json."""
+    from datetime import datetime, timezone
+
+    # 1. Odczytaj istniejące .meta.json
+    meta = _load_meta(filename) or {}
+    source_path = meta.get("source_path", "")
+    champ = meta.get("champion_name", "Katarina")
+    action = meta.get("action_type", "outplay")
+
+    # 2. Aktualizuj .meta.json
+    meta["youtube_id"] = result.get("video_id")
+    meta["youtube_url"] = result.get("url")
+    meta["published_at"] = datetime.now(timezone.utc).isoformat()
+    meta["published_privacy"] = result.get("status", "public")
+    meta["scheduled_publish_at"] = result.get("publish_at")
+    meta["pinned_comment"] = req.pinned_comment
+    meta["comment_id"] = result.get("comment_id")
+    meta["comment_pending"] = result.get("comment_pending", False)
+    _save_meta(filename, meta)
+
+    # 3. Zapisz do published_videos.jsonl w LOL_AGENT_DIR
+    pub_log = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "video_id": result.get("video_id"),
+        "url": result.get("url"),
+        "title": result.get("title", req.title),
+        "action_type": action,
+        "champion": champ,
+        "thumbnail": req.thumbnail_path or str(Path(video_path).with_suffix("")).replace(".mp4", "_thumb.jpg"),
+        "privacy": result.get("status", "public"),
+        "scheduled_publish_at": result.get("publish_at"),
+        "source_path": source_path,
+    }
+    pub_path = Path(__file__).parent.parent / "published_videos.jsonl"
+    try:
+        with open(pub_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(pub_log, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[Publish] Warning: could not write published_videos.jsonl: {e}")
+
+    # 4. Zapisz do processed_hashes.json dla ochrony przed duplikatami
+    if source_path and Path(source_path).exists():
+        try:
+            from run_lol_agent import _clip_hash, _extract_clip_stem
+            h = _clip_hash(source_path)
+            stem = _extract_clip_stem(Path(source_path).name)
+            processed_path = Path(__file__).parent.parent / "processed_hashes.json"
+            processed = {}
+            if processed_path.exists():
+                with open(processed_path, "r", encoding="utf-8") as f:
+                    processed = json.load(f)
+            processed[h] = {
+                "source": Path(source_path).name,
+                "stem": stem,
+                "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                "video_id": result.get("video_id"),
+                "url": result.get("url"),
+            }
+            with open(processed_path, "w", encoding="utf-8") as f:
+                json.dump(processed, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[Publish] Warning: could not update processed_hashes.json: {e}")
 
 
 # Przechowuj push token w pamięci (wystarczy dla jednego urządzenia)
@@ -710,9 +793,34 @@ async def yt_upload(filename: str, req: YouTubeUploadRequest, payload: dict = De
                 publish_at=req.publish_at,
             )
         )
+
+        # Zapisz fakt publikacji, uaktualnij metadane i historię publikacji
+        try:
+            _record_publication(video_path=video_path, filename=filename, result=result, req=req)
+        except Exception as pe:
+            print(f"[YouTube] ⚠️ Błąd zapisywania historii publikacji: {pe}")
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/youtube/flush-comments", tags=["YouTube"])
+async def yt_flush_comments(payload: dict = Depends(verify_token)):
+    """Sprawdź kolejkę zaplanowanych komentarzy i dodaj je do filmów, które stały się publiczne."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    res = await loop.run_in_executor(None, flush_pending_comments)
+    return res
+
+
+@app.post("/youtube/video/{video_id}/comment", tags=["YouTube"])
+async def yt_post_comment(video_id: str, req: PostCommentRequest, payload: dict = Depends(verify_token)):
+    """Dodaj przypięty komentarz do konkretnego filmu na YouTube."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    res = await loop.run_in_executor(None, lambda: post_pinned_comment(video_id, req.text))
+    return res
 
 
 # ══════════════════════════════════════════════════════════════════════════════
