@@ -10,6 +10,8 @@
 
 > **Autonomous AI-driven YouTube Shorts generation and publishing pipeline.** Built with Computer Vision (OpenCV HP-bar tracking), OCR momentum analysis (Tesseract), AI multimodal narrative engine (Gemini), dynamic FFmpeg rendering (9:16 vertical crop, auto-chase speedup, slow-mo 60FPS), and a native Electron Desktop Studio (React 18 + Vite + TailwindCSS).
 
+> 📖 **Standardy i Wytyczne Operacyjne**: Szczegółowe parametry kinematyki kamery, logiki okien akcji, profili gier i bezpieczeństwa zebrane są w [PROJECT_GUIDELINES.md](docs/PROJECT_GUIDELINES.md).
+
 ---
 
 ## 🎬 Live Production Demos
