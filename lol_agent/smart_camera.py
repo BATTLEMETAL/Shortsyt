@@ -767,10 +767,11 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
                 break
 
         # KROK 3: Płynne śledzenie gracza z Combat Centroid Fallback
-        # ── Parametry płynności ──────────────────────────────────────────────
-        LERP_ALPHA    = 0.30   # jak szybko kamera dogania gracza (0.30 = powolne, płynne)
-        MAX_PAN_PX    = 60     # max przesunięcie [px] na próbkę — eliminuje gwałtowne skoki
-        SNAP_DELTA    = 300    # powyżej tej różnicy → natychmiastowy snap (Flash/Shunpo)
+        # ── Parametry płynności (Kinowa stabilizacja) ────────────────────────
+        LERP_ALPHA    = 0.18   # spokojne, płynne doganianie gracza (brak nerwowości)
+        MAX_PAN_PX    = 25     # max przesunięcie [px] na próbkę — eliminuje jakiekolwiek skoki lewo/prawo
+        SNAP_DELTA    = 280    # powyżej tej różnicy → natychmiastowy snap (Flash/Shunpo)
+        DEADBAND_PX   = 40.0   # mikro-ruchy gracza wewnątrz 40px nie ruszają kamery w ogóle!
         # ─────────────────────────────────────────────────────────────────────
 
         track_x = first_x
@@ -785,45 +786,47 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
                 # Wybierz pasek gracza najbliższy aktualnej trajektorii
                 hp_b.sort(key=lambda c: c[4] - 0.8 * abs(c[0] - track_x), reverse=True)
                 player_target_x = float(hp_b[0][0])
-                # Jeśli w kadrze są wrogowie w bliskiej walce, uwzględnij ich w kadrowaniu
-                # aby cel ataku (np. Nocturne) nie był ucinany na krawędzi pionowego kadru 9:16
-                if enemy_cx is not None and abs(enemy_cx - player_target_x) < 550:
-                    target_x = 0.70 * player_target_x + 0.30 * float(enemy_cx)
-                else:
-                    target_x = player_target_x
+                target_x = player_target_x
 
                 delta = abs(target_x - track_x)
                 if delta > SNAP_DELTA:
-                    # Wykryto gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
+                    # Gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
                     track_x = target_x
+                elif delta < DEADBAND_PX:
+                    # Wewnątrz strefy martwej — kamera stabilna jak na statywie, zero drgań
+                    pass
                 else:
-                    # Płynne doganianie: lerp + limit prędkości
+                    # Płynne, kinowe doganianie: lerp + limit prędkości
                     desired = LERP_ALPHA * target_x + (1.0 - LERP_ALPHA) * track_x
                     move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
                     track_x = track_x + move
             else:
                 invisible_streak += 1
-                # Combat Centroid Fallback: gdy gracz niewidoczny >4 klatki (Zhonya/zgon/bush)
-                # kamera płynie w kierunku środka walki wrogów zamiast dryfować w bok
-                if invisible_streak > 4 and enemy_cx is not None:
-                    track_x = 0.97 * track_x + 0.03 * float(enemy_cx)
+                # Gdy gracz niewidoczny, kamera utrzymuje pozycję zamiast dryfować
 
             crop_x = int(max(0, min(track_x - crop_w // 2, source_w - crop_w)))
             crop_xs.append(crop_x)
 
         print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames)} klatek z graczem w kadrze")
 
-
-        # KROK 4: Wygładzanie adaptacyjne — okno=9 redukuje mikrodrgania
-        SMOOTH_WIN = 9
+        # KROK 4: Wygładzanie adaptacyjne — okno=13 dla kinowej płynności
+        SMOOTH_WIN = 13
         raw_arr = np.array(crop_xs, dtype=float)
         smoothed = np.array([
             raw_arr[max(0, i - SMOOTH_WIN // 2):min(len(raw_arr), i + SMOOTH_WIN // 2 + 1)].mean()
             for i in range(len(raw_arr))
         ])
+
+        # KROK 5: End Freeze — ostatnie 1.8s klipu zablokuj kamerę na championie (brak dryfu po fragu)
+        end_freeze_sec = 1.8
+        if duration > end_freeze_sec * 1.5:
+            freeze_idx = int(len(smoothed) * (1.0 - end_freeze_sec / duration))
+            freeze_idx = max(0, min(freeze_idx, len(smoothed) - 1))
+            smoothed[freeze_idx:] = smoothed[freeze_idx]
+
         smoothed = np.clip(smoothed, 0, source_w - crop_w).astype(int)
 
-        # KROK 5: Pełna gęsta trajektoria 80 punktów w FFmpeg dla maksymalnej precyzji
+        # KROK 6: Pełna gęsta trajektoria 80 punktów w FFmpeg dla maksymalnej precyzji
         final_points = [(float(t_points[i]), int(smoothed[i])) for i in range(len(smoothed))]
 
         print(f"   Wygenerowano {len(final_points)} płynnych punktów ścieżki kamery")

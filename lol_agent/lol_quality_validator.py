@@ -139,10 +139,13 @@ def validate_pre_flight(
         
         if not combat_detected_at_start and abs_peaks:
             first_k_t = abs_peaks[0][0]
-            if first_k_t - adj_start > 3.0:
-                new_start = max(0.0, first_k_t - 2.0)
-                diag.append(f"Action Hook Guard: przesunięto start z {adj_start:.1f}s na {new_start:.1f}s (wycięto martwy bieg/wieżę)")
-                adj_start = new_start
+            # Przycina tylko przy ewidentnym pustym bieganiu (> 6.5s przed pierwszym fragiem),
+            # zawsze zachowując co najmniej 4.5s wejścia w walkę, aby widz widział wymianę i skillshoty.
+            if first_k_t - adj_start > 6.5:
+                new_start = max(adj_start, first_k_t - 4.5)
+                if new_start > adj_start + 1.0:
+                    diag.append(f"Action Hook Guard: przesunięto start z {adj_start:.1f}s na {new_start:.1f}s (zachowano 4.5s wymiany i engage)")
+                    adj_start = new_start
 
     # ── 2. Dead Running & Jump-Cut Guard ──────────────────────────────────────
     all_peaks_sorted = sorted(abs_peaks, key=lambda x: x[0])

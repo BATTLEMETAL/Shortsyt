@@ -386,19 +386,22 @@ def compute_optimal_clip_window(
         peak_candidates = [k for k in real_kills if k.get("tier", 1) == max_tier]
         last_k = peak_candidates[-1]["timestamp"] if peak_candidates else real_kills[-1]["timestamp"]
 
-        start = max(0.0, round(first_k - buildup, 1))
+        # Aby widz widział całą walkę, wejście w starcie, skillshoty i wymianę ciosów (a nie tylko last-hit):
+        # Bufor przed pierwszym fragiem wynosi min. 4.5s - 5.5s
+        lead_in = max(4.5, buildup * 4.0)
+        start = max(0.0, round(first_k - lead_in, 1))
         end = min(round(total_dur, 1), round(last_k + outro, 1))
 
-        # Najpierw obetnij do max_dur (priorytet: nie przekraczaj limitu profilu)
+        # Jeśli klip jest za długi (> max_dur):
         if end - start > max_dur:
-            start = max(0.0, round(last_k - (max_dur - outro), 1))
-            end = min(round(total_dur, 1), round(last_k + outro, 1))
+            start = max(0.0, round(end - max_dur, 1))
 
-        # Potem rozszerz do min_dur jesli wciaz za krotkie
+        # Jeśli klip jest za krótki (< min_dur):
         if end - start < min_dur:
             needed = min_dur - (end - start)
-            start = max(0.0, round(start - needed * 0.5, 1))
-            end = min(round(total_dur, 1), round(end + needed * 0.5, 1))
+            # Rozszerzamy głównie w lewo (w stronę wejścia w walkę / setupu)
+            start = max(0.0, round(start - needed * 0.75, 1))
+            end = min(round(total_dur, 1), round(end + needed * 0.25, 1))
 
         peak_moment = max(1.0, round(last_k - start, 1))
         return start, end, peak_moment, None
@@ -484,9 +487,10 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 3.0) -> FragAnalysis
                 continue
 
             # Debounce: Baner killa w LoL wisi na ekranie przez 2.5-3.0s.
-            # Kolejny frag o tym samym lub niższym tierze wymaga co najmniej 3.2s odstępu.
-            is_new_kill = (t - last_kill_t) > 3.2
-            is_tier_upgrade = k_tier > max_kill_tier
+            # 1. Nowy kill o tym samym/niższym tierze wymaga odstępu min. 3.0s
+            # 2. Wyższy tier multikilla (np. DOUBLE KILL po zwykłym killu) to KOLEJNY frag (wymaga min. 0.8s)
+            is_multikill_step = (k_tier >= 2 and k_tier > max_kill_tier and (t - last_kill_t) >= 0.8)
+            is_new_kill = ((t - last_kill_t) > 3.0) or is_multikill_step
 
             if is_new_kill:
                 kills_detected.append({
@@ -495,7 +499,8 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 3.0) -> FragAnalysis
                     "tier": k_tier,
                 })
                 last_kill_t = t
-            elif is_tier_upgrade and kills_detected:
+            elif k_tier > max_kill_tier and kills_detected and (t - last_kill_t) < 0.8:
+                # Błyskawiczna korekta OCR tego samego banera w tej samej sekundzie
                 kills_detected[-1] = {
                     "timestamp": round(float(t), 2),
                     "label": k_label,
@@ -552,15 +557,15 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 3.0) -> FragAnalysis
         color = "#a855f7"  # Fioletowy
         hook = "Insane Multi-Kill Sequence 💥"
         conf = 0.87
-    elif max_kill_tier == 2:
-        # Tylko gdy gra faktycznie wyświetliła baner DOUBLE KILL
+    elif max_kill_tier == 2 or len(kills_detected) >= 2:
+        # Gra wyświetliła baner DOUBLE KILL lub zarejestrowano 2 fragi
         detected_type = "double"
         badge = "DOUBLE KILL"
         color = "#06b6d4"  # Turkusowy
         hook = "Clean Double Kill ⚔️"
         conf = 0.85
-    elif max_kill_tier <= 1 and not is_clutch:
-        # Solo Kill / Solo Bolo: 1v1 eliminacja lub brak banerów multi-kill
+    elif len(kills_detected) <= 1 and max_kill_tier <= 1 and not is_clutch:
+        # Solo Kill / Solo Bolo: 1v1 eliminacja (dokładnie 1 frag lub brak banerów multi-kill)
         detected_type = "solo_bolo"
         badge = "SOLO BOLO 👑"
         color = "#FF1744"  # Neonowa czerwień
