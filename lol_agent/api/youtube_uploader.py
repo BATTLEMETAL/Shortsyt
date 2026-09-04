@@ -19,7 +19,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-from .config import CLIENT_SECRET_PATH, YT_TOKEN_PATH, ACCOUNTS_DIR
+from .config import (
+    CLIENT_SECRET_PATH, YT_TOKEN_PATH, ACCOUNTS_DIR,
+    LOL_AGENT_DIR, LOL_TEMP_DIR, LOL_OUTPUT_DIR
+)
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
@@ -294,13 +297,17 @@ def exchange_auth_code(code: str) -> Dict[str, Any]:
     return get_token_status()
 
 
-PEAK_SLOTS_CET = ["08:30", "12:00", "18:30", "20:30"]
+# ── Harmonogram Publikacji: 2 Shortsy dziennie (Morning Peak 08:30 + Evening Peak 18:30 CET) ──
+DAILY_PEAK_SLOTS_CET = ["08:30", "18:30"]
 
 
-def get_next_optimal_publish_time() -> Dict[str, Any]:
+def get_occupied_publish_slots() -> Dict[str, Dict[str, Any]]:
     """
-    Oblicza najbliższy wolny slot godzinowy najwyższego ruchu (Peak Hours) dla YouTube Shorts.
-    Zwraca ISO UTC timestamp, czytelny label (np. 'Dziś, 18:30 CET') oraz godzinę.
+    Sprawdza, które sloty publikacji (format 'YYYY-MM-DD HH:MM' CET) są już zajęte:
+    1. Z YouTube Data API (zaplanowane filmy ze statusem publishAt)
+    2. Z lokalnej bazy published_videos.jsonl
+    3. Z lokalnych plików *.meta.json w katalogach temp i output
+    Zwraca słownik: { 'YYYY-MM-DD HH:MM': { 'title': ..., 'video_id': ..., 'source': ... } }
     """
     try:
         from zoneinfo import ZoneInfo
@@ -308,33 +315,165 @@ def get_next_optimal_publish_time() -> Dict[str, Any]:
     except Exception:
         tz_cet = timezone(timedelta(hours=2))
 
-    now = datetime.now(tz_cet)
-    
-    # Przejrzyj dzisiejsze sloty
-    target_dt = None
-    for slot in PEAK_SLOTS_CET:
-        h, m = map(int, slot.split(":"))
-        candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        # Musi być co najmniej 15 minut w przyszłości
-        if candidate > now + timedelta(minutes=15):
-            target_dt = candidate
-            label = f"Dzisiaj o {slot} CET (Peak Slot ⚡)"
-            break
+    occupied: Dict[str, Dict[str, Any]] = {}
 
-    # Jeśli wszystkie dzisiejsze sloty minęły, wybierz jutro 08:30
-    if target_dt is None:
-        tomorrow = now + timedelta(days=1)
-        target_dt = tomorrow.replace(hour=8, minute=30, second=0, microsecond=0)
-        label = "Jutro o 08:30 CET (Morning Peak 🌅)"
+    # 1. Sprawdź na żywo YouTube Data API
+    try:
+        creds = _load_credentials()
+        if creds:
+            if creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                    _save_credentials(creds)
+                except Exception:
+                    pass
+            youtube = build("youtube", "v3", credentials=creds)
+            ch = youtube.channels().list(part="contentDetails", mine=True).execute()
+            uploads_id = ch["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+            pl = youtube.playlistItems().list(part="snippet,status", playlistId=uploads_id, maxResults=25).execute()
+            vids = [item["snippet"]["resourceId"]["videoId"] for item in pl.get("items", [])]
+            if vids:
+                v_res = youtube.videos().list(part="snippet,status", id=",".join(vids)).execute()
+                for v in v_res.get("items", []):
+                    st = v.get("status", {})
+                    pub_at = st.get("publishAt")
+                    if pub_at:
+                        dt_utc = datetime.fromisoformat(pub_at.replace("Z", "+00:00"))
+                        dt_cet = dt_utc.astimezone(tz_cet)
+                        key = dt_cet.strftime("%Y-%m-%d %H:%M")
+                        occupied[key] = {
+                            "title": v["snippet"]["title"],
+                            "video_id": v["id"],
+                            "source": "youtube_scheduled",
+                        }
+    except Exception as ye:
+        print(f"[Scheduling] Warning checking YouTube occupied slots: {ye}")
 
-    utc_dt = target_dt.astimezone(timezone.utc)
-    publish_at_iso = utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    # 2. Sprawdź lokalną bazę published_videos.jsonl
+    pub_log_path = LOL_AGENT_DIR / "published_videos.jsonl"
+    if pub_log_path.exists():
+        import json as _json
+        try:
+            with open(pub_log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        item = _json.loads(line.strip())
+                        sched = item.get("scheduled_publish_at")
+                        if sched:
+                            dt_utc = datetime.fromisoformat(sched.replace("Z", "+00:00"))
+                            dt_cet = dt_utc.astimezone(tz_cet)
+                            key = dt_cet.strftime("%Y-%m-%d %H:%M")
+                            if key not in occupied:
+                                occupied[key] = {
+                                    "title": item.get("title", "Lokalny wpis"),
+                                    "video_id": item.get("video_id"),
+                                    "source": "local_pub_log",
+                                }
+                    except Exception:
+                        pass
+        except Exception as pe:
+            print(f"[Scheduling] Warning checking published_videos.jsonl: {pe}")
 
+    # 3. Sprawdź lokalne pliki .meta.json w LOL_TEMP_DIR i LOL_OUTPUT_DIR
+    import json as _json
+    for search_dir in [LOL_TEMP_DIR, LOL_OUTPUT_DIR]:
+        if search_dir.exists():
+            for meta_file in search_dir.glob("*.meta.json"):
+                try:
+                    meta = _json.loads(meta_file.read_text(encoding="utf-8"))
+                    sched = meta.get("scheduled_publish_at")
+                    if sched:
+                        dt_utc = datetime.fromisoformat(sched.replace("Z", "+00:00"))
+                        dt_cet = dt_utc.astimezone(tz_cet)
+                        key = dt_cet.strftime("%Y-%m-%d %H:%M")
+                        if key not in occupied:
+                            occupied[key] = {
+                                "title": meta.get("title", meta_file.name),
+                                "video_id": meta.get("youtube_id"),
+                                "source": "local_meta",
+                            }
+                except Exception:
+                    pass
+
+    return occupied
+
+
+def get_next_optimal_publish_time() -> Dict[str, Any]:
+    """
+    Inteligentny dyspozytor harmonogramu (2 Shortsy dziennie: 08:30 i 18:30 CET).
+    Pobiera listę zajętych slotów (z YouTube i lokalnie) i wybiera NAJBLIŻSZY WOLNY SLOT.
+    Jeśli dzisiejsze sloty minęły lub są już zajęte, automatycznie przeskakuje na:
+      - Jutro o 08:30 CET (Morning Peak 🌅)
+      - Jutro o 18:30 CET (Evening Peak ⚡)
+      - Kolejne wolne dni w przód (Pojutrze itd.)
+    Gwarantuje brak nakładania się filmów na ten sam slot.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        tz_cet = ZoneInfo("Europe/Warsaw")
+    except Exception:
+        tz_cet = timezone(timedelta(hours=2))
+
+    now_cet = datetime.now(tz_cet)
+    # Bufor bezpieczeństwa: slot musi być co najmniej 30 minut w przyszłości
+    min_lead_time = timedelta(minutes=30)
+    cutoff = now_cet + min_lead_time
+
+    # Pobierz aktualne zajęte sloty
+    occupied = get_occupied_publish_slots()
+
+    # Szukaj najbliższego wolnego slotu przez kolejne 14 dni
+    for day_offset in range(14):
+        check_date = (now_cet + timedelta(days=day_offset)).date()
+        for slot in DAILY_PEAK_SLOTS_CET:
+            h, m = map(int, slot.split(":"))
+            slot_dt_cet = datetime(check_date.year, check_date.month, check_date.day, h, m, 0, tzinfo=tz_cet)
+
+            # Czy slot jest wystarczająco w przyszłości?
+            if slot_dt_cet <= cutoff:
+                continue
+
+            slot_key = slot_dt_cet.strftime("%Y-%m-%d %H:%M")
+            # Czy slot jest już zajęty przez inny film?
+            if slot_key in occupied:
+                continue
+
+            # Znaleziono pierwszy wolny slot!
+            slot_utc = slot_dt_cet.astimezone(timezone.utc)
+            iso_utc = slot_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            slot_type = "Morning Peak 🌅" if h < 12 else "Evening Peak ⚡"
+            if day_offset == 0:
+                label = f"Dzisiaj o {slot} CET ({slot_type})"
+            elif day_offset == 1:
+                label = f"Jutro o {slot} CET ({slot_type})"
+            elif day_offset == 2:
+                label = f"Pojutrze o {slot} CET ({slot_type})"
+            else:
+                days_pl = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota", "Niedziela"]
+                weekday = days_pl[slot_dt_cet.weekday()]
+                label = f"{weekday}, {slot_dt_cet.strftime('%d.%m')} o {slot} CET ({slot_type})"
+
+            print(f"[Scheduling] 🎯 Najbliższy wolny slot (2x/dzień): {label} ({slot_key} CET) | Zajętych slotów: {len(occupied)}")
+
+            return {
+                "publish_at": iso_utc,
+                "label": label,
+                "local_time": slot_key,
+                "peak_slots": DAILY_PEAK_SLOTS_CET,
+                "occupied_count": len(occupied),
+            }
+
+    # Fallback awaryjny
+    fallback_dt = (now_cet + timedelta(days=1)).replace(hour=8, minute=30, second=0)
     return {
-        "publish_at": publish_at_iso,
-        "label": label,
-        "local_time": target_dt.strftime("%Y-%m-%d %H:%M"),
-        "peak_slots": PEAK_SLOTS_CET,
+        "publish_at": fallback_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "label": "Jutro o 08:30 CET (Morning Peak 🌅)",
+        "local_time": fallback_dt.strftime("%Y-%m-%d %H:%M"),
+        "peak_slots": DAILY_PEAK_SLOTS_CET,
+        "occupied_count": len(occupied),
     }
 
 
