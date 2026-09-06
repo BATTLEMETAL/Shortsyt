@@ -768,10 +768,10 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
 
         # KROK 3: Płynne śledzenie gracza z Combat Centroid Fallback
         # ── Parametry płynności (Kinowa stabilizacja) ────────────────────────
-        LERP_ALPHA    = 0.18   # spokojne, płynne doganianie gracza (brak nerwowości)
-        MAX_PAN_PX    = 25     # max przesunięcie [px] na próbkę — eliminuje jakiekolwiek skoki lewo/prawo
+        LERP_ALPHA    = 0.35   # responsywne doganianie gracza (CONTEXT_PRIME v32)
+        MAX_PAN_PX    = 80     # max przesunięcie [px] na próbkę (było 25 → za wolne dla <15s klipów)
         SNAP_DELTA    = 280    # powyżej tej różnicy → natychmiastowy snap (Flash/Shunpo)
-        DEADBAND_PX   = 40.0   # mikro-ruchy gracza wewnątrz 40px nie ruszają kamery w ogóle!
+        DEADBAND_PX   = 30.0   # mikro-ruchy gracza wewnątrz 30px nie ruszają kamery
         # ─────────────────────────────────────────────────────────────────────
 
         track_x = first_x
@@ -809,8 +809,8 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
 
         print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames)} klatek z graczem w kadrze")
 
-        # KROK 4: Wygładzanie adaptacyjne — okno=13 dla kinowej płynności
-        SMOOTH_WIN = 13
+        # KROK 4: Wygładzanie adaptacyjne — okno=5 (responsywne, preservuje snap)
+        SMOOTH_WIN = 5
         raw_arr = np.array(crop_xs, dtype=float)
         smoothed = np.array([
             raw_arr[max(0, i - SMOOTH_WIN // 2):min(len(raw_arr), i + SMOOTH_WIN // 2 + 1)].mean()
