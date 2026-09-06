@@ -879,7 +879,7 @@ def merge_music(video_path: str, music_path: Optional[str],
             f"[2:a]loudnorm=I=-14:TP=-1.5:LRA=11,"
             f"volume=eval=frame:volume='{game_boost}',"
             f"afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}[ga];"
-            f"[1:a]loudnorm=I=-21:TP=-2.0:LRA=11,"
+            f"[1:a]loudnorm=I=-17:TP=-1.5:LRA=11,"
             f"volume=eval=frame:volume='{music_duck}',"
             f"afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}[ma];"
             f"[ga][ma]amix=inputs=2:duration=longest:dropout_transition=2:normalize=0[aout]"

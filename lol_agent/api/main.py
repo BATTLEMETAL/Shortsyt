@@ -86,6 +86,8 @@ class PipelineStartRequest(BaseModel):
     use_smart_camera: bool = True
     combat_segments: Optional[List[Tuple[float, float]]] = None
     expo_push_token: Optional[str] = None
+    game_type: Optional[str] = "lol"
+
 
 class YouTubeAuthCodeRequest(BaseModel):
     code: str
@@ -228,6 +230,14 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
         except Exception as e:
             print(f"[Publish] Warning: could not update processed_hashes.json: {e}")
 
+    # 5. Uruchom asynchronicznie cykl samouczenia kanału (Closed Feedback Loop)
+    try:
+        import threading
+        from lol_agent.learning_engine import run_channel_learning_cycle
+        threading.Thread(target=run_channel_learning_cycle, kwargs={"force_refresh": True}, daemon=True).start()
+    except Exception as le:
+        print(f"[Learning] Warning: could not trigger background learning cycle: {le}")
+
 
 # Przechowuj push token w pamięci (wystarczy dla jednego urządzenia)
 _push_token: Optional[str] = None
@@ -261,9 +271,11 @@ def me(payload: dict = Depends(verify_token)):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/status", tags=["Pipeline"])
+@app.get("/pipeline/status", tags=["Pipeline"])
 def pipeline_status(payload: dict = Depends(verify_token)):
     """Aktualny status pipeline (idle / running / done / error)."""
     return pipeline_runner.get_state()
+
 
 
 @app.post("/pipeline/start", tags=["Pipeline"])
@@ -298,7 +310,9 @@ def start_pipeline(req: PipelineStartRequest, payload: dict = Depends(verify_tok
         use_smart_camera=req.use_smart_camera,
         combat_segments=req.combat_segments,
         notify_token=req.expo_push_token or _push_token,
+        game_type=req.game_type or "lol",
     )
+
     if not started:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -548,6 +562,14 @@ def delete_output(filename: str, payload: dict = Depends(verify_token)):
                 pass
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Nie znaleziono pliku do usunięcia: {filename}")
+
+    # Rejestruj sygnał odrzucenia w pamięci uczenia
+    try:
+        from lol_agent.user_learning_memory import record_render_rejected
+        record_render_rejected(filename, reason="Odrzucony i usunięty przez użytkownika w monitorze renderu")
+    except Exception:
+        pass
+
     return {"status": "deleted", "filename": filename}
 
 
@@ -1062,6 +1084,69 @@ def save_tuning_config(config: dict, payload: dict = Depends(verify_token)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LEARNING ENGINE (Autonomous Channel Feedback Loop)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/learning/status", tags=["Learning"])
+def get_learning_status(payload: dict = Depends(verify_token_flexible)):
+    """Pobiera aktualną dyrektywę samouczenia, wagi akcji i wygrywające wzorce."""
+    try:
+        from lol_agent.learning_engine import get_learning_directive
+        directive = get_learning_directive()
+        return {"ok": True, "directive": directive}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd odczytu statusu uczenia: {e}")
+
+
+@app.get("/learning/preferences", tags=["Learning"])
+def get_user_learning_preferences(payload: dict = Depends(verify_token_flexible)):
+    """Pobiera wyuczone preferencje montażu z korekt użytkownika."""
+    try:
+        from lol_agent.user_learning_memory import get_learned_preferences
+        return {"ok": True, "preferences": get_learned_preferences()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd odczytu preferencji: {e}")
+
+
+@app.post("/learning/recalibrate", tags=["Learning"])
+def recalibrate_learning_cycle(payload: dict = Depends(verify_token_flexible)):
+    """Wymusza pełny cykl analizy YouTube i rekalibracji wag samouczenia."""
+    try:
+        from lol_agent.learning_engine import run_channel_learning_cycle
+        result = run_channel_learning_cycle(force_refresh=True)
+        return {"ok": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd rekalibracji: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# YOUTUBE ANALYTICS API (Frame-by-Frame Retention & Swiped Away)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/analytics/video/{video_id}", tags=["Analytics"])
+def get_video_retention(video_id: str, duration_s: float = 13.0, force_refresh: bool = False, payload: dict = Depends(verify_token_flexible)):
+    """Pobiera retencję klatka-po-klatce (100 punktów), Swiped Away % i punkty opuszczenia dla filmu."""
+    try:
+        from lol_agent.api.youtube_analytics import fetch_video_retention_data
+        data = fetch_video_retention_data(video_id=video_id, duration_s=duration_s, force_refresh=force_refresh)
+        return {"ok": True, "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd pobierania retencji wideo: {e}")
+
+
+@app.get("/analytics/channel/retention", tags=["Analytics"])
+def get_channel_retention_overview(payload: dict = Depends(verify_token_flexible)):
+    """Pobiera zbiorczy raport retencji, średniego Swiped Away i korelacji AVD dla kanału."""
+    try:
+        from lol_agent.api.youtube_analytics import fetch_channel_retention_overview
+        data = fetch_channel_retention_overview()
+        return {"ok": True, "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd pobierania raportu retencji kanału: {e}")
+
+
 DARK_ROOT = Path(__file__).parent.parent.parent  # shortsyt root
 
 
@@ -1246,14 +1331,20 @@ class AutoFillCalendarRequest(BaseModel):
 
 
 @app.get("/calendar/slots", tags=["Calendar"])
-def get_calendar(start_date: Optional[str] = None, days: int = 14, payload: dict = Depends(verify_token_flexible)):
+def get_calendar(
+    start_date: Optional[str] = None,
+    days: int = 14,
+    force_refresh: bool = False,
+    payload: dict = Depends(verify_token_flexible)
+):
     """Pobiera listę slotów publikacji na zadany okres (z uwzględnieniem Peak Hours CET)."""
     try:
         from . import calendar_manager
-        slots = calendar_manager.get_calendar_slots(start_date=start_date, days=days)
+        slots = calendar_manager.get_calendar_slots(start_date=start_date, days=days, force_refresh=force_refresh)
         return {"slots": slots, "days": days, "total": len(slots)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Błąd kalendarza: {e}")
+
 
 
 @app.post("/calendar/reserve", tags=["Calendar"])

@@ -71,12 +71,16 @@ Kamera konwertuje materiał 16:9 (1920x1080) na wertykalny 9:16 (608x1080 przesk
 
 ### C. Zbalansowanie Dźwięku (`lol_agent/lol_editor.py`, `lol_config.py`, `tuning_config.json`)
 - **Normalizacja głośności (FFmpeg loudnorm)**:
-  - Muzyka w tle (NCS): `loudnorm=I=-21:TP=-2.0` (subtelny podkład, nie zagłusza gry).
+  - Muzyka w tle (NCS/Phonk): `loudnorm=I=-17:TP=-1.5` (wyraźna, energetyczna, rytmiczna).
   - Dźwięk z gry (efekty, spelle, announcer): `loudnorm=I=-14:TP=-1.5` (wyraźny, głośny, dominant).
 - **Proporcje miksu**:
-  - `musicBalance = 0.45` (45% głośności muzyki)
+  - `musicBalance = 0.60` (60% głośności muzyki)
   - `gameSoundBalance = 0.85` (85% głośności gry)
   - Sidechain ducking: -45% wyciszenia muzyki w momentach okrzyków announcera i killów.
+- **Pętla Samouczenia z Korekt Użytkownika (`lol_agent/user_learning_memory.py`)**:
+  - System śledzi każdą korektę suwaków w Desktop Studio, akceptację i odrzucenie filmu.
+  - Zapisuje wyuczone preferencje w `lol_agent/user_feedback_history.json`.
+  - Przyszłe rendery automatycznie adaptują parametry (muzyka, pacing, lead-in) bez konieczności ręcznego ustawiania.
 
 ---
 

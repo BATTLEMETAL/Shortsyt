@@ -484,6 +484,18 @@ def _run_pipeline(
 
             _state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Output: {output}")
 
+        # Zapisz w pamięci uczenia
+        try:
+            from lol_agent.user_learning_memory import record_render_accepted
+            record_render_accepted(
+                filename=str(output),
+                action_type=action_type,
+                duration=float(clip_duration or 15.0),
+                qa_score=int(qa_score)
+            )
+        except Exception:
+            pass
+
         # Wyślij push notyfikację
         if notify_token:
             _send_push(notify_token, "✅ Short gotowy!", f"{output_filename} wyrenderowany")

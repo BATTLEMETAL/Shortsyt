@@ -22,7 +22,7 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "target_max_dur": 13.0,     # maksymalna długość shorta (krótki, wysoka retencja 10-13s)
         "zoom_aggression": 1.30,    # mocny zoom-punch przy eliminacjach
         "slowmo_duration": 0.9,     # krótkie, dynamiczne zwolnienie na decydujący cios
-        "music_balance": 0.50,      # wyważona muzyka Phonk / NCS w tle
+        "music_balance": 0.60,      # wyważona, dynamiczna muzyka NCS/Phonk w tle
         "game_sound_balance": 0.85, # wyraźne dźwięki gry i zapowiedzi
         "title_tone": "hype",
     },
@@ -35,7 +35,7 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "target_max_dur": 17.0,
         "zoom_aggression": 1.20,
         "slowmo_duration": 1.4,
-        "music_balance": 0.45,
+        "music_balance": 0.55,
         "game_sound_balance": 0.85,
         "title_tone": "narrative",
     },
@@ -48,7 +48,7 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "target_max_dur": 25.0,
         "zoom_aggression": 1.10,
         "slowmo_duration": 2.2,
-        "music_balance": 0.35,
+        "music_balance": 0.45,
         "game_sound_balance": 0.90,
         "title_tone": "narrative",
     },
@@ -68,16 +68,26 @@ def load_tuning_config() -> Dict[str, Any]:
         "pacing": "aggressive",
         "zoomAggression": 1.30,
         "slowmoDuration": 0.9,
-        "musicBalance": 0.90,
-        "gameSoundBalance": 0.50,
+        "musicBalance": 0.60,
+        "gameSoundBalance": 0.85,
         "titleTone": "hype",
         "userNotes": "Ekstremalnie Szybkie: natychmiastowe wejście w akcję (0.5s przed walką), mocny zoom-punch 1.30x przy każdym killu, głośna muzyka Phonk/NCS i agresywne tytuły pod CTR (INSANE / UNSTOPPABLE 🔥)."
     }
 
 
 def save_tuning_config_to_file(config: Dict[str, Any]) -> bool:
-    """Zapisuje profil do pliku tuning_config.json."""
+    """Zapisuje profil do pliku tuning_config.json i aktualizuje pamięć uczenia z preferencji użytkownika."""
     try:
+        old_cfg = load_tuning_config()
+        # Wykryj i zarejestruj korekty użytkownika dla pamięci uczenia
+        for k in ("musicBalance", "gameSoundBalance", "zoomAggression", "slowmoDuration", "pacing"):
+            if k in config and config.get(k) != old_cfg.get(k):
+                try:
+                    from lol_agent.user_learning_memory import record_user_correction
+                    record_user_correction(k, old_cfg.get(k), config[k], source="tuning_slider")
+                except Exception:
+                    pass
+
         with open(TUNING_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
         return True
