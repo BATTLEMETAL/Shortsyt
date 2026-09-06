@@ -321,24 +321,26 @@ def _run_pipeline(
             # peaks mogą być tuple (ts, label) lub dict {"timestamp": ts}
             def _peak_ts(p):
                 return p[0] if isinstance(p, (tuple, list)) else p["timestamp"]
-            last_kill_t = max((_peak_ts(p) for p in peaks), default=None)
+            # UWAGA: peaks timestamps są RELATIVE do clip_start; clip_start/clip_end są ABSOLUTNE
+            last_kill_t_rel = max((_peak_ts(p) for p in peaks), default=None)
+            last_kill_t_abs = (clip_start + last_kill_t_rel) if last_kill_t_rel is not None else None
             for detail in qa_details:
                 detail_low = detail.lower()
                 if any(kw in detail_low for kw in ("akcja po ostatnim", "pacing", "długość")):
-                    if last_kill_t is not None:
-                        new_end = round(last_kill_t + 2.5, 1)
+                    if last_kill_t_abs is not None:
+                        new_end = round(last_kill_t_abs + 2.5, 1)
                         if new_end < clip_end:
                             _update("QA Fix: Outro", 19, f"Skracam outro: clip_end {clip_end}→{new_end}s")
                             clip_end = new_end
                             fixed = True
                     break
-            # 2) Kill poza kadrem — przesuń clip_start bliżej pierwszego kills
+            # 2) Kill poza kadrem — przesuń clip_start bliżej pierwszego killa (abs coords)
             for detail in qa_details:
                 detail_low = detail.lower()
                 if any(kw in detail_low for kw in ("poza krawędzią", "poza kadrem")):
-                    if last_kill_t is not None:
-                        first_kill_t = min((_peak_ts(p) for p in peaks), default=last_kill_t)
-                        new_start = round(max(clip_start, first_kill_t - 4.0), 1)
+                    if last_kill_t_abs is not None:
+                        first_kill_t_abs = clip_start + min((_peak_ts(p) for p in peaks), default=last_kill_t_rel)
+                        new_start = round(max(clip_start, first_kill_t_abs - 4.0), 1)
                         if new_start > clip_start:
                             _update("QA Fix: Intro", 19, f"Przesuwam intro: clip_start {clip_start}→{new_start}s")
                             clip_start = new_start
