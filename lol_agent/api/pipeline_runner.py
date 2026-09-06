@@ -318,7 +318,10 @@ def _run_pipeline(
             fixed = False
             clip_start_orig, clip_end_orig = clip_start, clip_end
             # 1) Outro za długie — skróć clip_end do last_kill + 2.5s
-            last_kill_t = max((p["timestamp"] for p in peaks), default=None)
+            # peaks mogą być tuple (ts, label) lub dict {"timestamp": ts}
+            def _peak_ts(p):
+                return p[0] if isinstance(p, (tuple, list)) else p["timestamp"]
+            last_kill_t = max((_peak_ts(p) for p in peaks), default=None)
             for detail in qa_details:
                 detail_low = detail.lower()
                 if any(kw in detail_low for kw in ("akcja po ostatnim", "pacing", "długość")):
@@ -334,7 +337,7 @@ def _run_pipeline(
                 detail_low = detail.lower()
                 if any(kw in detail_low for kw in ("poza krawędzią", "poza kadrem")):
                     if last_kill_t is not None:
-                        first_kill_t = min((p["timestamp"] for p in peaks), default=last_kill_t)
+                        first_kill_t = min((_peak_ts(p) for p in peaks), default=last_kill_t)
                         new_start = round(max(clip_start, first_kill_t - 4.0), 1)
                         if new_start > clip_start:
                             _update("QA Fix: Intro", 19, f"Przesuwam intro: clip_start {clip_start}→{new_start}s")
