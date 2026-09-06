@@ -30,19 +30,19 @@ except ImportError:
 
 
 def _build_hashtags(champion: str = "Katarina", action_type: str = "outplay") -> str:
-    """Buduje zestaw viralowych hashtagów pod algorytm YouTube Shorts."""
+    """Buduje bogaty zestaw viralowych hashtagów pod algorytm YouTube Shorts."""
     clean = champion.replace(' ', '').replace("'", '') if champion else 'Katarina'
     champion_tag = f"#{clean}"
     
     action_map = {
-        "pentakill": "#Pentakill #Penta",
-        "quadrakill": "#Quadrakill #QuadraKill",
-        "triple": "#TripleKill",
-        "double": "#DoubleKill",
-        "solo_bolo": "#SoloBolo #SoloKill #1v1 #Outplay",
-        "solo": "#SoloBolo #1v1",
-        "outplay": "#Outplay #LoLOutplay",
-        "clutch": "#Clutch #1PercentHP",
+        "pentakill": "#Pentakill #Penta #PentaKill #LoLPentakill",
+        "quadrakill": "#Quadrakill #QuadraKill #LoLQuadra",
+        "triple": "#TripleKill #Triple #LoLTriple",
+        "double": "#DoubleKill #Double #LoLDouble",
+        "solo_bolo": "#SoloBolo #SoloKill #1v1 #Outplay #League1v1",
+        "solo": "#SoloBolo #1v1 #SoloKill",
+        "outplay": "#Outplay #LoLOutplay #MechanicalOutplay",
+        "clutch": "#Clutch #1PercentHP #Outplay",
         "oneshot": "#OneShot",
     }
     action_tag = action_map.get(action_type.lower(), "#Outplay")
@@ -50,9 +50,26 @@ def _build_hashtags(champion: str = "Katarina", action_type: str = "outplay") ->
         "#Shorts", "#LeagueOfLegends", "#LoL",
         champion_tag, action_tag,
         "#Gaming", "#LoLHighlights", "#lolgaming",
-        "#epicmoments", "#lolclips"
+        "#epicmoments", "#lolclips", f"#{clean}Plays",
+        "#LoLShorts", "#LeagueOfLegendsShorts", "#GamingShorts"
     ]
-    return " ".join(tags)
+    seen = set()
+    unique_tags = []
+    for t in " ".join(tags).split():
+        t_clean = t.strip()
+        if t_clean.lower() not in seen:
+            seen.add(t_clean.lower())
+            unique_tags.append(t_clean)
+    return " ".join(unique_tags)
+
+
+def _ensure_shorts_tag(text: str, champion: str = "Katarina", action_type: str = "outplay") -> str:
+    """Zapewnia obecność tagu #Shorts w tekście (nie dubluje jeśli już istnieje)."""
+    if not text:
+        return "#Shorts"
+    if "#shorts" in text.lower():
+        return text
+    return f"{text.rstrip()} #Shorts"
 
 
 def generate_channel_title(action_type: str = "outplay", champion: str = "Katarina", rank: str = "") -> str:
@@ -75,16 +92,20 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
 
     if "penta" in act:
         templates = [
+            f"Clean 1v5 or Enemy Trolling? 💀 {champ} Pentakill #Shorts #LeagueOfLegends #LoL",
+            f"Rate this {champ} PENTAKILL 1-10! 🔥 #Shorts #LeagueOfLegends #LoL",
             f"One {champ}. Five Kills. PENTAKILL RAMPAGE! 💥 #Shorts #LeagueOfLegends #LoL",
             f"{champ}'s Unstoppable Pentakill! 💥 No Escape 💀 #Shorts #LeagueOfLegends #LoL",
             f"Five Enemies. One {champ}. Instant Regret. 😈 #Shorts #LeagueOfLegends #LoL",
             f"Entire Team Disappeared In Seconds 💀💥 {champ} Penta #Shorts #LeagueOfLegends #LoL",
             f"{champ} Pentakill – They Never Stood A Chance! 💥 #Shorts #LeagueOfLegends #LoL",
+            f"Pure Mechanics or Enemy Throw? 😱 {champ} Penta #Shorts #LeagueOfLegends #LoL",
             f"This {champ} PENTAKILL is INSANE! 🔥 #Shorts #LeagueOfLegends #LoL",
-            f"Five Kills. One {champ}. PENTA! 💥 #Shorts #LeagueOfLegends #LoL",
         ]
     elif "quadra" in act:
         templates = [
+            f"Clean Quadra or Pure Luck? 🤔 {champ} 1v4 #Shorts #LeagueOfLegends #LoL",
+            f"Rate this {champ} Quadra Kill 1-10! ⚡ #Shorts #LeagueOfLegends #LoL",
             f"They Thought They Had Me 😈 {champ} Quadra Kill 💥 #Shorts #LeagueOfLegends #LoL",
             f"{champ}'s Four-Kill Frenzy! ⚡ Quadra Domination #Shorts #LeagueOfLegends #LoL",
             f"Four Enemies Down in Seconds! Insane {champ} Quadra 🔥 #Shorts #LeagueOfLegends #LoL",
@@ -92,26 +113,28 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
         ]
     elif "triple" in act:
         templates = [
+            f"Clean Outplay or Enemy Griefing? 💀 {champ} Triple #Shorts #LeagueOfLegends #LoL",
+            f"Rate this Triple Kill 1-10! 🔥 {champ} #Shorts #LeagueOfLegends #LoL",
             f"Triple Kill! They Never Saw {champ} Coming 😈 #Shorts #LeagueOfLegends #LoL",
             f"They cornered her. Bad idea. Triple Kill! 💥 #Shorts #LeagueOfLegends #LoL",
             f"Late Game Chaos – {champ} Triple Kill 💥 #Shorts #LeagueOfLegends #LoL",
             f"Late Game Teamfight Masterclass – Triple Kill! 🔥 #Shorts #LeagueOfLegends #LoL",
             f"Their Dive on {champ}? Not Today! 💥 Triple Kill #Shorts #LeagueOfLegends #LoL",
             f"Underestimated {champ}? 😈 Triple Kill Outplay 🩸 #Shorts #LeagueOfLegends #LoL",
-            f"Late Game Nightmare 💀 Triple Kill Clutch! #Shorts #LeagueOfLegends #LoL",
-            f"Late Game Triple Kill – Nowhere to Run 💨 #Shorts #LeagueOfLegends #LoL",
         ]
     elif "clutch" in act or "1hp" in act or "1%" in act:
         templates = [
+            f"Calculated or 100% Luck? 🧠 1% HP {champ} Clutch #Shorts #LeagueOfLegends #LoL",
+            f"How Did {champ} Survive That?! 💀 Rate 1-10 #Shorts #LeagueOfLegends #LoL",
             f"Surviving on 1% HP to Win The Fight! 💀🔥 {champ} Clutch #Shorts #LeagueOfLegends #LoL",
             f"They Thought He Was 100% Dead... 1% HP {champ} Miracle Outplay 🩸 #Shorts #LeagueOfLegends #LoL",
-            f"1 HP and a Dream! 💀 {champ} Turnaround Clutch 🔥 #Shorts #LeagueOfLegends #LoL",
+            f"1 HP and a Dream! 💀 Skill or Luck? 🔥 {champ} #Shorts #LeagueOfLegends #LoL",
             f"The Most Stressful 1% HP Clutch You'll See Today 😱 {champ} #Shorts #LeagueOfLegends #LoL",
-            f"How Did {champ} Survive That?! 💀 1% HP Impossible Outplay #Shorts #LeagueOfLegends #LoL",
-            f"Calculated or Pure Luck? 🧠 1% HP {champ} Clutch Survival #Shorts #LeagueOfLegends #LoL",
         ]
     elif "double" in act:
         templates = [
+            f"Clean Outplay or Enemy Misplay? 🤔 {champ} 2v1 #Shorts #LeagueOfLegends #LoL",
+            f"Rate this 2v1 Double Kill 1-10! 💥 {champ} #Shorts #LeagueOfLegends #LoL",
             f"Clean Double Kill Turnaround! 💥 {champ} Outplay #Shorts #LeagueOfLegends #LoL",
             f"They Tried a 2v1 Dive on {champ}... Instant Double Kill 💀 #Shorts #LeagueOfLegends #LoL",
             f"Two Enemies Down In A Blink ⚡ {champ} Double Kill #Shorts #LeagueOfLegends #LoL",
@@ -119,26 +142,54 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
         ]
     elif "solo" in act or "bolo" in act or "1v1" in act:
         templates = [
-            f"SOLO BOLO! 👑 The Disrespect on This 1v1 Outplay 💀 #Shorts #LeagueOfLegends #LoL",
+            f"Clean Outplay or 100% Luck? 🤔 {champ} SOLO BOLO #Shorts #LeagueOfLegends #LoL",
+            f"SOLO BOLO! 👑 Was This Disrespectful? Rate 1-10 👇 #Shorts #LeagueOfLegends #LoL",
+            f"Pure 1v1 Mechanics or Pure Luck? 😈 {champ} #Shorts #LeagueOfLegends #LoL",
+            f"They Ego Challenged {champ} 1v1... Instant SOLO BOLO! 💀 #Shorts #LeagueOfLegends #LoL",
             f"Clean SOLO BOLO! 😈 They Really Thought They Won This 1v1? #Shorts #LeagueOfLegends #LoL",
             f"The Most Disrespectful 1v1 SOLO BOLO in High Elo 💀 #Shorts #LeagueOfLegends #LoL",
-            f"Pure 1v1 Skill Check! {champ} SOLO BOLO Outplay 💥 #Shorts #LeagueOfLegends #LoL",
-            f"{champ} 1v1 SOLO BOLO! They Got Completely Schooled 👑 #Shorts #LeagueOfLegends #LoL",
-            f"They Ego Challenged {champ} 1v1... Instant SOLO BOLO! 💀 #Shorts #LeagueOfLegends #LoL",
+            f"Did the Enemy Misplay or Was This Clean? 💀 {champ} 1v1 #Shorts #LeagueOfLegends #LoL",
             f"Nobody Survives {champ} in a 1v1! Clean SOLO BOLO ⚡ #Shorts #LeagueOfLegends #LoL",
             f"SOLO BOLO Turnaround! 🩸 {champ} Duel Masterclass #Shorts #LeagueOfLegends #LoL",
         ]
     else:  # outplay / general
         templates = [
+            f"Clean Outplay or Complete Luck? 🤔 {champ} #Shorts #LeagueOfLegends #LoL",
+            f"Rate This {champ} Play 1-10! 🔥 #Shorts #LeagueOfLegends #LoL",
+            f"Did They Misplay or Was This Clean? 💀 {champ} Outplay #Shorts #LeagueOfLegends #LoL",
             f"They Flashed In for the Kill... Bad Idea 😏 #Shorts #LeagueOfLegends #LoL",
             f"They Tried to Catch {champ} 💀 It Went Wrong 😏 #Shorts #LeagueOfLegends #LoL",
             f"All-In On {champ}? Instant Regret 💀 #Shorts #LeagueOfLegends #LoL",
             f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts #LeagueOfLegends #LoL",
-            f"Thought They Had Me 💀 Guess Again 😏 #Shorts #LeagueOfLegends #LoL",
             f"Enemy Tried an Outplay... They Got Outplayed. 💀 #Shorts #LeagueOfLegends #LoL",
-            f"Late Game Instant Burst 💀 They Vanished 💨 #Shorts #LeagueOfLegends #LoL",
-            f"They Made Their Move... {champ} Burst Back! 💥 #Shorts #LeagueOfLegends #LoL",
         ]
+
+    # Załaduj dynamiczną dyrektywę samouczenia
+    winning_kw = []
+    avoid_kw = []
+    try:
+        from lol_agent.learning_engine import get_learning_directive
+        directive = get_learning_directive()
+        winning_kw = [k.upper() for k in directive.get("winning_keywords", [])]
+        avoid_kw = [k.upper() for k in directive.get("avoid_keywords", [])]
+    except Exception:
+        pass
+
+    # Dynamiczne punktowanie szablonów wg historycznego CTR z kanału
+    if winning_kw or avoid_kw:
+        weights = []
+        for t in templates:
+            t_upper = t.upper()
+            score = 1.0
+            for kw in winning_kw:
+                if kw in t_upper:
+                    score += 1.8
+            for akw in avoid_kw:
+                if akw in t_upper:
+                    score = max(0.1, score - 1.2)
+            weights.append(score)
+        return random.choices(templates, weights=weights, k=1)[0]
+
     return random.choice(templates)
 
 
@@ -178,25 +229,34 @@ def build_channel_description(title: str, champion: str = "Katarina", action_typ
 
 def build_pinned_comment(champion: str = "Katarina", action_type: str = "outplay") -> str:
     """
-    Generuje angażujący przypięty komentarz (Pinned Comment) z pytaniem zachęcającym do dyskusji.
+    Generuje angażujący przypięty komentarz (Pinned Comment) z pytaniem zachęcającym do dyskusji
+    oraz bezpośrednim micro-triggerem do polubienia filmu (zwiększa Like-to-View ratio 5-10x).
     """
     champ = champion or "Katarina"
     act = action_type.lower()
 
     if "solo" in act or "bolo" in act or "1v1" in act:
         comments = [
-            f"Was this SOLO BOLO pure mechanics or pure disrespect? 😈 Comment below! 👇",
-            f"Would you ever 1v1 this {champ}? Rate this solo kill 1-10! 👑👇",
-            f"Cleanest SOLO BOLO you'll see today? Drop your thoughts in the comments! 👇🔥",
-            f"Did the enemy misplay or was this {champ} 1v1 100% calculated? 🧠👇",
+            f"1 to 10: How clean was this {champ} 1v1? 👇 (Drop a LIKE if you would have died here 💀)",
+            f"Was this SOLO BOLO pure mechanics or pure luck? 😈 Comment below! 👇 (Leave a LIKE if this was clean! 🔥)",
+            f"Did the enemy misplay or was this {champ} 100% calculated? 🧠👇 (Drop a LIKE for more {champ} duels!)",
+            f"Rate this outplay 1-10! Would you ever take this 1v1? 👑👇 (Like to bless your ranked games 🍀)",
+        ]
+        return random.choice(comments)
+
+    if "penta" in act:
+        comments = [
+            f"Rate this {champ} PENTAKILL 1-10! 🔥 (Drop a LIKE if you love {champ} teamfights 💥)",
+            f"Was this clean mechanics or was the enemy team inting? 💀 Let me know below! 👇",
+            f"1 to 10: How clean was this Penta? 👇 (Leave a LIKE to bless your next ranked game! 🍀)",
         ]
         return random.choice(comments)
 
     comments = [
-        f"What would you have done in this situation? 👇 Rate this {champ} play 1-10! 🔥",
-        f"Did the enemy team misplay or was this {champ} outplay 100% calculated? Let me know! 🧠👇",
-        f"Cleanest {champ} play today? Drop your thoughts in the comments! 👇🔥",
-        f"Who is your main champion in League of Legends? Let's discuss below! ⚔️👇",
+        f"Rate this {champ} play 1-10 in the comments! 👇 (Drop a LIKE if you would have panicked 💀)",
+        f"Did the enemy team misplay or was this {champ} outplay 100% calculated? 🧠👇 (Leave a LIKE if this was clean!)",
+        f"What would you have done in this situation? 👇 Rate 1-10! 🔥 (Drop a LIKE for more {champ} clips!)",
+        f"Cleanest {champ} play today? Drop a rating 1-10 below! 👇🔥 (Drop a LIKE if you main {champ}!)",
     ]
     return random.choice(comments)
 
@@ -208,9 +268,119 @@ def generate_metadata(
     language: str = "en"
 ) -> dict:
     """
-    Główny generator metadanych — łączy szablony kanału z generowaniem tagów i przypiętego komentarza.
+    Główny generator metadanych z dynamicznym wzmocnieniem promptu Gemini (KROK 2).
+    Wstrzykuje wygrywające struktury tytułów, słowa kluczowe CTR oraz referencje viralowe
+    z learning_directive.json bezpośrednio do promptu AI.
+    W przypadku braku API / błędu sieci bezpiecznie przełącza na szablony kanału.
     """
     champ = champion_name or "Katarina"
+    act_clean = ACTION_LABELS.get(action_type.lower(), action_type.replace("_", " ").title())
+
+    # Pobierz dyrektywę samouczenia i parametry stylu
+    try:
+        from lol_agent.learning_engine import get_learning_directive
+        directive = get_learning_directive()
+    except Exception:
+        directive = {}
+
+    try:
+        from lol_agent.tuning_manager import get_pacing_parameters
+        tuning_params = get_pacing_parameters()
+    except Exception:
+        tuning_params = {"title_tone": "hype"}
+
+    top_structure = directive.get("top_title_structure", "EGO_CHECK")
+    winning_kw = directive.get("winning_keywords", ["RAMPAGE", "PIT", "DIVE", "SOLO BOLO", "CLEAN"])
+    avoid_kw = directive.get("avoid_keywords", ["FIVE", "ONE", "INSANE", "DRAKE"])
+    viral_titles = directive.get("top_viral_titles", [])
+    title_tone = tuning_params.get("title_tone", "hype")
+
+    viral_examples_str = "\n".join([f"- {t}" for t in viral_titles[:4]]) if viral_titles else "- Katarina’s Dragon Pit Rampage – Triple Kill! 💥\n- Enemy Tried to Dive Me 💀 It Went Wrong 😏"
+
+    # Spróbuj wygenerować z Gemini AI
+    if GEMINI_API_KEY:
+        try:
+            import google.genai as genai
+
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            models_to_try = [GEMINI_MODEL] + [m for m in GEMINI_FALLBACK_MODELS if m != GEMINI_MODEL]
+
+            prompt = f"""You are a YouTube Shorts algorithm specialist for League of Legends gaming content.
+Channel: Dwannellenga (English League of Legends Shorts).
+Language: ENGLISH ONLY.
+
+CONTEXT:
+- Action Type: {act_clean} ({action_type})
+- Champion: {champ}
+- Rank: {rank}
+- Tone: {title_tone} (high energy, engaging, high-CTR)
+
+CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
+1. WINNING TITLE STRUCTURE: Prioritize '{top_structure}' formula.
+   (Examples: Ego Check / Disrespect / 1v1 Skill Check / Rampage).
+2. HIGH-CTR POWER KEYWORDS (incorporate 1-2 naturally): {', '.join(winning_kw[:6])}
+3. STRICTLY FORBIDDEN / LOW-CTR WORDS (DO NOT USE): {', '.join(avoid_kw[:6])}
+4. CHANNEL BENCHMARK VIRAL TITLES (Model your style after these top hits):
+{viral_examples_str}
+5. FORMATTING: Title under 70 chars, 1-2 emojis, MUST include #Shorts.
+6. ENGAGEMENT TRIGGER MANDATE (VITAL TO BREAK PAST 1.5K VIEWS):
+   - Title MUST pose a provocative question or challenge (e.g. 'Clean or Luck?', 'Rate 1-10', 'Ego Challenged').
+   - Pinned comment MUST ask a fast question requiring a rating (1-10) or short reaction AND end with a like trigger in parentheses (e.g. 'Rate 1-10 👇 (Drop a LIKE if you would have died here 💀)').
+
+GENERATE JSON ONLY (no markdown fences, raw json):
+{{
+  "title": "Provocative/High-CTR Short title with 1-2 emojis ending with #Shorts",
+  "hook_text": "3-4 words punchy overlay in ALL CAPS (e.g. CLEAN OUTPLAY)",
+  "description": "Engaging 2-3 sentence description encouraging likes and comments with hashtags #LeagueOfLegends #LoL #{champ.replace(' ', '')} #Shorts",
+  "pinned_comment": "Specific rating question 1-10 with an engaging like trigger in parentheses",
+  "tags": ["{champ.lower()}", "lol {champ.lower()}", "league of legends", "shorts", "gaming", "outplay"]
+}}"""
+
+            for model_name in models_to_try:
+                try:
+                    resp = client.models.generate_content(model=model_name, contents=prompt)
+                    raw_text = resp.text.strip()
+                    if "```json" in raw_text:
+                        raw_text = raw_text.split("```json")[1].split("```")[0].strip()
+                    elif "```" in raw_text:
+                        raw_text = raw_text.split("```")[1].split("```")[0].strip()
+
+                    data = json.loads(raw_text)
+                    gen_title = _ensure_shorts_tag(data.get("title", ""), champ, action_type)
+                    hashtags = _build_hashtags(champ, action_type)
+                    raw_desc = (data.get("description") or "").strip()
+                    if raw_desc:
+                        if "#leagueoflegends" not in raw_desc.lower() or raw_desc.count("#") < 3:
+                            gen_desc = f"{raw_desc}\n\n{hashtags}"
+                        else:
+                            gen_desc = raw_desc
+                    else:
+                        gen_desc = build_channel_description(gen_title, champ, action_type)
+                    gen_pin = data.get("pinned_comment") or build_pinned_comment(champ, action_type)
+                    gen_hook = data.get("hook_text") or f"{action_type.upper()}! 💥"
+                    raw_tags = [t.lstrip("#").strip() for t in data.get("tags", []) if t.strip()]
+                    all_tags = list(dict.fromkeys(raw_tags + YT_BASE_TAGS))[:30]
+
+                    print(f"   [Gemini AI] Wygenerowano wzmocniony tytuł ({model_name}): {gen_title}")
+                    return {
+                        "title": gen_title,
+                        "description": gen_desc,
+                        "pinned_comment": gen_pin,
+                        "tags": all_tags,
+                        "hook_text": gen_hook,
+                        "champion": champ,
+                        "rank": rank,
+                        "action_type": action_type,
+                        "source": f"gemini_{model_name}_reinforced",
+                    }
+                except Exception as me:
+                    print(f"   [Gemini AI] Model {model_name} warning: {me}")
+                    continue
+        except Exception as ge:
+            print(f"   [Gemini AI] General failure: {ge}")
+
+    # Fallback na szablony z wagami CTR kanału
+    print(f"   [Fallback] Użyto szablonu kanału z wagami słów kluczowych CTR")
     title = generate_channel_title(action_type, champ, rank)
     description = build_channel_description(title, champ, action_type)
     pinned_comment = build_pinned_comment(champ, action_type)
@@ -233,6 +403,7 @@ def generate_metadata(
         "champion": champ,
         "rank": rank,
         "action_type": action_type,
+        "source": "template_ctr_weighted",
     }
 
 
@@ -250,8 +421,38 @@ def generate_fallback_metadata(
     return generate_metadata(action_type, champion, rank)
 
 
+def generate_metadata_universal(
+    game_type: str = "lol",
+    action_type: str = "outplay",
+    subject_name: str = "Katarina",
+    rank: str = "Master",
+    extra_context: dict = None
+) -> dict:
+    """
+    Universal metadata generator — routes to appropriate profile based on game_type.
+    Backward compatible: game_type='lol' → existing generate_metadata() behavior.
+    """
+    if not game_type or game_type == "lol":
+        return generate_metadata(action_type, subject_name or "Katarina", rank)
+    try:
+        from lol_agent.metadata_profiles import generate_metadata_for_game
+    except ImportError:
+        try:
+            from metadata_profiles import generate_metadata_for_game
+        except ImportError:
+            return generate_metadata(action_type, subject_name or "Katarina", rank)
+    return generate_metadata_for_game(
+        game_type=game_type,
+        action_type=action_type,
+        subject_name=subject_name,
+        rank=rank,
+        extra_context=extra_context
+    )
+
+
 if __name__ == "__main__":
     res = generate_metadata("triple", "Katarina", "Master")
     print("TITLE:", res["title"])
     print("\nDESCRIPTION:\n", res["description"])
     print("\nPINNED COMMENT:", res["pinned_comment"])
+
