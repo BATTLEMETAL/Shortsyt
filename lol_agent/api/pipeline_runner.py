@@ -311,9 +311,73 @@ def _run_pipeline(
             except Exception as qe:
                 _update("Ostrzeżenie QA", 19, f"Pre-flight QA warning: {qe}")
 
+        # ─── QA Auto-Retry (max 1 próba naprawy) ────────────────────────────────
+        QA_RETRY_THRESHOLD = 85
+        if qa_score < QA_RETRY_THRESHOLD and validate_pre_flight and peaks:
+            _update("QA Auto-Retry", 19, f"Score {qa_score}/100 < {QA_RETRY_THRESHOLD} — diagnozuję i próbuję naprawić...")
+            fixed = False
+            clip_start_orig, clip_end_orig = clip_start, clip_end
+            # 1) Outro za długie — skróć clip_end do last_kill + 2.5s
+            last_kill_t = max((p["timestamp"] for p in peaks), default=None)
+            for detail in qa_details:
+                detail_low = detail.lower()
+                if any(kw in detail_low for kw in ("akcja po ostatnim", "pacing", "długość")):
+                    if last_kill_t is not None:
+                        new_end = round(last_kill_t + 2.5, 1)
+                        if new_end < clip_end:
+                            _update("QA Fix: Outro", 19, f"Skracam outro: clip_end {clip_end}→{new_end}s")
+                            clip_end = new_end
+                            fixed = True
+                    break
+            # 2) Kill poza kadrem — przesuń clip_start bliżej pierwszego kills
+            for detail in qa_details:
+                detail_low = detail.lower()
+                if any(kw in detail_low for kw in ("poza krawędzią", "poza kadrem")):
+                    if last_kill_t is not None:
+                        first_kill_t = min((p["timestamp"] for p in peaks), default=last_kill_t)
+                        new_start = round(max(clip_start, first_kill_t - 4.0), 1)
+                        if new_start > clip_start:
+                            _update("QA Fix: Intro", 19, f"Przesuwam intro: clip_start {clip_start}→{new_start}s")
+                            clip_start = new_start
+                            fixed = True
+                    break
+            if fixed:
+                smart_cam_track2 = smart_cam_track
+                if use_smart_camera:
+                    try:
+                        from lol_agent.smart_camera import find_action_path
+                        smart_cam_track2 = find_action_path(source_path, clip_start, clip_end)
+                    except Exception:
+                        pass
+                try:
+                    qa_res2 = validate_pre_flight(
+                        video_path=source_path,
+                        trim_start=clip_start,
+                        trim_end=clip_end,
+                        peaks=peaks,
+                        smart_camera_track=smart_cam_track2,
+                        action_type=action_type,
+                        combat_segments=combat_segments,
+                        tuning_profile=tuning_prof,
+                    )
+                    if qa_res2.qa_score >= qa_score:
+                        qa_status = qa_res2.qa_status
+                        qa_score = qa_res2.qa_score
+                        qa_details = qa_res2.diagnostic_details
+                        smart_cam_track = smart_cam_track2
+                        _update("QA Po Naprawie", 19, f"QA {qa_status} ({qa_score}/100) po auto-fix")
+                    else:
+                        clip_start, clip_end = clip_start_orig, clip_end_orig
+                        _update("QA Fix Cofnięty", 19, f"Auto-fix pogorszył ({qa_res2.qa_score}) — przywracam oryginał")
+                except Exception as qe2:
+                    clip_start, clip_end = clip_start_orig, clip_end_orig
+                    _update("QA Retry Error", 19, f"QA retry err: {qe2}")
+        # ─────────────────────────────────────────────────────────────────────────
+
         with _lock:
             _state.action_type = action_type
             _state.clip_start = clip_start
+            _state.clip_end = clip_end
             _state.combat_segments = combat_segments
             _state.qa_status = qa_status
             _state.qa_score = qa_score
