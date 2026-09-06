@@ -201,7 +201,12 @@ def validate_pre_flight(
         if smart_camera_track:
             track_times = [t for t, _ in smart_camera_track]
             track_xs = [x for _, x in smart_camera_track]
-            crop_x = int(np.interp(kt, track_times, track_xs))
+            # smart_camera_track ma czasy relatywne (0.0 .. dur) gdy generowany z wycinka
+            if track_times and track_times[0] < adj_start and adj_start > 0.0:
+                query_t = max(0.0, min(track_times[-1], kt - adj_start))
+            else:
+                query_t = max(track_times[0], min(track_times[-1], kt))
+            crop_x = int(np.interp(query_t, track_times, track_xs))
             crop_x = max(0, min(w - crop_w, crop_x))
             
         has_c, _, centroid = _check_enemy_combat_in_frame(fr)

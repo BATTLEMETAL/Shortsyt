@@ -817,8 +817,8 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
             for i in range(len(raw_arr))
         ])
 
-        # KROK 5: End Freeze — ostatnie 1.8s klipu zablokuj kamerę na championie (brak dryfu po fragu)
-        end_freeze_sec = 1.8
+        # KROK 5: End Freeze — ostatnie 0.6s klipu (PROJECT_GUIDELINES.md) — brak zamrażania przed fragiem
+        end_freeze_sec = 0.6
         if duration > end_freeze_sec * 1.5:
             freeze_idx = int(len(smoothed) * (1.0 - end_freeze_sec / duration))
             freeze_idx = max(0, min(freeze_idx, len(smoothed) - 1))
