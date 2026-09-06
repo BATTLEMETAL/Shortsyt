@@ -365,7 +365,20 @@ def apply_editor_effects(input_path: str, output_path: str,
             # Tryb ULTRA-FAST (GPU / Direct Single Pass): ~3-4 sekundy!
             r = subprocess.run(cmd, capture_output=True)
             if r.returncode != 0:
-                raise RuntimeError(f"FFmpeg filtergraph error: {r.stderr.decode('utf-8', errors='replace')[:800]}")
+                err_msg = r.stderr.decode('utf-8', errors='replace')[:400]
+                print(f"⚠️  GPU encoder ({enc_name}) nie powiódł się na ciężkim klipie: {err_msg}")
+                print("🔄  Automatyczny bezpieczny fallback: przełączam na procesor (CPU libx264 veryfast)...")
+                cmd_cpu = [
+                    "ffmpeg", "-y", "-i", input_path,
+                    "-filter_complex_script", fc_script,
+                    "-map", "[v_final]",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+                    output_path
+                ]
+                r_cpu = subprocess.run(cmd_cpu, capture_output=True)
+                if r_cpu.returncode != 0:
+                    raise RuntimeError(f"FFmpeg filtergraph error (CPU fallback): {r_cpu.stderr.decode('utf-8', errors='replace')[:800]}")
+                print("✅  Render ukończony pomyślnie przez bezpieczny fallback CPU!")
         else:
             # CPU Fallback z minterpolate
             tmp_pre_interp = output_path.replace(".mp4", "_pre_interp.mp4")
@@ -456,29 +469,43 @@ def add_text_overlay(
     clean_text = clean_text.replace(":", "\\:")  # escape dwukropek (separator FFmpeg)
     clean_text = clean_text.replace("%", "%%")   # escape procent
 
-    t_start = max(0.0, peak_moment - 0.2)
+    if peak_moment <= 0.5:
+        t_start = 0.0
+    else:
+        t_start = max(0.0, peak_moment - 0.2)
     t_end = min(video_duration, t_start + show_duration)
 
-    # Styl: duży biały Impact z grubym czarnym obrysem
-    # Y=0.50 — bezpieczna strefa YouTube Shorts (dolne 25% zasłonięte przez UI aplikacji)
+    # Styl: duży Impact z czarnym obrysem i półprzezroczystym tłem dla maksymalnego CTR
+    hook_color = "0xFFD700" if any(w in clean_text.upper() for w in ("SOLO", "PENTA", "CLUTCH", "1V1", "1%")) else "white"
+    approx_w = min(max(int(len(clean_text) * 58) + 80, 480), 1020)
+    drawbox = (
+        f"drawbox="
+        f"x=trunc((iw-{approx_w})/2)"
+        f":y=trunc(ih*0.075)"
+        f":w={approx_w}"
+        f":h=120"
+        f":color=black@0.65"
+        f":t=fill"
+        f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
+    )
     drawtext = (
         f"drawtext="
         f"fontfile='{font.replace(chr(92), '/').replace(':', '\\:')}'"
         f":text='{clean_text}'"
         f":x=(w-text_w)/2"
-        f":y=h*0.10"  # górna strefa — widoczna, nie zasłania akcji ani kill text LoL
-        f":fontsize=110"
-        f":fontcolor=white"
+        f":y=h*0.09"
+        f":fontsize=95"
+        f":fontcolor={hook_color}"
         f":borderw=6"
         f":bordercolor=black"
-        f":shadowx=3:shadowy=3:shadowcolor=black@0.7"
+        f":shadowx=4:shadowy=4:shadowcolor=black@0.8"
         f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
 
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
-        "-vf", drawtext,
+        "-vf", f"{drawbox},{drawtext}",
         *get_optimal_encoder_args("high"),
         "-c:a", "copy",
         output_path
@@ -487,9 +514,20 @@ def add_text_overlay(
     r = subprocess.run(cmd, capture_output=True)
     if r.returncode != 0:
         err = r.stderr.decode('utf-8', errors='replace')[:400]
-        print(f"⚠️  Overlay error (pomijam): {err}")
-        import shutil as _sh
-        _sh.copy(video_path, output_path)
+        print(f"⚠️  Overlay error (próbuję fallback CPU): {err}")
+        cmd_cpu = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vf", f"{drawbox},{drawtext}",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-c:a", "copy",
+            output_path
+        ]
+        r_cpu = subprocess.run(cmd_cpu, capture_output=True)
+        if r_cpu.returncode != 0:
+            print(f"⚠️  Overlay CPU fallback error (pomijam): {r_cpu.stderr.decode('utf-8', errors='replace')[:400]}")
+            import shutil as _sh
+            _sh.copy(video_path, output_path)
     return output_path
 
 
@@ -560,7 +598,11 @@ def add_dynamic_captions(
         cursor = t0
         
         # Wyciągnij intermediate_peaks z peaks
-        int_peaks = [tk - trim_start for (tk, _) in (peaks or []) if (tk - trim_start) < peak_moment - 0.1]
+        int_peaks = [
+            (tk if (tk < trim_start or trim_start == 0.0) else (tk - trim_start))
+            for (tk, _) in (peaks or [])
+            if (tk if (tk < trim_start or trim_start == 0.0) else (tk - trim_start)) < peak_moment - 0.1
+        ]
         if int_peaks:
             for pk in sorted(int_peaks):
                 pk_f = float(pk)
@@ -597,7 +639,8 @@ def add_dynamic_captions(
 
     caption_items = []
     for (t_abs, label) in peaks:
-        t_raw = t_abs - trim_start
+        # Obsłuż zarówno relatywne (0..dur) jak i absolutne (> trim_start) timestamps
+        t_raw = t_abs if (t_abs < trim_start or trim_start == 0.0) else (t_abs - trim_start)
         t_in_clip = _adjust_t(t_raw)
         if t_in_clip < 0 or t_in_clip > video_duration:
             continue
@@ -614,7 +657,8 @@ def add_dynamic_captions(
             "start": t_start,
             "end": t_end,
             "label": clean_label,
-            "style": style
+            "style": style,
+            "t_in_clip": t_in_clip,
         })
 
     # Zabezpieczenie przed nakładaniem napisów: poprzedni napis znika natychmiast gdy pojawia się kolejny kill!
@@ -698,7 +742,7 @@ def add_dynamic_captions(
         )
         drawtext_filters.append(dbox)
         drawtext_filters.append(dt)
-        print(f"   🗨️  {clean_label} (kill {idx+1}/{total_kills}) @ {t_in_clip:.1f}s — {style['size']}px")
+        print(f"   🗨️  {clean_label} (kill {idx+1}/{total_kills}) @ {item.get('t_in_clip', t_start):.1f}s (start {t_start:.1f}s) — {style['size']}px")
 
     # ── C. Neon Loop Progress Scrubber (Złoty pasek na dole pod zapętlenie) ─────
     progress_bar = (
@@ -730,9 +774,20 @@ def add_dynamic_captions(
     r = subprocess.run(cmd, capture_output=True)
     if r.returncode != 0:
         err = r.stderr.decode('utf-8', errors='replace')[:600]
-        print(f"⚠️  Dynamiczne napisy error: {err}")
-        import shutil as _sh
-        _sh.copy(video_path, output_path)
+        print(f"⚠️  Dynamiczne napisy error (próbuję fallback CPU): {err}")
+        cmd_cpu = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vf", vf_chain,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-c:a", "copy",
+            output_path
+        ]
+        r_cpu = subprocess.run(cmd_cpu, capture_output=True)
+        if r_cpu.returncode != 0:
+            print(f"⚠️  Dynamiczne napisy CPU fallback error (pomijam): {r_cpu.stderr.decode('utf-8', errors='replace')[:600]}")
+            import shutil as _sh
+            _sh.copy(video_path, output_path)
     return output_path
 
 
@@ -781,7 +836,9 @@ def merge_music(video_path: str, music_path: Optional[str],
     ], capture_output=True, text=True)
     has_game_audio = probe.stdout.strip() == "audio"
 
-    fade_start = max(0.0, video_duration - 1.5)
+    # Seamless Loop: mikro-fade 40ms wyłącznie na styku zapętlenia (brak wyciszania 1.5s przed końcem)
+    fade_dur = 0.04
+    fade_start = max(0.0, video_duration - fade_dur)
 
     if has_game_audio and GAME_AUDIO_VOLUME > 0.0:
         # ── Miksuj dźwięk gry + muzykę przez amix ──────────────────────────────────
@@ -819,15 +876,13 @@ def merge_music(video_path: str, music_path: Optional[str],
         music_duck  = _music_duck_expr(music_vol, kill_peaks)
 
         filter_complex = (
-            # loudnorm najpierw → normalizacja poziomu bazowego
-            # potem volume z eval=frame → dynamiczny boost nie jest kompensowany
             f"[2:a]loudnorm=I=-14:TP=-1.5:LRA=11,"
             f"volume=eval=frame:volume='{game_boost}',"
-            f"afade=t=out:st={fade_start:.2f}:d=1.5[ga];"
-            f"[1:a]loudnorm=I=-14:TP=-1.5:LRA=11,"
+            f"afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}[ga];"
+            f"[1:a]loudnorm=I=-21:TP=-2.0:LRA=11,"
             f"volume=eval=frame:volume='{music_duck}',"
-            f"afade=t=out:st={fade_start:.2f}:d=1.5[ma];"
-            f"[ga][ma]amix=inputs=2:duration=longest:dropout_transition=2[aout]"
+            f"afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}[ma];"
+            f"[ga][ma]amix=inputs=2:duration=longest:dropout_transition=2:normalize=0[aout]"
         )
         cmd = [
             "ffmpeg", "-y",
@@ -844,7 +899,7 @@ def merge_music(video_path: str, music_path: Optional[str],
             output_path
         ]
         src_label = os.path.basename(audio_source)
-        print(f"🎵 Miksuję dźwięk gry [{src_label}] ({int(GAME_AUDIO_VOLUME*100)}%) + muzykę ({int(MUSIC_VOLUME*100)}%) przez amix")
+        print(f"🎵 Miksuję dźwięk gry [{src_label}] ({int(game_vol*100)}%) + muzykę ({int(music_vol*100)}%) przez amix (Seamless Loop)")
     else:
         # ── Brak audio lub game audio wyłączone — tylko muzyka ────────────────
         cmd = [
@@ -855,8 +910,7 @@ def merge_music(video_path: str, music_path: Optional[str],
             "-map", "1:a:0",
             "-c:v", "copy",
             "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-            # loudnorm PRZED fade
-            "-af", f"volume={MUSIC_VOLUME},loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=out:st={fade_start:.2f}:d=1.5",
+            "-af", f"volume={MUSIC_VOLUME},loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}",
             "-t", f"{video_duration:.3f}",
             "-shortest",
             output_path
@@ -865,8 +919,28 @@ def merge_music(video_path: str, music_path: Optional[str],
 
     r = subprocess.run(cmd, capture_output=True)
     if r.returncode != 0:
-        raise RuntimeError(f"Merge error: {r.stderr.decode('utf-8', errors='replace')[:600]}")
-    print("✅ Audio nałożone i zsynchronizowane")
+        err_msg = r.stderr.decode('utf-8', errors='replace')[:400]
+        print(f"⚠️  Błąd zaawansowanego miksowania amix: {err_msg}")
+        print("🔄  Automatyczny bezpieczny fallback audio: miksuję z muzyką bezpośrednio...")
+        cmd_fallback = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            *music_seek_args, "-i", music_path,
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+            "-af", f"volume={music_volume or MUSIC_VOLUME},afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}",
+            "-t", f"{video_duration:.3f}",
+            "-shortest",
+            output_path
+        ]
+        r_fb = subprocess.run(cmd_fallback, capture_output=True)
+        if r_fb.returncode != 0:
+            raise RuntimeError(f"Audio merge fallback error: {r_fb.stderr.decode('utf-8', errors='replace')[:600]}")
+        print("✅  Audio nałożone pomyślnie przez bezpieczny fallback!")
+
+    print("✅ Audio nałożone i zsynchronizowane (Seamless Loop ready)")
     return output_path
 
 
@@ -898,6 +972,12 @@ def add_cta_overlay(
     t_start = max(0.0, video_duration - show_duration)
     t_end   = video_duration
 
+    # Dynamiczne dopasowanie rozmiaru czcionki do szerokości 1080px
+    cta_len = len(clean_cta)
+    fsize = 55
+    if cta_len > 28:
+        fsize = max(36, int(55 * 28 / cta_len))
+
     # Dolna bezpieczna strefa (y=ih*0.74) — nad HUDem gracza, nie zasłania banerów killi u góry
     cta_box = (
         f"drawbox="
@@ -915,8 +995,8 @@ def add_cta_overlay(
         f":text='{clean_cta}'"
         f":x=(w-text_w)/2"
         f":y=h*0.76"
-        f":fontsize=55"
-        f":fontcolor=white"
+        f":fontsize={fsize}"
+        f":fontcolor=0xFFD700"
         f":borderw=4"
         f":bordercolor=black"
         f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
@@ -932,13 +1012,25 @@ def add_cta_overlay(
         "-c:a", "copy",
         output_path
     ]
-    print(f"🔔 CTA overlay: '{clean_cta}' @ ostatnie {show_duration:.1f}s")
+    print(f"🔔 CTA overlay: '{clean_cta}' @ ostatnie {show_duration:.1f}s (fsize={fsize}px)")
     r = subprocess.run(cmd, capture_output=True)
     if r.returncode != 0:
         err = r.stderr.decode('utf-8', errors='replace')[:400]
-        print(f"⚠️  CTA overlay error (pomijam): {err}")
-        import shutil as _sh
-        _sh.copy(video_path, output_path)
+        print(f"⚠️  CTA overlay error (próbuję fallback CPU): {err}")
+        cmd_cpu = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vf", f"{cta_box},{drawtext}",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-movflags", "+faststart",
+            "-c:a", "copy",
+            output_path
+        ]
+        r_cpu = subprocess.run(cmd_cpu, capture_output=True)
+        if r_cpu.returncode != 0:
+            print(f"⚠️  CTA overlay CPU fallback error (pomijam): {r_cpu.stderr.decode('utf-8', errors='replace')[:400]}")
+            import shutil as _sh
+            _sh.copy(video_path, output_path)
     return output_path
 
 
@@ -1057,7 +1149,11 @@ def render_short(
         cut_clip(source_path, clip_start, clip_end, step1)
         # Remapuj peaks do czasu lokalnego step1 (0.0 -> clip_duration)
         if peaks:
-            peaks = [(round(t_k - orig_clip_start, 3), lbl) for (t_k, lbl) in peaks]
+            is_relative = (peaks[0][0] < orig_clip_start) if orig_clip_start > 0 else True
+            if not is_relative:
+                peaks = [(round(t_k - orig_clip_start, 3), lbl) for (t_k, lbl) in peaks]
+            else:
+                peaks = [(round(t_k, 3), lbl) for (t_k, lbl) in peaks]
         if peak_moment > clip_duration and peak_moment >= orig_clip_start:
             peak_moment = max(0.5, min(clip_duration - 0.5, peak_moment - orig_clip_start))
         elif peaks and (peak_moment <= 0.0 or peak_moment > clip_duration):
@@ -1169,7 +1265,7 @@ def render_short(
     print(f"   ⚙️  Profil montażu ({'SOLO BOLO' if is_solo_fight else tuning_p.get('id', 'default')}): zoom={_zoom_level:.2f}x, slowmo={_slowmo_dur:.1f}s ({_slowmo_speed}x), muzyka={int(_music_vol*100)}%, gra={int(_game_vol*100)}%")
 
     # Intermediate peaks: wszystkie kille PRZED ostatnim (PENTA) -> mini slow-mo 0.8x/0.5s
-    _all_kill_rel = sorted([t_k - clip_start for (t_k, _) in (peaks or [])])
+    _all_kill_rel = sorted([(t_k if (t_k < clip_start or clip_start == 0.0) else (t_k - clip_start)) for (t_k, _) in (peaks or [])])
     _inter_peaks  = _all_kill_rel[:-1] if len(_all_kill_rel) > 1 else []
     if _inter_peaks:
         print(f"   ⚡ Intermediate peaks (mini slow-mo): {[f'{p:.1f}s' for p in _inter_peaks]}")
@@ -1192,8 +1288,9 @@ def render_short(
     music = pick_music_for_action(action_type, preferred_track=preferred_track or ("ncs_egzod_royalty.mp3" if action_type == "pentakill" else None))
     # Przekazuj step1 (surowy wycinek z audio gry) jako game_audio_path
     # step4 nie ma audio (apply_editor_effects mapuje tylko [v_final])
+    _rel_kill_peaks = [((tk if (tk < clip_start or clip_start == 0.0) else (tk - clip_start)), lbl) for (tk, lbl) in (peaks or [])]
     merge_music(step4, music, step5_music, final_duration, peak_moment,
-                game_audio_path=step1, kill_peaks=peaks or [],
+                game_audio_path=step1, kill_peaks=_rel_kill_peaks,
                 music_volume=_music_vol, game_volume=_game_vol)
 
     # KROK 5: Dynamiczne napisy kill-by-kill
@@ -1224,14 +1321,25 @@ def render_short(
     if not _hook:
         from lol_config import ACTION_LABELS
         _hook = ACTION_LABELS.get(action_type, "").replace("🔥","").replace("⚡","").replace("💥","").replace("🎯","").replace("👑","").strip()
-    print(f"\n[6/7] Hook overlay: '{_hook}' @ pierwsze 2s...")
-    hook_show_start = 0.5   # zawsze pierwsze sekundy — to jest przynęta dla widza
+    print(f"\n[6/7] Hook overlay: '{_hook}' @ 0.0s (zatrzymanie scrolla)...")
+    hook_show_start = 0.0   # od klatki 0.0s — kluczowe dla obniżenia wskaźnika Swiped Away (<15%)
     add_text_overlay(step5_captions, _hook, hook_show_start, final_duration, step5_cta)
 
-    # KROK 7: CTA overlay (ostatnie 1.5s) — klasyczne wezwanie do subskrypcji
-    _end_cta = "LEAVE A LIKE & SUBSCRIBE FOR MORE!"
-    print(f"\n[7/7] CTA overlay: '{_end_cta}'...")
-    add_cta_overlay(step5_cta, final_duration, step5, cta_text=_end_cta, show_duration=1.5)
+    # KROK 7: Engagement Trigger CTA overlay (ostatnie 1.8s)
+    # Zamiast nudnego "Leave a like" -> prowokujące pytanie wymuszające komentarze i podbijające AVD przy zapętleniu
+    act_lower = action_type.lower()
+    if "penta" in act_lower:
+        _end_cta = "CLEAN 1v5 OR TROLLING? RATE 1-10"
+    elif "quadra" in act_lower:
+        _end_cta = "CLEAN 1v4 OR LUCKY? RATE 1-10"
+    elif "solo" in act_lower or "bolo" in act_lower or "1v1" in act_lower:
+        _end_cta = "CLEAN OUTPLAY OR PURE LUCK? RATE 1-10"
+    elif "clutch" in act_lower or "1hp" in act_lower or "1%" in act_lower:
+        _end_cta = "CALCULATED OR 100% LUCK? RATE 1-10"
+    else:
+        _end_cta = "CLEAN PLAY OR PURE LUCK? RATE 1-10"
+    print(f"\n[7/7] Engagement CTA overlay: '{_end_cta}'...")
+    add_cta_overlay(step5_cta, final_duration, step5, cta_text=_end_cta, show_duration=1.8)
 
     # ── POST-RENDER 15s SNAP ─────────────────────────────────────────────────
     # Stosuj TYLKO dla pojedynczych wymian/akcji (15.5-18.0s), NIGDY nie niszcz multi-killów ani nie ucinaj pierwszego fraga!

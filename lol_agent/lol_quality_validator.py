@@ -52,8 +52,10 @@ def _check_enemy_combat_in_frame(frame: np.ndarray) -> Tuple[bool, int, Optional
     if enemy_pixels > 80:
         # Oblicz centroid
         pts = cv2.findNonZero(red_mask)
+        mean_pt = None
         if pts is not None:
-            mean_pt = np.mean(pts, axis=0)[0]
+            mean_pt = tuple(np.mean(pts, axis=0)[0].astype(int))
+        return True, enemy_pixels, mean_pt
     return False, enemy_pixels, None
 
 
@@ -163,7 +165,8 @@ def validate_pre_flight(
     if curr_c:
         clusters.append(curr_c)
 
-    if is_solo:
+    total_continuous_span = (clusters[-1][-1][0] + 2.0) - (clusters[0][0][0] - 4.5) if clusters else 0.0
+    if is_solo or total_continuous_span <= 14.5:
         suggested_segments = None
     elif len(clusters) >= 2:
         gap = clusters[1][0][0] - clusters[0][-1][0]
@@ -208,8 +211,18 @@ def validate_pre_flight(
                 visible_kills += 1
             else:
                 diag.append(f"Uwaga: kill @ {kt:.1f}s [{lbl}] centroid ({cx}px) poza krawędzią kadru 9:16 (crop_x={crop_x})")
+                qa_score = max(30, qa_score - 30)
+                qa_status = "WARN"
         else:
-            visible_kills += 1
+            # Sprawdź czy wycinek kadru 9:16 zawiera jakąkolwiek akcję bojową
+            crop_frame = fr[:, crop_x:min(w, crop_x + crop_w)]
+            has_crop_combat, crop_px, _ = _check_enemy_combat_in_frame(crop_frame)
+            if has_crop_combat:
+                visible_kills += 1
+            else:
+                diag.append(f"Uwaga: brak widocznej akcji/wrogów w kadrze przy killu @ {kt:.1f}s [{lbl}]")
+                qa_score = max(30, qa_score - 25)
+                qa_status = "WARN"
 
     # ── 4. Tower Attack Guard ─────────────────────────────────────────────────
     if not is_solo:

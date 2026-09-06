@@ -22,8 +22,8 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "target_max_dur": 13.0,     # maksymalna długość shorta (krótki, wysoka retencja 10-13s)
         "zoom_aggression": 1.30,    # mocny zoom-punch przy eliminacjach
         "slowmo_duration": 0.9,     # krótkie, dynamiczne zwolnienie na decydujący cios
-        "music_balance": 0.90,      # głośna muzyka Phonk / NCS
-        "game_sound_balance": 0.50, # dźwięki gry w tle
+        "music_balance": 0.50,      # wyważona muzyka Phonk / NCS w tle
+        "game_sound_balance": 0.85, # wyraźne dźwięki gry i zapowiedzi
         "title_tone": "hype",
     },
     "balanced": {
@@ -35,8 +35,8 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "target_max_dur": 17.0,
         "zoom_aggression": 1.20,
         "slowmo_duration": 1.4,
-        "music_balance": 0.85,
-        "game_sound_balance": 0.65,
+        "music_balance": 0.45,
+        "game_sound_balance": 0.85,
         "title_tone": "narrative",
     },
     "cinematic": {
@@ -48,8 +48,8 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "target_max_dur": 25.0,
         "zoom_aggression": 1.10,
         "slowmo_duration": 2.2,
-        "music_balance": 0.70,
-        "game_sound_balance": 0.80,
+        "music_balance": 0.35,
+        "game_sound_balance": 0.90,
         "title_tone": "narrative",
     },
 }
@@ -97,15 +97,32 @@ def get_pacing_parameters() -> Dict[str, Any]:
 
     if "zoomAggression" in cfg:
         base["zoom_aggression"] = float(cfg["zoomAggression"])
+    elif "zoom_aggression" in cfg:
+        base["zoom_aggression"] = float(cfg["zoom_aggression"])
+
     if "slowmoDuration" in cfg:
         base["slowmo_duration"] = float(cfg["slowmoDuration"])
+    elif "slowmo_duration" in cfg:
+        base["slowmo_duration"] = float(cfg["slowmo_duration"])
+
     if "musicBalance" in cfg:
         base["music_balance"] = float(cfg["musicBalance"])
+    elif "music_balance" in cfg:
+        base["music_balance"] = float(cfg["music_balance"])
+
     if "gameSoundBalance" in cfg:
         base["game_sound_balance"] = float(cfg["gameSoundBalance"])
+    elif "game_sound_balance" in cfg:
+        base["game_sound_balance"] = float(cfg["game_sound_balance"])
+
     if "titleTone" in cfg:
         base["title_tone"] = str(cfg["titleTone"])
+    elif "title_tone" in cfg:
+        base["title_tone"] = str(cfg["title_tone"])
+
     if "userNotes" in cfg:
         base["user_notes"] = str(cfg["userNotes"])
+    elif "user_notes" in cfg:
+        base["user_notes"] = str(cfg["user_notes"])
 
     return base

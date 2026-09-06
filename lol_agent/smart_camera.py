@@ -107,32 +107,32 @@ def _detect_fight_center_x(frame_rgb: np.ndarray,
         mask[int(h * 0.62):, int(w * 0.76):] = False
         # Dolna lewa ćwiartka — portret i chat
         mask[int(h * 0.65):, :int(w * 0.20)] = False
-        mask[:, :int(w * 0.06)] = False       # lewy margines
-        mask[:, int(w * 0.82):] = False      # prawy margines / Porofessor stats overlay
+        mask[:, :8] = False                   # lewy margines
+        mask[:, -8:] = False                  # prawy margines
         return mask
 
     excl = make_exclusion_mask()
 
-    # --- Zielony (Standard) & Żółty (Colorblind) HP bar Gracza ---
-    green = (
-        (g > 105) & (r < 115) & (b < 105) &
-        ((g - r) > 25) & ((g - b) > 25)
-    ) & excl
+    # --- Żółty & Zielony HP bar (Gracz) ---
     yellow = (
-        (r > 175) & (g > 140) & (b < 95) &
+        (r > 160) & (g > 130) & (b < 110) &
         ((r - b) > 80) & ((g - b) > 50)
     ) & excl
-
-    target_mask = green if green.sum() >= 4 else (yellow if yellow.sum() >= 4 else None)
+    green = (
+        (g > 150) & (r < 120) & (b < 120) &
+        ((g - r) > 50)
+    ) & excl
+    player_mask = (yellow | green)
 
     player_x = None
-    if target_mask is not None:
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(target_mask.astype(np.uint8))
+    if player_mask.sum() >= 5:
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(player_mask.astype(np.uint8))
         best_score = -1
         for comp_i in range(1, num_labels):
             cx, cy, cw, ch, area = stats[comp_i]
             aspect = cw / max(ch, 1)
-            if cw >= 4 and ch <= 7 and aspect >= 1.8 and area >= 4:
+            # Prawdziwy pasek HP championa jest cienki i szeroki (aspect >= 2.0, ch <= 5)
+            if cw >= 5 and ch <= 5 and aspect >= 2.0 and area >= 5:
                 score = area * aspect
                 if score > best_score:
                     best_score = score
@@ -153,14 +153,19 @@ def _detect_fight_center_x(frame_rgb: np.ndarray,
             if cw >= 4 and ch <= 6 and aspect >= 1.8 and area >= 4:
                 enemy_xs.append(int(centroids_r[comp_i][0]))
 
-    # --- Centroid: Gracz ma absolutny priorytet, wrogowie tylko jako fallback ---
-    bar_count = (1 if player_x is not None else 0) + len(enemy_xs)
+    # --- Centroid walki ---
+    all_xs = []
+    bar_count = 0
+
     if player_x is not None:
-        fight_center_x = player_x
-    elif enemy_xs:
-        fight_center_x = int(np.mean(enemy_xs))
-    else:
-        fight_center_x = None
+        all_xs.append(player_x)
+        bar_count += 1
+
+    if enemy_xs:
+        all_xs.extend(enemy_xs)
+        bar_count += len(enemy_xs)
+
+    fight_center_x = int(np.mean(all_xs)) if all_xs else None
 
     return player_x, fight_center_x, bar_count
 
@@ -717,110 +722,81 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
         excl[864:, :] = False                                        # Dolny pasek umiejętności
         excl[626:, 1459:] = False                                    # Minimapa i panel przedmiotów
         excl[670:, :345] = False                                     # Chat i portret
-        excl[:, :140] = False                                        # Lewy margines
-        excl[:, 1550:] = False                                       # Prawy margines / Porofessor stats overlay
+        excl[:, :100] = False                                        # Lewy margines
+        excl[:, 1720:] = False                                       # Prawy margines / Outplayed watermark
 
-        # KROK 1: Pre-skan trybu kolorów gracza (Standard Green vs Colorblind Gold)
-        green_hits = 0
-        gold_hits = 0
-        sample_step = max(1, len(frames) // 16)
-        for f in frames[::sample_step]:
-            f16 = f.astype(np.int16)
-            r, g, b = f16[:, :, 0], f16[:, :, 1], f16[:, :, 2]
-            gm = ((g > 115) & (r < 110) & (b < 100) & ((g - r) > 35) & ((g - b) > 35)) & excl
-            ym = ((r > 175) & (g > 140) & (b < 95) & ((r - b) > 80) & ((g - b) > 50)) & excl
-            ng, _, sg, _ = cv2.connectedComponentsWithStats(gm.astype(np.uint8))
-            for i in range(1, ng):
-                if 20 <= sg[i][2] <= 130 and 5 <= sg[i][3] <= 16 and sg[i][4] >= 50:
-                    green_hits += 1
-            ny, _, sy, _ = cv2.connectedComponentsWithStats(ym.astype(np.uint8))
-            for i in range(1, ny):
-                if 20 <= sy[i][2] <= 130 and 5 <= sy[i][3] <= 16 and sy[i][4] >= 50:
-                    gold_hits += 1
-
-        is_colorblind = (gold_hits > green_hits and gold_hits >= 3)
-        mode_label = "Colorblind (Gold)" if is_colorblind else "Standard (Green)"
-        print(f"   🎯 Player HP Mode: {mode_label} (green={green_hits}, gold={gold_hits})")
-
-        # KROK 2: Wykrycie paska gracza na każdej klatce (z łączeniem segmentów 1000 HP)
+        # KROK 1: Wykrycie paska gracza + centroid wrogów na każdej klatce
         frames_data = []
         for i in range(len(frames)):
             f = frames[i].astype(np.int16)
             r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
 
-            if is_colorblind:
-                mask = ((r > 175) & (g > 140) & (b < 95) & ((r - b) > 80) & ((g - b) > 50)) & excl
-            else:
-                mask = ((g > 115) & (r < 110) & (b < 100) & ((g - r) > 35) & ((g - b) > 35)) & excl
+            gold_mask = ((r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)) & excl
+            num_g, _, stats_g, _ = cv2.connectedComponentsWithStats(gold_mask.astype(np.uint8))
 
-            num_p, _, stats_p, centroids_p = cv2.connectedComponentsWithStats(mask.astype(np.uint8))
-            raw_parts = []
-            for comp_i in range(1, num_p):
-                cx, cy, cw, ch, area = stats_p[comp_i]
+            hp_bars = []
+            for comp_i in range(1, num_g):
+                cx, cy, cw, ch, area = stats_g[comp_i]
                 asp = cw / max(ch, 1)
-                if 20 <= cw <= 130 and 4 <= ch <= 16 and 2.2 <= asp <= 20.0 and area >= 50:
-                    raw_parts.append((cx, cy, cw, ch, area, float(centroids_p[comp_i][0]), float(centroids_p[comp_i][1])))
+                # Czuły filtr paska HP gracza (obejmuje low HP i spinnig ult)
+                if cw >= 14 and 3 <= ch <= 16 and 2.0 <= asp <= 20.0 and area >= 30:
+                    hp_bars.append((cx, cy, cw, ch, area * asp))
 
-            # Łączenie sąsiednich segmentów paska rozdzielonych czarną kreską 1000 HP
-            merged_bars = []
-            used = set()
-            for pi in range(len(raw_parts)):
-                if pi in used:
-                    continue
-                p1 = raw_parts[pi]
-                partner = False
-                for pj in range(pi + 1, len(raw_parts)):
-                    if pj in used:
-                        continue
-                    p2 = raw_parts[pj]
-                    if abs(p1[6] - p2[6]) <= 4 and (abs((p1[0] + p1[2]) - p2[0]) <= 15 or abs((p2[0] + p2[2]) - p1[0]) <= 15):
-                        mcx = (p1[5] + p2[5]) / 2.0
-                        mcy = (p1[6] + p2[6]) / 2.0
-                        marea = p1[4] + p2[4]
-                        merged_bars.append((mcx, mcy, marea))
-                        used.add(pi)
-                        used.add(pj)
-                        partner = True
-                        break
-                if not partner and pi not in used:
-                    merged_bars.append((p1[5], p1[6], p1[4]))
+            # Zbierz centroid wrogich HP barów (czerwone) — Combat Centroid Fallback
+            red_mask = ((r > 150) & (g < 95) & (b < 85) & ((r - g) > 60) & ((r - b) > 70)) & excl
+            enemy_cx = None
+            if red_mask.astype(np.uint8).sum() > 0:
+                num_r, _, stats_r, centroids_r = cv2.connectedComponentsWithStats(red_mask.astype(np.uint8))
+                enemy_xs = []
+                for comp_i in range(1, num_r):
+                    cx, cy, cw, ch, area = stats_r[comp_i]
+                    asp = cw / max(ch, 1)
+                    if cw >= 8 and 2 <= ch <= 10 and 2.0 <= asp <= 20.0 and area >= 8:
+                        enemy_xs.append(int(centroids_r[comp_i][0]))
+                if enemy_xs:
+                    enemy_cx = int(np.mean(enemy_xs))
 
-            frames_data.append(merged_bars)
+            frames_data.append((hp_bars, enemy_cx))
 
-        # KROK 3: Znalezienie pierwszego pewnego punktu zaczepienia gracza (najbliższy środka)
+        # KROK 2: Znalezienie pierwszego pewnego punktu zaczepienia gracza
         first_x = float(source_w // 2)
-        for bars in frames_data:
-            if bars:
-                bars.sort(key=lambda c: c[2] - 0.5 * abs(c[0] - (source_w // 2)), reverse=True)
-                first_x = float(bars[0][0])
+        for hp_b, _ in frames_data:
+            if hp_b:
+                hp_b.sort(key=lambda c: -c[4])
+                first_x = float(hp_b[0][0])
                 break
 
-        # KROK 4: Płynne śledzenie gracza
+        # KROK 3: Płynne śledzenie gracza z Combat Centroid Fallback
         # ── Parametry płynności (Kinowa stabilizacja) ────────────────────────
-        LERP_ALPHA    = 0.20   # spokojne, płynne doganianie gracza (brak nerwowości)
+        LERP_ALPHA    = 0.18   # spokojne, płynne doganianie gracza (brak nerwowości)
         MAX_PAN_PX    = 25     # max przesunięcie [px] na próbkę — eliminuje jakiekolwiek skoki lewo/prawo
         SNAP_DELTA    = 280    # powyżej tej różnicy → natychmiastowy snap (Flash/Shunpo)
-        DEADBAND_PX   = 35.0   # mikro-ruchy gracza wewnątrz 35px nie ruszają kamery w ogóle!
+        DEADBAND_PX   = 40.0   # mikro-ruchy gracza wewnątrz 40px nie ruszają kamery w ogóle!
         # ─────────────────────────────────────────────────────────────────────
 
         track_x = first_x
         crop_xs = []
         champ_detected = 0
-        invisible_streak = 0
+        invisible_streak = 0   # ile klatek z rzędu gracz niewidoczny
 
-        for bars in frames_data:
-            if bars:
+        for hp_b, enemy_cx in frames_data:
+            if hp_b:
                 champ_detected += 1
                 invisible_streak = 0
-                bars.sort(key=lambda c: c[2] - 0.8 * abs(c[0] - track_x), reverse=True)
-                target_x = float(bars[0][0])
+                # Wybierz pasek gracza najbliższy aktualnej trajektorii
+                hp_b.sort(key=lambda c: c[4] - 0.8 * abs(c[0] - track_x), reverse=True)
+                player_target_x = float(hp_b[0][0])
+                target_x = player_target_x
 
                 delta = abs(target_x - track_x)
                 if delta > SNAP_DELTA:
+                    # Gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
                     track_x = target_x
                 elif delta < DEADBAND_PX:
+                    # Wewnątrz strefy martwej — kamera stabilna jak na statywie, zero drgań
                     pass
                 else:
+                    # Płynne, kinowe doganianie: lerp + limit prędkości
                     desired = LERP_ALPHA * target_x + (1.0 - LERP_ALPHA) * track_x
                     move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
                     track_x = track_x + move
@@ -833,24 +809,24 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
 
         print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames)} klatek z graczem w kadrze")
 
-        # KROK 5: Wygładzanie adaptacyjne — okno=7 (płynność bez opóźnień)
-        SMOOTH_WIN = 7
+        # KROK 4: Wygładzanie adaptacyjne — okno=13 dla kinowej płynności
+        SMOOTH_WIN = 13
         raw_arr = np.array(crop_xs, dtype=float)
         smoothed = np.array([
             raw_arr[max(0, i - SMOOTH_WIN // 2):min(len(raw_arr), i + SMOOTH_WIN // 2 + 1)].mean()
             for i in range(len(raw_arr))
         ])
 
-        # KROK 6: End Freeze — ostatnie 0.6s outro zablokuj kamerę na championie (brak dryfu po fragu)
-        end_freeze_sec = 0.6
-        if duration > end_freeze_sec * 2.0:
+        # KROK 5: End Freeze — ostatnie 1.8s klipu zablokuj kamerę na championie (brak dryfu po fragu)
+        end_freeze_sec = 1.8
+        if duration > end_freeze_sec * 1.5:
             freeze_idx = int(len(smoothed) * (1.0 - end_freeze_sec / duration))
             freeze_idx = max(0, min(freeze_idx, len(smoothed) - 1))
             smoothed[freeze_idx:] = smoothed[freeze_idx]
 
         smoothed = np.clip(smoothed, 0, source_w - crop_w).astype(int)
 
-        # KROK 7: Pełna gęsta trajektoria 80 punktów w FFmpeg dla maksymalnej precyzji
+        # KROK 6: Pełna gęsta trajektoria 80 punktów w FFmpeg dla maksymalnej precyzji
         final_points = [(float(t_points[i]), int(smoothed[i])) for i in range(len(smoothed))]
 
         print(f"   Wygenerowano {len(final_points)} płynnych punktów ścieżki kamery")

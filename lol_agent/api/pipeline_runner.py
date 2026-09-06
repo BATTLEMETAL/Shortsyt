@@ -36,7 +36,9 @@ class PipelineState:
     champion_name: Optional[str] = None
     action_type: Optional[str] = None
     rank: Optional[str] = None
+    game_type: str = "lol"
     source_path: Optional[str] = None
+
     clip_start: Optional[float] = None
     clip_end: Optional[float] = None
     combat_segments: Optional[List[Tuple[float, float]]] = None
@@ -70,7 +72,9 @@ def get_state() -> dict:
             "champion_name": _state.champion_name,
             "action_type": _state.action_type,
             "rank": _state.rank,
+            "game_type": _state.game_type,
             "source_path": _state.source_path,
+
             "clip_start": _state.clip_start,
             "clip_end": _state.clip_end,
             "combat_segments": _state.combat_segments,
@@ -108,6 +112,7 @@ def _run_pipeline(
     use_smart_camera: bool,
     notify_token: Optional[str],
     combat_segments: Optional[List[Tuple[float, float]]] = None,
+    game_type: str = "lol",
 ):
     """Główna funkcja pipeline — uruchamiana w osobnym wątku."""
     global _state
@@ -125,10 +130,12 @@ def _run_pipeline(
             _state.champion_name = champion_name
             _state.action_type = action_type
             _state.rank = rank
+            _state.game_type = game_type
             _state.source_path = source_path
             _state.clip_start = clip_start
             _state.clip_end = clip_end
             _state.combat_segments = combat_segments
+
             _state.qa_status = "PASS"
             _state.qa_score = 100
             _state.qa_details = []
@@ -208,16 +215,29 @@ def _run_pipeline(
 
         tuning_prof = get_pacing_parameters()
 
-        # Krok 1 — detekcja kill eventów
+        # Krok 1 — detekcja kill / action eventów
         try:
-            peaks = detect_kill_events(
+            try:
+                from lol_agent.game_event_detector import detect_kill_events as _detect_events
+            except ImportError:
+                from game_event_detector import detect_kill_events as _detect_events
+            peaks = _detect_events(
                 source_path, clip_start, clip_end,
-                clip_duration=clip_end - clip_start
+                clip_duration=clip_end - clip_start,
+                game_profile=game_type
             )
-            _update("Kill detection gotowa", 12, f"Kill peaks: {peaks}")
+            _update("Kill detection gotowa", 12, f"Peaks: {peaks}")
         except Exception as e:
-            _update("Kill detection pominięta", 12, f"Błąd detekcji: {e}")
-            peaks = []
+            try:
+                peaks = detect_kill_events(
+                    source_path, clip_start, clip_end,
+                    clip_duration=clip_end - clip_start
+                )
+                _update("Kill detection gotowa (fallback)", 12, f"Peaks: {peaks}")
+            except Exception as e2:
+                _update("Kill detection pominięta", 12, f"Błąd detekcji: {e2}")
+                peaks = []
+
 
         # Sprawdź czy kille mają lukę > 3.5s (martwe bieganie) i czy potrzeba jump-cut
         # Dla SOLO BOLO nigdy nie stosujemy jump-cutów — cała walka 1v1 musi być ciągła
@@ -249,6 +269,13 @@ def _run_pipeline(
         qa_status = "PASS"
         qa_score = 100
         qa_details = []
+        smart_cam_track = None
+        if use_smart_camera:
+            try:
+                from lol_agent.smart_camera import find_action_path
+                smart_cam_track = find_action_path(source_path, clip_start, clip_end)
+            except Exception as se:
+                print(f"Smart Camera QA track err: {se}")
         if validate_pre_flight:
             try:
                 qa_res = validate_pre_flight(
@@ -256,6 +283,7 @@ def _run_pipeline(
                     trim_start=clip_start,
                     trim_end=clip_end,
                     peaks=peaks,
+                    smart_camera_track=smart_cam_track,
                     action_type=action_type,
                     combat_segments=combat_segments,
                     tuning_profile=tuning_prof,
@@ -317,9 +345,24 @@ def _run_pipeline(
         thumb_file = None
         try:
             thumb_out = str(output).replace(".mp4", "_thumb.jpg")
+            # FIX: peak_moment z oryginalnego klipu (np. 45s) jest za duży dla 15s shorta.
+            # Przeliczamy względem czasu renderowanego klipu (clip_start → 0).
+            clip_duration = float(clip_end) - float(clip_start) if clip_end and clip_start else None
+            if clip_duration and peak_moment is not None:
+                # Względny czas w shorcie = peak_moment_in_source - clip_start
+                relative_peak = float(peak_moment) - float(clip_start)
+                # Bezpieczny zakres: 0.2s od początku do 1s przed końcem
+                if clip_duration > 0:
+                    thumb_time = min(max(0.2, relative_peak), clip_duration - 1.0)
+                else:
+                    thumb_time = 1.0
+            elif peak_moment is not None:
+                thumb_time = float(peak_moment)
+            else:
+                thumb_time = 1.5
             thumb_file = generate_thumbnail(
                 video_path=str(output),
-                peak_moment=peak_moment,
+                peak_moment=thumb_time,
                 action_label=action_type.upper().replace("_", " "),
                 champion_name=champion_name,
                 output_path=thumb_out,
@@ -330,17 +373,34 @@ def _run_pipeline(
         # Metadane
         meta = {}
         try:
-            from lol_metadata_generator import generate_metadata, generate_channel_title, build_channel_description, build_pinned_comment
-            meta = generate_metadata(action_type=action_type, champion_name=champion_name, rank=rank)
-        except Exception as me:
-            from lol_metadata_generator import generate_channel_title, build_channel_description, build_pinned_comment
-            _update("Ostrzeżenie metadanych", 95, f"Metadata fallback: {me}")
-            fallback_title = generate_channel_title(action_type, champion_name, rank)
-            meta = {
-                "title": fallback_title,
-                "description": build_channel_description(fallback_title, champion_name, action_type),
-                "pinned_comment": build_pinned_comment(champion_name, action_type),
-            }
+            try:
+                from lol_agent.lol_metadata_generator import generate_metadata_universal
+            except ImportError:
+                from lol_metadata_generator import generate_metadata_universal
+            meta = generate_metadata_universal(
+                game_type=game_type,
+                action_type=action_type,
+                subject_name=champion_name,
+                rank=rank
+            )
+        except Exception:
+            try:
+                try:
+                    from lol_agent.lol_metadata_generator import generate_channel_title, build_channel_description, build_pinned_comment
+                except ImportError:
+                    from lol_metadata_generator import generate_channel_title, build_channel_description, build_pinned_comment
+                fallback_title = generate_channel_title(action_type, champion_name, rank)
+                meta = {
+                    "title": fallback_title,
+                    "description": build_channel_description(fallback_title, champion_name, action_type),
+                    "pinned_comment": build_pinned_comment(champion_name, action_type),
+                }
+            except Exception:
+                meta = {
+                    "title": f"{action_type.upper()} {champion_name} #Shorts",
+                    "description": f"Insane {action_type} play! #Shorts",
+                    "pinned_comment": "Rate this play 1-10! 👇",
+                }
 
         with _lock:
             _state.status = PipelineStatus.DONE
@@ -348,10 +408,11 @@ def _run_pipeline(
             _state.current_step = "Gotowe"
             _state.output_path = str(output)
             _state.thumbnail_path = str(thumb_file) if thumb_file else None
-            _state.title = meta.get("title") or generate_channel_title(action_type, champion_name, rank)
-            _state.description = meta.get("description") or build_channel_description(_state.title, champion_name, action_type)
-            _state.pinned_comment = meta.get("pinned_comment") or build_pinned_comment(champion_name, action_type)
+            _state.title = meta.get("title") or f"{action_type.upper()} {champion_name} #Shorts"
+            _state.description = meta.get("description") or ""
+            _state.pinned_comment = meta.get("pinned_comment") or ""
             _state.finished_at = datetime.now().isoformat()
+
             _state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Output: {output}")
 
         # Wyślij push notyfikację
@@ -403,6 +464,7 @@ def start_pipeline(
     use_smart_camera: bool = True,
     notify_token: Optional[str] = None,
     combat_segments: Optional[List[Tuple[float, float]]] = None,
+    game_type: str = "lol",
 ) -> bool:
     """Uruchom pipeline w osobnym wątku. Zwraca False jeśli już działa."""
     global _thread
@@ -428,11 +490,13 @@ def start_pipeline(
             use_smart_camera=use_smart_camera,
             notify_token=notify_token,
             combat_segments=combat_segments,
+            game_type=game_type,
         ),
         daemon=True,
     )
     _thread.start()
     return True
+
 
 
 def stop_pipeline():
