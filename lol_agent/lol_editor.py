@@ -540,6 +540,7 @@ def add_dynamic_captions(
     peak_moment: float = 0.0,
     slowmo_speed: float = 0.50,
     slowmo_duration: float = 1.5,
+    action_type: str = "",
 ) -> str:
     """
     Nakłada wiele dynamicznych napisów — jeden na każdy wykryty kill peak.
@@ -551,6 +552,7 @@ def add_dynamic_captions(
       TRIPLE KILL  → 100px, żółty
       QUADRAKILL   → 115px, pomarańczowy
       PENTAKILL    → 135px, czerwony + blink
+      SOLO BOLO    → 115px, karmazynowy (#DC2626)
     """
     if not peaks:
         import shutil as _sh
@@ -578,6 +580,8 @@ def add_dynamic_captions(
         "UNSTOPPABLE":   {"size": 90,  "color": "yellow",    "duration": 2.0},
         "LEGENDARY":     {"size": 105, "color": "orange",    "duration": 2.2},
         "GODLIKE":       {"size": 120, "color": "0xFFD700",  "duration": 2.5},
+        "SOLO BOLO":     {"size": 115, "color": "0xFF3333",  "duration": 2.2},
+        "OUTPLAY":       {"size": 105, "color": "0xFFD700",  "duration": 2.0},
     }
 
     # Przelicz czas z oryginalnego klipu na czas w zmontowanym wideo
@@ -637,29 +641,51 @@ def add_dynamic_captions(
 
         return mapped_t
 
+    is_solo = bool(action_type and action_type.lower() in ("solo_bolo", "solo", "1v1"))
+
     caption_items = []
-    for (t_abs, label) in peaks:
-        # Obsłuż zarówno relatywne (0..dur) jak i absolutne (> trim_start) timestamps
-        t_raw = t_abs if (t_abs < trim_start or trim_start == 0.0) else (t_abs - trim_start)
-        t_in_clip = _adjust_t(t_raw)
-        if t_in_clip < 0 or t_in_clip > video_duration:
-            continue
+    if is_solo:
+        # W trybie Solo Bolo (1v1) istnieje tylko jeden cel pojedynku.
+        # Wszelkie multikille (DOUBLE/TRIPLE/PENTA) oraz liczniki KILL 2/3 są całkowicie eliminowane!
+        if peaks:
+            best_p = min(peaks, key=lambda p: abs((p[0] if p[0] < trim_start or trim_start == 0.0 else p[0] - trim_start) - peak_moment))
+            t_abs, _ = best_p
+            t_raw = t_abs if (t_abs < trim_start or trim_start == 0.0) else (t_abs - trim_start)
+            t_in_clip = _adjust_t(t_raw)
+            if 0 <= t_in_clip <= video_duration:
+                style = KILL_STYLES.get("SOLO BOLO", {"size": 115, "color": "0xFF3333", "duration": 2.2})
+                t_start = max(0.0, t_in_clip - 0.5)
+                t_end = min(video_duration, t_start + style["duration"])
+                caption_items.append({
+                    "start": t_start,
+                    "end": t_end,
+                    "label": "SOLO BOLO",
+                    "style": style,
+                    "t_in_clip": t_in_clip,
+                })
+    else:
+        for (t_abs, label) in peaks:
+            # Obsłuż zarówno relatywne (0..dur) jak i absolutne (> trim_start) timestamps
+            t_raw = t_abs if (t_abs < trim_start or trim_start == 0.0) else (t_abs - trim_start)
+            t_in_clip = _adjust_t(t_raw)
+            if t_in_clip < 0 or t_in_clip > video_duration:
+                continue
 
-        style = KILL_STYLES.get(label, {"size": 90, "color": "white", "duration": 2.0})
-        # Offset antycypacji 0.6s: synchronizacja z momentem animacji ciosu/zgonu w grze
-        t_start = max(0.0, t_in_clip - 0.6)
-        t_end   = min(video_duration, t_start + style["duration"])
+            style = KILL_STYLES.get(label, {"size": 90, "color": "white", "duration": 2.0})
+            # Offset antycypacji 0.6s: synchronizacja z momentem animacji ciosu/zgonu w grze
+            t_start = max(0.0, t_in_clip - 0.6)
+            t_end   = min(video_duration, t_start + style["duration"])
 
-        clean_label = re.sub(r'[^\x00-\x7F]+', '', label).strip()
-        clean_label = clean_label.replace("'", "\\\\\'")
+            clean_label = re.sub(r'[^\x00-\x7F]+', '', label).strip()
+            clean_label = clean_label.replace("'", "\\\\\'")
 
-        caption_items.append({
-            "start": t_start,
-            "end": t_end,
-            "label": clean_label,
-            "style": style,
-            "t_in_clip": t_in_clip,
-        })
+            caption_items.append({
+                "start": t_start,
+                "end": t_end,
+                "label": clean_label,
+                "style": style,
+                "t_in_clip": t_in_clip,
+            })
 
     # Zabezpieczenie przed nakładaniem napisów: poprzedni napis znika natychmiast gdy pojawia się kolejny kill!
     caption_items.sort(key=lambda x: x["start"])
@@ -678,7 +704,7 @@ def add_dynamic_captions(
         style = item["style"]
 
         # ── A. Dynamic Kill Streak Counter HUD (np. [ 💀 1 / 3 ] -> [ 👑 TRIPLE ]) ──
-        if total_kills >= 2:
+        if total_kills >= 2 and not is_solo:
             is_final_kill = (idx == total_kills - 1)
             hud_text = f"KILL {idx + 1}/{total_kills}" if not is_final_kill else f"FINAL KILL {idx + 1}/{total_kills}"
             hud_color = "0xFFD700" if is_final_kill else ("0xFFA500" if idx > 0 else "white")
@@ -1307,6 +1333,7 @@ def render_short(
             peak_moment   = peak_moment,
             slowmo_speed  = _slowmo_speed,
             slowmo_duration = _slowmo_dur,
+            action_type   = action_type,
         )
     else:
         # Brak OCR peaks — przeskocz ten krok

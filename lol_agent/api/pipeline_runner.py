@@ -484,10 +484,10 @@ def _run_pipeline(
 
             _state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Output: {output}")
 
-        # Zapisz w pamięci uczenia
+        # Zapisz w pamięci uczenia (render wygenerowany, oczekuje na decyzję)
         try:
-            from lol_agent.user_learning_memory import record_render_accepted
-            record_render_accepted(
+            from lol_agent.user_learning_memory import record_render_generated
+            record_render_generated(
                 filename=str(output),
                 action_type=action_type,
                 duration=float(clip_duration or 15.0),

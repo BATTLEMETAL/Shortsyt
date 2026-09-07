@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "last_updated": "2026-09-07T22:42:27.911578+00:00",
+  "total_corrections": 0,
+  "total_renders_accepted": 3,
+  "total_renders_rejected": 0,
+  "learned_preferences": {
+    "music_balance": 0.6,
+    "game_sound_balance": 0.85,
+    "min_lead_in_sec": 4.5,
+    "max_outro_sec": 1.8,
+    "preferred_pacing": "aggressive",
+    "smooth_win": 5,
+    "end_freeze_sec": 0.6
+  },
+  "history": [
+    {
+      "timestamp": "2026-09-06T13:35:37.487786+00:00",
+      "type": "render_approved",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788701656704_auto.mp4",
+      "action_type": "solo_bolo",
+      "duration": 15.0,
+      "qa_score": 100
+    },
+    {
+      "timestamp": "2026-09-06T20:13:33.707417+00:00",
+      "type": "render_approved",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788725524810_auto.mp4",
+      "action_type": "triple",
+      "duration": 11.2,
+      "qa_score": 35
+    },
+    {
+      "timestamp": "2026-09-07T22:37:08.514612+00:00",
+      "type": "render_approved",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788820524886_auto.mp4",
+      "action_type": "solo_bolo",
+      "duration": 15.0,
+      "qa_score": 100
+    },
+    {
+      "timestamp": "2026-09-07T22:42:05.545758+00:00",
+      "type": "rule_learned",
+      "rule_id": "solo_bolo_captions",
+      "description": "W trybie SOLO BOLO (1v1) zakazane sa liczniki multikill (KILL X/Y) oraz banery DOUBLE/TRIPLE/PENTA. Stosowac wylacznie dedykowany baner SOLO BOLO @ peak."
+    },
+    {
+      "timestamp": "2026-09-07T22:42:21.746638+00:00",
+      "type": "rule_learned",
+      "rule_id": "solo_bolo_captions",
+      "description": "W trybie SOLO BOLO (1v1) zakazane sa liczniki multikill (KILL X/Y) oraz banery DOUBLE/TRIPLE/PENTA. Stosowac wylacznie dedykowany baner SOLO BOLO @ peak."
+    },
+    {
+      "timestamp": "2026-09-07T22:42:27.894234+00:00",
+      "type": "rule_learned",
+      "rule_id": "audio_loudnorm",
+      "description": "Muzyka I=-17 LUFS (60%), Gra I=-14 LUFS (85%), sidechain ducking -45%."
+    },
+    {
+      "timestamp": "2026-09-07T22:42:27.903052+00:00",
+      "type": "rule_learned",
+      "rule_id": "camera_kinematics",
+      "description": "SMOOTH_WIN=5, MAX_PAN_PX=80, LERP=0.35, DEADBAND=30px, end_freeze=0.6s."
+    },
+    {
+      "timestamp": "2026-09-07T22:42:27.911567+00:00",
+      "type": "rule_learned",
+      "rule_id": "seo_hashtags",
+      "description": "Pelny pakiet 12-18 viralowych hashtagow na koncu opisu Shorts."
+    }
+  ],
+  "learned_rules": {
+    "solo_bolo_captions": "W trybie SOLO BOLO (1v1) zakazane sa liczniki multikill (KILL X/Y) oraz banery DOUBLE/TRIPLE/PENTA. Stosowac wylacznie dedykowany baner SOLO BOLO @ peak.",
+    "audio_loudnorm": "Muzyka I=-17 LUFS (60%), Gra I=-14 LUFS (85%), sidechain ducking -45%.",
+    "camera_kinematics": "SMOOTH_WIN=5, MAX_PAN_PX=80, LERP=0.35, DEADBAND=30px, end_freeze=0.6s.",
+    "seo_hashtags": "Pelny pakiet 12-18 viralowych hashtagow na koncu opisu Shorts."
+  }
+}

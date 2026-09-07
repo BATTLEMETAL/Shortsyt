@@ -8,11 +8,18 @@ stosował optymalne parametry bez potrzeby ręcznego poprawiania każdego skrypt
 Plik pamięci: lol_agent/user_feedback_history.json
 """
 import os
+import sys
 import json
 import time
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 MEMORY_FILE = Path(__file__).parent / "user_feedback_history.json"
 
@@ -39,6 +46,12 @@ def _load_memory() -> Dict[str, Any]:
             "preferred_pacing": "aggressive",
             "smooth_win": 5,
             "end_freeze_sec": 0.6,
+        },
+        "learned_rules": {
+            "solo_bolo_captions": "Zakaz wyświetlania liczników multikill (KILL X/Y) oraz banerów DOUBLE/TRIPLE/PENTAKILL w trybie SOLO BOLO. Stosować wyłącznie czysty kadr lub dedykowany baner SOLO BOLO.",
+            "audio_loudnorm": "Muzyka I=-17 LUFS (60%), Gra I=-14 LUFS (85%), sidechain ducking -45%.",
+            "camera_kinematics": "SMOOTH_WIN=5, MAX_PAN_PX=80, LERP=0.35, DEADBAND=30px, end_freeze=0.6s.",
+            "seo_hashtags": "Zawsze pełen pakiet 12-18 hashtagów na końcu opisu."
         },
         "history": [],
     }
@@ -100,6 +113,36 @@ def record_user_correction(param_name: str, old_val: Any, new_val: Any, source: 
     _save_memory(mem)
     print(f"[UserLearning] 🧠 Zapisano korektę użytkownika: {param_name}: {old_val} -> {new_val}")
     return learned
+
+
+def record_render_generated(filename: str, action_type: str, duration: float, qa_score: int) -> None:
+    """Zapisuje wygenerowanie nowego renderu (oczekuje na decyzję użytkownika: publikacja / odrzucenie)."""
+    mem = _load_memory()
+    mem["history"].append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "type": "render_generated",
+        "filename": filename,
+        "action_type": action_type,
+        "duration": duration,
+        "qa_score": qa_score,
+    })
+    _save_memory(mem)
+    print(f"[UserLearning] 🎬 Wygenerowano render do oceny: {filename} ({action_type}, QA {qa_score}/100)")
+
+
+def record_learned_rule(rule_id: str, description: str) -> None:
+    """Rejestruje nową wyuczoną regułę montażu."""
+    mem = _load_memory()
+    rules = mem.setdefault("learned_rules", {})
+    rules[rule_id] = description
+    mem["history"].append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "type": "rule_learned",
+        "rule_id": rule_id,
+        "description": description,
+    })
+    _save_memory(mem)
+    print(f"[UserLearning] 📜 Zapisano nową regułę montażu: [{rule_id}] -> {description}")
 
 
 def record_render_accepted(filename: str, action_type: str, duration: float, qa_score: int) -> None:
