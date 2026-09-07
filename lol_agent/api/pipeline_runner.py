@@ -455,6 +455,34 @@ def _run_pipeline(
         # Metadane
         meta = {}
         try:
+            # Określ styl walki z danych klipu
+            k_count = len(peaks) if peaks else (1 if action_type.lower() in ("solo_bolo", "solo", "1v1") else 0)
+            c_dur = round(float(clip_end - clip_start), 1) if clip_end and clip_start else 15.0
+            z_label = map_zone_info.get("zone_label", "") if map_zone_info.get("confidence", 0) >= 0.60 else ""
+            
+            if action_type.lower() in ("solo_bolo", "solo", "1v1"):
+                c_style = f"1v1 Lane Duel / Pure Mechanical Skill Check{' in ' + z_label if z_label else ''}"
+            elif k_count >= 5 or "penta" in action_type.lower():
+                c_style = f"Full Teamfight Ace (5 Kills / Pentakill){' at ' + z_label if z_label else ''}"
+            elif "oneshot" in action_type.lower():
+                c_style = "Instant Burst Combo / Assassination"
+            elif "clutch" in action_type.lower():
+                c_style = "1% HP Survival / Miracle Turnaround"
+            elif "triple" in action_type.lower() or k_count == 3:
+                c_style = f"3v1 Outplay / Triple Kill Rampage{' in ' + z_label if z_label else ''}"
+            elif "double" in action_type.lower() or k_count == 2:
+                c_style = f"2v1 Outplay / Fast Double Kill{' in ' + z_label if z_label else ''}"
+            else:
+                c_style = f"Skillshot Dodging / Turnaround Outplay{' in ' + z_label if z_label else ''}"
+
+            extra_ctx = {
+                "map_zone": map_zone_info,
+                "kill_count": k_count,
+                "clip_duration": c_dur,
+                "combat_style": c_style,
+                "is_solo": action_type.lower() in ("solo_bolo", "solo", "1v1"),
+            }
+
             try:
                 from lol_agent.lol_metadata_generator import generate_metadata_universal
             except ImportError:
@@ -464,7 +492,7 @@ def _run_pipeline(
                 action_type=action_type,
                 subject_name=champion_name,
                 rank=rank,
-                extra_context={"map_zone": map_zone_info},
+                extra_context=extra_ctx,
             )
         except Exception:
             try:
@@ -472,10 +500,11 @@ def _run_pipeline(
                     from lol_agent.lol_metadata_generator import generate_channel_title, build_channel_description, build_pinned_comment
                 except ImportError:
                     from lol_metadata_generator import generate_channel_title, build_channel_description, build_pinned_comment
-                fallback_title = generate_channel_title(action_type, champion_name, rank)
+                valid_fallback_zone = map_zone_info.get("zone_label", "") if map_zone_info.get("confidence", 0) >= 0.60 else ""
+                fallback_title = generate_channel_title(action_type, champion_name, rank, map_zone_label=valid_fallback_zone)
                 meta = {
                     "title": fallback_title,
-                    "description": build_channel_description(fallback_title, champion_name, action_type),
+                    "description": build_channel_description(fallback_title, champion_name, action_type, map_zone_label=valid_fallback_zone),
                     "pinned_comment": build_pinned_comment(champion_name, action_type),
                 }
             except Exception:

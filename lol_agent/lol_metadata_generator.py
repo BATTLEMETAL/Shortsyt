@@ -78,13 +78,15 @@ def _ensure_shorts_tag(text: str, champion: str = "Katarina", action_type: str =
     return t
 
 
-def generate_channel_title(action_type: str = "outplay", champion: str = "Katarina", rank: str = "") -> str:
+def generate_channel_title(action_type: str = "outplay", champion: str = "Katarina", rank: str = "", map_zone_label: str = "") -> str:
     """
     Zwraca sprawdzony, wiralowy tytuł YouTube Shorts dopasowany do standardu kanału Dwannellenga
     oraz aktywnego tonu AI (Hype & High Energy / Storytelling & Clutch / Meme & Casual Gaming).
     """
     champ = champion or "Katarina"
     act = action_type.lower()
+    loc = f" in {map_zone_label}" if map_zone_label else ""
+    loc_prefix = f"{map_zone_label} " if map_zone_label else ""
     
     try:
         from lol_agent.tuning_manager import get_pacing_parameters
@@ -108,6 +110,8 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             f"Pure Mechanics or Enemy Throw? 😱 {champ} Penta #Shorts #LeagueOfLegends #LoL",
             f"This {champ} PENTAKILL is INSANE! 🔥 #Shorts #LeagueOfLegends #LoL",
         ]
+        if map_zone_label:
+            templates.append(f"{champ} {map_zone_label} PENTAKILL RAMPAGE! 💥 Clean Ace #Shorts #LeagueOfLegends #LoL")
     elif "quadra" in act:
         templates = [
             f"Clean Quadra or Pure Luck? 🤔 {champ} 1v4 #Shorts #LeagueOfLegends #LoL",
@@ -122,12 +126,14 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             f"Clean Outplay or Enemy Griefing? 💀 {champ} Triple #Shorts #LeagueOfLegends #LoL",
             f"Rate this Triple Kill 1-10! 🔥 {champ} #Shorts #LeagueOfLegends #LoL",
             f"Triple Kill! They Never Saw {champ} Coming 😈 #Shorts #LeagueOfLegends #LoL",
-            f"They cornered her. Bad idea. Triple Kill! 💥 #Shorts #LeagueOfLegends #LoL",
+            f"They cornered {champ}... Bad idea. Triple Kill! 💥 #Shorts #LeagueOfLegends #LoL",
             f"Late Game Chaos – {champ} Triple Kill 💥 #Shorts #LeagueOfLegends #LoL",
             f"Late Game Teamfight Masterclass – Triple Kill! 🔥 #Shorts #LeagueOfLegends #LoL",
-            f"Their Dive on {champ}? Not Today! 💥 Triple Kill #Shorts #LeagueOfLegends #LoL",
+            f"They Tried To Jump {champ}? Not Today! 💥 Triple Kill #Shorts #LeagueOfLegends #LoL",
             f"Underestimated {champ}? 😈 Triple Kill Outplay 🩸 #Shorts #LeagueOfLegends #LoL",
         ]
+        if map_zone_label:
+            templates.append(f"Clean {map_zone_label} Triple Kill Turnaround! 💥 {champ} #Shorts #LeagueOfLegends #LoL")
     elif "clutch" in act or "1hp" in act or "1%" in act:
         templates = [
             f"Calculated or 100% Luck? 🧠 1% HP {champ} Clutch #Shorts #LeagueOfLegends #LoL",
@@ -142,10 +148,12 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             f"Clean Outplay or Enemy Misplay? 🤔 {champ} 2v1 #Shorts #LeagueOfLegends #LoL",
             f"Rate this 2v1 Double Kill 1-10! 💥 {champ} #Shorts #LeagueOfLegends #LoL",
             f"Clean Double Kill Turnaround! 💥 {champ} Outplay #Shorts #LeagueOfLegends #LoL",
-            f"They Tried a 2v1 Dive on {champ}... Instant Double Kill 💀 #Shorts #LeagueOfLegends #LoL",
+            f"They Tried a 2v1 Gank on {champ}... Instant Double Kill 💀 #Shorts #LeagueOfLegends #LoL",
             f"Two Enemies Down In A Blink ⚡ {champ} Double Kill #Shorts #LeagueOfLegends #LoL",
-            f"Never Dive A Fed {champ}! 💀 Fast Double Kill #Shorts #LeagueOfLegends #LoL",
+            f"Never Fight A Fed {champ}! 💀 Fast Double Kill #Shorts #LeagueOfLegends #LoL",
         ]
+        if map_zone_label:
+            templates.append(f"Clean {map_zone_label} 2v1 Turnaround! 💥 {champ} Double Kill #Shorts #LeagueOfLegends #LoL")
     elif "solo" in act or "bolo" in act or "1v1" in act:
         templates = [
             f"Clean Outplay or 100% Luck? 🤔 {champ} SOLO BOLO #Shorts #LeagueOfLegends #LoL",
@@ -158,6 +166,10 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             f"Nobody Survives {champ} in a 1v1! Clean SOLO BOLO ⚡ #Shorts #LeagueOfLegends #LoL",
             f"SOLO BOLO Turnaround! 🩸 {champ} Duel Masterclass #Shorts #LeagueOfLegends #LoL",
         ]
+        if map_zone_label:
+            templates.insert(0, f"Clean {map_zone_label} SOLO BOLO! 👑 Rate 1-10 👇 #Shorts #LeagueOfLegends #LoL")
+            templates.append(f"Pure {map_zone_label} 1v1 Mechanics or Luck? 😈 {champ} #Shorts #LeagueOfLegends #LoL")
+            templates.append(f"They Challenged {champ} in {map_zone_label}... Instant SOLO BOLO! 💀 #Shorts #LeagueOfLegends #LoL")
     else:  # outplay / general
         templates = [
             f"Clean Outplay or Complete Luck? 🤔 {champ} #Shorts #LeagueOfLegends #LoL",
@@ -169,6 +181,9 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts #LeagueOfLegends #LoL",
             f"Enemy Tried an Outplay... They Got Outplayed. 💀 #Shorts #LeagueOfLegends #LoL",
         ]
+        if map_zone_label:
+            templates.insert(0, f"Clean {map_zone_label} Outplay or Complete Luck? 🤔 {champ} #Shorts #LeagueOfLegends #LoL")
+            templates.append(f"Rate This {champ} {map_zone_label} Play 1-10! 🔥 #Shorts #LeagueOfLegends #LoL")
 
     # Załaduj dynamiczną dyrektywę samouczenia
     winning_kw = []
@@ -181,25 +196,24 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
     except Exception:
         pass
 
-    # Dynamiczne punktowanie szablonów wg historycznego CTR z kanału
-    if winning_kw or avoid_kw:
-        weights = []
-        for t in templates:
-            t_upper = t.upper()
-            score = 1.0
-            for kw in winning_kw:
-                if kw in t_upper:
-                    score += 1.8
-            for akw in avoid_kw:
-                if akw in t_upper:
-                    score = max(0.1, score - 1.2)
-            weights.append(score)
-        return random.choices(templates, weights=weights, k=1)[0]
+    # Dynamiczne punktowanie szablonów wg historycznego CTR z kanału + bonus za zweryfikowaną lokalizację
+    weights = []
+    for t in templates:
+        t_upper = t.upper()
+        score = 1.0
+        if map_zone_label and map_zone_label.upper() in t_upper:
+            score += 6.0  # Silny priorytet dla szablonu ze zweryfikowaną strefą mapy
+        for kw in winning_kw:
+            if kw in t_upper:
+                score += 1.8
+        for akw in avoid_kw:
+            if akw in t_upper:
+                score = max(0.1, score - 1.2)
+        weights.append(score)
+    return random.choices(templates, weights=weights, k=1)[0]
 
-    return random.choice(templates)
 
-
-def build_channel_description(title: str, champion: str = "Katarina", action_type: str = "outplay") -> str:
+def build_channel_description(title: str, champion: str = "Katarina", action_type: str = "outplay", map_zone_label: str = "") -> str:
     """
     Buduje profesjonalny, angażujący opis YouTube z brandingiem kanału Dwannellenga,
     mocnym wezwaniem do subskrypcji i kompletem hashtagów.
@@ -208,10 +222,11 @@ def build_channel_description(title: str, champion: str = "Katarina", action_typ
     act = action_type.lower()
     act_clean = "Solo Bolo" if ("solo" in act or "bolo" in act) else action_type.replace("_", " ").title()
     hashtags = _build_hashtags(champ, action_type)
+    loc_str = f" in {map_zone_label}" if map_zone_label else ""
     
     if "solo" in act or "bolo" in act or "1v1" in act:
         return (
-            f"Pure 1v1 SOLO BOLO mechanics on {champ}! 🎮👑\n"
+            f"Pure 1v1 SOLO BOLO mechanics on {champ}{loc_str}! 🎮👑\n"
             f"They thought they had the duel won... instant ego check and regret.\n\n"
             f"🎮 League of Legends highlights & high-elo plays — Dwannellenga\n"
             f"⚡ New viral shorts and clutch moments every day!\n\n"
@@ -222,7 +237,7 @@ def build_channel_description(title: str, champion: str = "Katarina", action_typ
         )
 
     return (
-        f"Insane {champ} {act_clean} in League of Legends! 🎮🔥\n"
+        f"Insane {champ} {act_clean}{loc_str} in League of Legends! 🎮🔥\n"
         f"They thought they had the fight won, but {champ} turned everything around in seconds.\n\n"
         f"🎮 League of Legends highlights & high-elo plays — Dwannellenga\n"
         f"⚡ New viral shorts and clutch moments every day!\n\n"
@@ -313,10 +328,12 @@ def generate_metadata(
     _zone = _zone_info.get("zone", "unknown")
     _zone_label = _zone_info.get("zone_label", "")
     _zone_conf = float(_zone_info.get("confidence", 0.0))
-    if _zone_label and _zone_conf >= 0.60:
+    valid_zone = _zone_label if _zone_conf >= 0.60 else ""
+
+    if valid_zone:
         map_location_block = (
             f"\nVERIFIED MAP LOCATION (detected from minimap, confidence {_zone_conf:.0%}):\n"
-            f"- Fight happened in: {_zone_label}\n"
+            f"- Fight happened in: {valid_zone}\n"
             f"- You MAY naturally reference this location in the title if it adds value.\n"
             f"  Examples: 'Mid Lane Duel', 'Top Lane Outplay', 'Baron Pit Fight'.\n"
             f"- Do NOT force it if it sounds awkward for this action type."
@@ -326,6 +343,20 @@ def generate_metadata(
             "\nMAP LOCATION: Unknown (minimap detection confidence too low).\n"
             "DO NOT invent or assume any map location."
         )
+
+    # Dodatkowy kontekst przebiegu akcji (kill count, czas trwania, styl walki)
+    _kill_count = _ctx.get("kill_count")
+    _clip_dur = _ctx.get("clip_duration")
+    _combat_style = _ctx.get("combat_style", "")
+
+    action_context_lines = []
+    if _combat_style:
+        action_context_lines.append(f"- Combat Style: {_combat_style}")
+    if _kill_count is not None and _kill_count > 0:
+        action_context_lines.append(f"- Verified Kill Count: {_kill_count}")
+    if _clip_dur:
+        action_context_lines.append(f"- Clip Length: {_clip_dur}s")
+    action_context_block = ("\n" + "\n".join(action_context_lines)) if action_context_lines else ""
 
     # Spróbuj wygenerować z Gemini AI
     if GEMINI_API_KEY:
@@ -343,12 +374,12 @@ CONTEXT:
 - Action Type: {act_clean} ({action_type})
 - Champion: {champ}
 - Rank: {rank}
-- Tone: {title_tone} (high energy, engaging, high-CTR){map_location_block}
+- Tone: {title_tone} (high energy, engaging, high-CTR){action_context_block}{map_location_block}
 
 ACTION-SPECIFIC TITLE RULES (follow STRICTLY based on action_type):
 - pentakill / quadrakill: Focus on the kill count. Words like "RAMPAGE", "WIPED", "CLEAN WIPE" fit.
 - triple: Focus on the triple kill achievement. "TRIPLE KILL", "3 DOWN" style.
-- solo_bolo / 1v1: Focus ONLY on the duel mechanics. Use "SOLO BOLO", "1v1", "EGO CHECK", "DUEL". DO NOT mention dragon, baron, tower, river, jungle.
+- solo_bolo / 1v1: Focus on the 1v1 duel mechanics ("SOLO BOLO", "1v1", "EGO CHECK", "DUEL"). If VERIFIED MAP LOCATION is provided above, you MAY mention that zone (e.g. 'Mid Lane 1v1', 'Top Lane SOLO BOLO'). NEVER mention towers, dives or unverified locations.
 - outplay: Focus on the skill expression. "OUTPLAYED", "MECHANICS", "CLUTCH" style.
 - oneshot: Focus on instant burst. "DELETED", "ONE SHOT", "VAPORIZED" style.
 - clutch: Focus on survival / comeback. "SURVIVED", "ESCAPED", "OUTRUN" style.
@@ -357,7 +388,7 @@ ACTION-SPECIFIC TITLE RULES (follow STRICTLY based on action_type):
 - baron / dragon: You MAY mention the objective (Baron, Dragon) since these are objective fights.
 
 LOCATION RULE — CRITICAL:
-{"Use the VERIFIED MAP LOCATION above naturally if confidence is high." if _zone_label and _zone_conf >= 0.60 else "DO NOT invent or assume map locations (tower, river, dragon pit, jungle) — you have no data about where the fight happened."}
+{"Use the VERIFIED MAP LOCATION above naturally if confidence is high." if valid_zone else "DO NOT invent or assume map locations (tower, river, dragon pit, jungle) — you have no data about where the fight happened."}
 
 CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
 1. WINNING TITLE STRUCTURE: Prioritize '{top_structure}' formula.
@@ -400,7 +431,7 @@ GENERATE JSON ONLY (no markdown fences, raw json):
                         else:
                             gen_desc = raw_desc
                     else:
-                        gen_desc = build_channel_description(gen_title, champ, action_type)
+                        gen_desc = build_channel_description(gen_title, champ, action_type, map_zone_label=valid_zone)
                     gen_pin = data.get("pinned_comment") or build_pinned_comment(champ, action_type)
                     gen_hook = data.get("hook_text") or f"{action_type.upper()}! 💥"
                     raw_tags = [t.lstrip("#").strip() for t in data.get("tags", []) if t.strip()]
@@ -426,8 +457,8 @@ GENERATE JSON ONLY (no markdown fences, raw json):
 
     # Fallback na szablony z wagami CTR kanału
     print(f"   [Fallback] Użyto szablonu kanału z wagami słów kluczowych CTR")
-    title = generate_channel_title(action_type, champ, rank)
-    description = build_channel_description(title, champ, action_type)
+    title = generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone)
+    description = build_channel_description(title, champ, action_type, map_zone_label=valid_zone)
     pinned_comment = build_pinned_comment(champ, action_type)
     
     all_tags = [

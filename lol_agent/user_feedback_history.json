@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "last_updated": "2026-09-07T23:01:38.677440+00:00",
+  "last_updated": "2026-09-07T23:14:26.412967+00:00",
   "total_corrections": 0,
   "total_renders_accepted": 3,
   "total_renders_rejected": 0,
@@ -93,6 +93,8 @@
     "music_dedup_window": "Historia dedup rozszerzona do 7 (bylo 4). Z poolem 5 medium trackow gwarantuje brak powtorzen przez min 5 shortow z rzedu.",
     "title_location_rule": "ZAKAZ wymyslania lokalizacji mapy (tower, river, dragon pit, jungle) w tytulach. Gemini ma zasade: dla solo_bolo/outplay/triple/double trzymac sie akcji bez lokalizacji. Tylko baron/dragon moga miec swoje nazwy.",
     "title_action_mapping": "Kazdy action_type ma dedykowane slowa kluczowe: solo_bolo=SOLO BOLO/EGO CHECK/DUEL, outplay=OUTPLAYED/MECHANICS, oneshot=DELETED/ONE SHOT, clutch=SURVIVED/ESCAPED, pentakill=RAMPAGE/CLEAN WIPE, triple=TRIPLE KILL/3 DOWN.",
-    "youtube_403_block": "YouTube blokuje yt-dlp (HTTP 403) dla wiekszosci NCS trackow bez waznych cookies. cookies.txt istnieje ale DPAPI blokuje --cookies-from-browser. Obejscie: reczne dodanie cookies.txt. Pool 11 MP3 wystarczy przy poprawnej energy map."
+    "youtube_403_block": "YouTube blokuje yt-dlp (HTTP 403) dla wiekszosci NCS trackow bez waznych cookies. cookies.txt istnieje ale DPAPI blokuje --cookies-from-browser. Obejscie: reczne dodanie cookies.txt. Pool 11 MP3 wystarczy przy poprawnej energy map.",
+    "minimap_zone_detection": "Wykrywanie strefy walki na minimapie w klatce peak_moment (lol_minimap_analyzer.py). Gdy confidence >= 60%, strefa (np. Mid Lane, Top Lane, River, Dragon Pit) trafia do promptu Gemini i szablonów fallback. Przy confidence < 60% strefa jest pomijana, a wymyślanie lokalizacji w tytule jest surowo zakazane.",
+    "action_context_definition": "Metadane otrzymuja pelen profil akcji (combat_style, verified kill count, clip duration, minimap zone). Usunieto sztuczne slowa Dive/Under Tower ze szablonow fallback i promptu AI, aby tytuly precyzyjnie odpowiadaly rzeczywistej akcji w klipie."
   }
 }
