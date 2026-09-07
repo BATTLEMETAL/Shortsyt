@@ -271,13 +271,17 @@ def generate_metadata(
     action_type: str,
     champion_name: str = "Katarina",
     rank: str = "Master",
-    language: str = "en"
+    language: str = "en",
+    extra_context: dict = None,
 ) -> dict:
     """
     Główny generator metadanych z dynamicznym wzmocnieniem promptu Gemini (KROK 2).
     Wstrzykuje wygrywające struktury tytułów, słowa kluczowe CTR oraz referencje viralowe
     z learning_directive.json bezpośrednio do promptu AI.
     W przypadku braku API / błędu sieci bezpiecznie przełącza na szablony kanału.
+
+    extra_context: opcjonalny dict z dodatkowym kontekstem, np.:
+        {"map_zone": {"zone": "mid_lane", "zone_label": "Mid Lane", "confidence": 0.82}}
     """
     champ = champion_name or "Katarina"
     act_clean = ACTION_LABELS.get(action_type.lower(), action_type.replace("_", " ").title())
@@ -303,6 +307,26 @@ def generate_metadata(
 
     viral_examples_str = "\n".join([f"- {t}" for t in viral_titles[:4]]) if viral_titles else "- Katarina’s Dragon Pit Rampage – Triple Kill! 💥\n- Enemy Tried to Dive Me 💀 It Went Wrong 😏"
 
+    # Przygotuj kontekst lokalizacji z minimapy (jeśli dostępny)
+    _ctx = extra_context or {}
+    _zone_info = _ctx.get("map_zone", {}) or {}
+    _zone = _zone_info.get("zone", "unknown")
+    _zone_label = _zone_info.get("zone_label", "")
+    _zone_conf = float(_zone_info.get("confidence", 0.0))
+    if _zone_label and _zone_conf >= 0.60:
+        map_location_block = (
+            f"\nVERIFIED MAP LOCATION (detected from minimap, confidence {_zone_conf:.0%}):\n"
+            f"- Fight happened in: {_zone_label}\n"
+            f"- You MAY naturally reference this location in the title if it adds value.\n"
+            f"  Examples: 'Mid Lane Duel', 'Top Lane Outplay', 'Baron Pit Fight'.\n"
+            f"- Do NOT force it if it sounds awkward for this action type."
+        )
+    else:
+        map_location_block = (
+            "\nMAP LOCATION: Unknown (minimap detection confidence too low).\n"
+            "DO NOT invent or assume any map location."
+        )
+
     # Spróbuj wygenerować z Gemini AI
     if GEMINI_API_KEY:
         try:
@@ -319,7 +343,7 @@ CONTEXT:
 - Action Type: {act_clean} ({action_type})
 - Champion: {champ}
 - Rank: {rank}
-- Tone: {title_tone} (high energy, engaging, high-CTR)
+- Tone: {title_tone} (high energy, engaging, high-CTR){map_location_block}
 
 ACTION-SPECIFIC TITLE RULES (follow STRICTLY based on action_type):
 - pentakill / quadrakill: Focus on the kill count. Words like "RAMPAGE", "WIPED", "CLEAN WIPE" fit.
@@ -333,8 +357,7 @@ ACTION-SPECIFIC TITLE RULES (follow STRICTLY based on action_type):
 - baron / dragon: You MAY mention the objective (Baron, Dragon) since these are objective fights.
 
 LOCATION RULE — CRITICAL:
-DO NOT invent or assume map locations (tower, under tower, river, dragon pit, jungle, base) UNLESS the action_type is 'baron' or 'dragon'.
-You do NOT have information about where the fight happened — stick to the action itself.
+{"Use the VERIFIED MAP LOCATION above naturally if confidence is high." if _zone_label and _zone_conf >= 0.60 else "DO NOT invent or assume map locations (tower, river, dragon pit, jungle) — you have no data about where the fight happened."}
 
 CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
 1. WINNING TITLE STRUCTURE: Prioritize '{top_structure}' formula.
@@ -453,9 +476,11 @@ def generate_metadata_universal(
     """
     Universal metadata generator — routes to appropriate profile based on game_type.
     Backward compatible: game_type='lol' → existing generate_metadata() behavior.
+    extra_context: optional dict with additional data, e.g. {"map_zone": {...}}
     """
     if not game_type or game_type == "lol":
-        return generate_metadata(action_type, subject_name or "Katarina", rank)
+        return generate_metadata(action_type, subject_name or "Katarina", rank,
+                                 extra_context=extra_context)
     try:
         from lol_agent.metadata_profiles import generate_metadata_for_game
     except ImportError:

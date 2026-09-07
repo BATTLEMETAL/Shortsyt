@@ -388,6 +388,19 @@ def _run_pipeline(
             _state.qa_score = qa_score
             _state.qa_details = qa_details
 
+        # Krok 1d — Minimap zone detection (kontekst lokalizacji akcji dla tytułu)
+        map_zone_info = {"zone": "unknown", "zone_label": "", "confidence": 0.0}
+        try:
+            from lol_agent.lol_minimap_analyzer import detect_map_zone
+            # peak_moment może być relative (do clip_start) lub absolute — normalizujemy
+            abs_peak = (clip_start + peak_moment) if peak_moment < (clip_end - clip_start + 5) else peak_moment
+            abs_peak = min(abs_peak, clip_end - 0.5)
+            map_zone_info = detect_map_zone(source_path, abs_peak, clip_start)
+            zone_log = f"{map_zone_info.get('zone')} ({map_zone_info.get('confidence', 0):.0%})"
+            _update("Minimap zone detected", 19, f"Strefa akcji: {zone_log}")
+        except Exception as me:
+            _update("Minimap skip", 19, f"Minimap detection pominięta: {me}")
+
         # Krok 2 — render
         _update("Renderowanie klipu", 20, "Uruchamiam render_short...")
 
@@ -450,7 +463,8 @@ def _run_pipeline(
                 game_type=game_type,
                 action_type=action_type,
                 subject_name=champion_name,
-                rank=rank
+                rank=rank,
+                extra_context={"map_zone": map_zone_info},
             )
         except Exception:
             try:
