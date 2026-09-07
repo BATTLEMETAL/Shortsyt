@@ -654,10 +654,11 @@ def upload_video(
     else:
         status_body["privacyStatus"] = privacy
 
-    # Dodaj hashtag #Shorts jeśli go brakuje (algorytm YouTube Shorts tego wymaga)
-    if "#shorts" not in title.lower():
-        if len(title) + 8 <= 100:
-            title = f"{title} #Shorts"
+    # Gwarancja obecności viralowych hashtagów w tytule (#Shorts #LeagueOfLegends #LoL)
+    for req_tag in ["#Shorts", "#LeagueOfLegends", "#LoL"]:
+        if req_tag.lower() not in title.lower():
+            if len(title) + len(req_tag) + 1 <= 98:
+                title = f"{title.rstrip()} {req_tag}"
 
     # Gwarancja obecności bogatych hashtagów w opisie YouTube Shorts
     if "#leagueoflegends" not in description.lower() or description.count("#") < 3:

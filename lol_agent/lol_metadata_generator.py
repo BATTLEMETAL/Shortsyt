@@ -64,12 +64,18 @@ def _build_hashtags(champion: str = "Katarina", action_type: str = "outplay") ->
 
 
 def _ensure_shorts_tag(text: str, champion: str = "Katarina", action_type: str = "outplay") -> str:
-    """Zapewnia obecność tagu #Shorts w tekście (nie dubluje jeśli już istnieje)."""
+    """Zapewnia obecność viralowych hashtagów (#Shorts #LeagueOfLegends #LoL) w tytule."""
     if not text:
-        return "#Shorts"
-    if "#shorts" in text.lower():
-        return text
-    return f"{text.rstrip()} #Shorts"
+        return "#Shorts #LeagueOfLegends #LoL"
+
+    t = text.strip()
+    target_tags = ["#Shorts", "#LeagueOfLegends", "#LoL"]
+    for tag in target_tags:
+        if tag.lower() not in t.lower():
+            if len(t) + len(tag) + 1 <= 96:
+                t = f"{t} {tag}"
+
+    return t
 
 
 def generate_channel_title(action_type: str = "outplay", champion: str = "Katarina", rank: str = "") -> str:
@@ -322,14 +328,14 @@ CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
 3. STRICTLY FORBIDDEN / LOW-CTR WORDS (DO NOT USE): {', '.join(avoid_kw[:6])}
 4. CHANNEL BENCHMARK VIRAL TITLES (Model your style after these top hits):
 {viral_examples_str}
-5. FORMATTING: Title under 70 chars, 1-2 emojis, MUST include #Shorts.
+5. FORMATTING: Title under 65 chars + hashtags, 1-2 emojis, MUST include #Shorts #LeagueOfLegends #LoL.
 6. ENGAGEMENT TRIGGER MANDATE (VITAL TO BREAK PAST 1.5K VIEWS):
    - Title MUST pose a provocative question or challenge (e.g. 'Clean or Luck?', 'Rate 1-10', 'Ego Challenged').
    - Pinned comment MUST ask a fast question requiring a rating (1-10) or short reaction AND end with a like trigger in parentheses (e.g. 'Rate 1-10 👇 (Drop a LIKE if you would have died here 💀)').
 
 GENERATE JSON ONLY (no markdown fences, raw json):
 {{
-  "title": "Provocative/High-CTR Short title with 1-2 emojis ending with #Shorts",
+  "title": "Provocative/High-CTR Short title with 1-2 emojis ending with #Shorts #LeagueOfLegends #LoL",
   "hook_text": "3-4 words punchy overlay in ALL CAPS (e.g. CLEAN OUTPLAY)",
   "description": "Engaging 2-3 sentence description encouraging likes and comments with hashtags #LeagueOfLegends #LoL #{champ.replace(' ', '')} #Shorts",
   "pinned_comment": "Specific rating question 1-10 with an engaging like trigger in parentheses",

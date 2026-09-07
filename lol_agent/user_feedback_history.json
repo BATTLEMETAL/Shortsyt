@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "last_updated": "2026-09-07T22:42:27.911578+00:00",
+  "last_updated": "2026-09-07T22:45:39.696130+00:00",
   "total_corrections": 0,
   "total_renders_accepted": 3,
   "total_renders_rejected": 0,
@@ -67,12 +67,19 @@
       "type": "rule_learned",
       "rule_id": "seo_hashtags",
       "description": "Pelny pakiet 12-18 viralowych hashtagow na koncu opisu Shorts."
+    },
+    {
+      "timestamp": "2026-09-07T22:45:39.696115+00:00",
+      "type": "rule_learned",
+      "rule_id": "title_hashtags",
+      "description": "Tytul Shorts musi konczyc sie viralowymi tagami: #Shorts #LeagueOfLegends #LoL."
     }
   ],
   "learned_rules": {
     "solo_bolo_captions": "W trybie SOLO BOLO (1v1) zakazane sa liczniki multikill (KILL X/Y) oraz banery DOUBLE/TRIPLE/PENTA. Stosowac wylacznie dedykowany baner SOLO BOLO @ peak.",
     "audio_loudnorm": "Muzyka I=-17 LUFS (60%), Gra I=-14 LUFS (85%), sidechain ducking -45%.",
     "camera_kinematics": "SMOOTH_WIN=5, MAX_PAN_PX=80, LERP=0.35, DEADBAND=30px, end_freeze=0.6s.",
-    "seo_hashtags": "Pelny pakiet 12-18 viralowych hashtagow na koncu opisu Shorts."
+    "seo_hashtags": "Pelny pakiet 12-18 viralowych hashtagow na koncu opisu Shorts.",
+    "title_hashtags": "Tytul Shorts musi konczyc sie viralowymi tagami: #Shorts #LeagueOfLegends #LoL."
   }
 }
