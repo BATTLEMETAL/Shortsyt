@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "last_updated": "2026-09-07T22:45:39.696130+00:00",
+  "last_updated": "2026-09-07T23:01:38.677440+00:00",
   "total_corrections": 0,
   "total_renders_accepted": 3,
   "total_renders_rejected": 0,
@@ -73,6 +73,14 @@
       "type": "rule_learned",
       "rule_id": "title_hashtags",
       "description": "Tytul Shorts musi konczyc sie viralowymi tagami: #Shorts #LeagueOfLegends #LoL."
+    },
+    {
+      "timestamp": "2026-09-07T22:49:07.179173+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788821245920_auto.mp4",
+      "action_type": "solo_bolo",
+      "duration": 15.0,
+      "qa_score": 100
     }
   ],
   "learned_rules": {
@@ -80,6 +88,11 @@
     "audio_loudnorm": "Muzyka I=-17 LUFS (60%), Gra I=-14 LUFS (85%), sidechain ducking -45%.",
     "camera_kinematics": "SMOOTH_WIN=5, MAX_PAN_PX=80, LERP=0.35, DEADBAND=30px, end_freeze=0.6s.",
     "seo_hashtags": "Pelny pakiet 12-18 viralowych hashtagow na koncu opisu Shorts.",
-    "title_hashtags": "Tytul Shorts musi konczyc sie viralowymi tagami: #Shorts #LeagueOfLegends #LoL."
+    "title_hashtags": "Tytul Shorts musi konczyc sie viralowymi tagami: #Shorts #LeagueOfLegends #LoL.",
+    "music_energy_pool": "MEDIUM pool ma 5 trackow (cartoon, unknown_brain, different_heaven, alan_walker_fade, alex_skrindo). HIGH ma 5 (elektronomia_sky_high, egzod_royalty, lost_sky_dreams_pt2, robin_hustin_light_it_up, elektronomia_memory). Dedup historia = 7 ostatnich aby uniknac powtorzen.",
+    "music_dedup_window": "Historia dedup rozszerzona do 7 (bylo 4). Z poolem 5 medium trackow gwarantuje brak powtorzen przez min 5 shortow z rzedu.",
+    "title_location_rule": "ZAKAZ wymyslania lokalizacji mapy (tower, river, dragon pit, jungle) w tytulach. Gemini ma zasade: dla solo_bolo/outplay/triple/double trzymac sie akcji bez lokalizacji. Tylko baron/dragon moga miec swoje nazwy.",
+    "title_action_mapping": "Kazdy action_type ma dedykowane slowa kluczowe: solo_bolo=SOLO BOLO/EGO CHECK/DUEL, outplay=OUTPLAYED/MECHANICS, oneshot=DELETED/ONE SHOT, clutch=SURVIVED/ESCAPED, pentakill=RAMPAGE/CLEAN WIPE, triple=TRIPLE KILL/3 DOWN.",
+    "youtube_403_block": "YouTube blokuje yt-dlp (HTTP 403) dla wiekszosci NCS trackow bez waznych cookies. cookies.txt istnieje ale DPAPI blokuje --cookies-from-browser. Obejscie: reczne dodanie cookies.txt. Pool 11 MP3 wystarczy przy poprawnej energy map."
   }
 }

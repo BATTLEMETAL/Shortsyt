@@ -321,6 +321,21 @@ CONTEXT:
 - Rank: {rank}
 - Tone: {title_tone} (high energy, engaging, high-CTR)
 
+ACTION-SPECIFIC TITLE RULES (follow STRICTLY based on action_type):
+- pentakill / quadrakill: Focus on the kill count. Words like "RAMPAGE", "WIPED", "CLEAN WIPE" fit.
+- triple: Focus on the triple kill achievement. "TRIPLE KILL", "3 DOWN" style.
+- solo_bolo / 1v1: Focus ONLY on the duel mechanics. Use "SOLO BOLO", "1v1", "EGO CHECK", "DUEL". DO NOT mention dragon, baron, tower, river, jungle.
+- outplay: Focus on the skill expression. "OUTPLAYED", "MECHANICS", "CLUTCH" style.
+- oneshot: Focus on instant burst. "DELETED", "ONE SHOT", "VAPORIZED" style.
+- clutch: Focus on survival / comeback. "SURVIVED", "ESCAPED", "OUTRUN" style.
+- escape: Focus on the chase / evasion. "ESCAPED", "DODGE", "CHASE FAILED" style.
+- double: Focus on quick back-to-back kills. "2 DOWN", "DOUBLE TAP" style.
+- baron / dragon: You MAY mention the objective (Baron, Dragon) since these are objective fights.
+
+LOCATION RULE — CRITICAL:
+DO NOT invent or assume map locations (tower, under tower, river, dragon pit, jungle, base) UNLESS the action_type is 'baron' or 'dragon'.
+You do NOT have information about where the fight happened — stick to the action itself.
+
 CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
 1. WINNING TITLE STRUCTURE: Prioritize '{top_structure}' formula.
    (Examples: Ego Check / Disrespect / 1v1 Skill Check / Rampage).
@@ -341,6 +356,7 @@ GENERATE JSON ONLY (no markdown fences, raw json):
   "pinned_comment": "Specific rating question 1-10 with an engaging like trigger in parentheses",
   "tags": ["{champ.lower()}", "lol {champ.lower()}", "league of legends", "shorts", "gaming", "outplay"]
 }}"""
+
 
             for model_name in models_to_try:
                 try:

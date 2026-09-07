@@ -93,19 +93,17 @@ ACTION_ENERGY = {
 # Manual energy map — filename → energy level
 # Add new files here after downloading from ncs.io
 MUSIC_ENERGY_MAP = {
-    # ── Already in lol_music/ ─────────────────────────────────────────────
+    # HIGH energy — use for: pentakill, quadrakill, baron, dragon
     "ncs_elektronomia_sky_high.mp3":           "high",
-    "ncs_cartoon_on_and_on.mp3":               "medium",
-
-    # ── Download from ncs.io and add to lol_music/ ───────────────────────
-    # HIGH energy — use for: pentakill, quadrakill, baron
     "ncs_egzod_royalty.mp3":                   "high",
     "ncs_lost_sky_dreams_pt2.mp3":             "high",
     "ncs_robin_hustin_light_it_up.mp3":        "high",
     "ncs_elektronomia_memory.mp3":             "high",
-    "ncs_unknown_brain_superhero.mp3":         "high",
 
-    # MEDIUM energy — use for: triple kill, outplay, clutch, oneshot
+    # MEDIUM energy — use for: triple, outplay, clutch, oneshot, solo_bolo
+    # (unknown_brain is medium in NCS library — corrected from high)
+    "ncs_unknown_brain_superhero.mp3":         "medium",
+    "ncs_cartoon_on_and_on.mp3":               "medium",
     "ncs_different_heaven_my_heart.mp3":       "medium",
     "ncs_alan_walker_fade.mp3":                "medium",
     "ncs_alex_skrindo_euphoria.mp3":           "medium",
@@ -190,9 +188,9 @@ def pick_music_for_action(action_type: str = "outplay", preferred_track: Optiona
     chosen = random.choice(music_files)
     chosen_name = os.path.basename(chosen)
 
-    # Zapisz historię (max 4 ostatnie utwory)
+    # Zapisz historię (max 7 ostatnich utworów — większy pool = lepsza rotacja)
     try:
-        updated_history = (recent_tracks + [chosen_name])[-4:]
+        updated_history = (recent_tracks + [chosen_name])[-7:]
         with open(last_track_file, "w", encoding="utf-8") as f:
             f.write("\n".join(updated_history))
     except Exception:
