@@ -724,23 +724,30 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
         excl[670:, :345] = False                                     # Chat i portret
         excl[:, :100] = False                                        # Lewy margines
         excl[:, 1720:] = False                                       # Prawy margines / Outplayed watermark
+        excl[:450, 1540:] = False                                    # Portrety sojuszników HUD (prawe skrzydło)
 
-        # KROK 1: Wykrycie paska gracza + centroid wrogów na każdej klatce
+        # KROK 1: Wykrycie paska gracza (zielony - standardowy, złoty - colorblind) + centroid wrogów
         frames_data = []
         for i in range(len(frames)):
             f = frames[i].astype(np.int16)
             r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
 
+            # 1. Złoty pasek gracza (Colorblind mode)
             gold_mask = ((r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)) & excl
-            num_g, _, stats_g, _ = cv2.connectedComponentsWithStats(gold_mask.astype(np.uint8))
+            # 2. Zielony pasek gracza (Standardowy tryb LoL - najczęstszy)
+            green_mask = ((g > 130) & (r < 125) & (b < 120) & ((g - r) > 20) & ((g - b) > 25)) & excl
+
+            player_mask = (gold_mask | green_mask).astype(np.uint8)
+            num_p, _, stats_p, centroids_p = cv2.connectedComponentsWithStats(player_mask)
 
             hp_bars = []
-            for comp_i in range(1, num_g):
-                cx, cy, cw, ch, area = stats_g[comp_i]
+            for comp_i in range(1, num_p):
+                cx, cy, cw, ch, area = stats_p[comp_i]
                 asp = cw / max(ch, 1)
-                # Czuły filtr paska HP gracza (obejmuje low HP i spinnig ult)
-                if cw >= 14 and 3 <= ch <= 16 and 2.0 <= asp <= 20.0 and area >= 30:
-                    hp_bars.append((cx, cy, cw, ch, area * asp))
+                # Pasek HP bohatera ma przynajmniej 5px wysokości i 18px szerokości w 1080p (odrzucamy cienkie linie wież/terenu)
+                if cw >= 18 and 5 <= ch <= 18 and 2.0 <= asp <= 15.0 and area >= 45:
+                    cen_x = float(centroids_p[comp_i][0])
+                    hp_bars.append((cx, cy, cw, ch, area * asp, cen_x))
 
             # Zbierz centroid wrogich HP barów (czerwone) — Combat Centroid Fallback
             red_mask = ((r > 150) & (g < 95) & (b < 85) & ((r - g) > 60) & ((r - b) > 70)) & excl
@@ -763,14 +770,14 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
         for hp_b, _ in frames_data:
             if hp_b:
                 hp_b.sort(key=lambda c: -c[4])
-                first_x = float(hp_b[0][0])
+                first_x = float(hp_b[0][5])
                 break
 
         # KROK 3: Płynne śledzenie gracza z Combat Centroid Fallback
         # ── Parametry płynności (Kinowa stabilizacja) ────────────────────────
         LERP_ALPHA    = 0.35   # responsywne doganianie gracza (CONTEXT_PRIME v32)
-        MAX_PAN_PX    = 80     # max przesunięcie [px] na próbkę (było 25 → za wolne dla <15s klipów)
-        SNAP_DELTA    = 280    # powyżej tej różnicy → natychmiastowy snap (Flash/Shunpo)
+        MAX_PAN_PX    = 80     # max przesunięcie [px] na próbkę
+        SNAP_DELTA    = 280    # powyżej tej różnicy → natychmiastowy snap (Flash/Shunpo/Jump-cut)
         DEADBAND_PX   = 30.0   # mikro-ruchy gracza wewnątrz 30px nie ruszają kamery
         # ─────────────────────────────────────────────────────────────────────
 
@@ -784,13 +791,13 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
                 champ_detected += 1
                 invisible_streak = 0
                 # Wybierz pasek gracza najbliższy aktualnej trajektorii
-                hp_b.sort(key=lambda c: c[4] - 0.8 * abs(c[0] - track_x), reverse=True)
-                player_target_x = float(hp_b[0][0])
+                hp_b.sort(key=lambda c: c[4] - 0.8 * abs(c[5] - track_x), reverse=True)
+                player_target_x = float(hp_b[0][5])
                 target_x = player_target_x
 
                 delta = abs(target_x - track_x)
                 if delta > SNAP_DELTA:
-                    # Gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
+                    # Gwałtowny doskok / Flash / Shunpo / Jump-cut: natychmiastowy snap
                     track_x = target_x
                 elif delta < DEADBAND_PX:
                     # Wewnątrz strefy martwej — kamera stabilna jak na statywie, zero drgań
@@ -800,6 +807,11 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
                     desired = LERP_ALPHA * target_x + (1.0 - LERP_ALPHA) * track_x
                     move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
                     track_x = track_x + move
+            elif enemy_cx is not None and invisible_streak > 3:
+                invisible_streak += 1
+                desired = LERP_ALPHA * float(enemy_cx) + (1.0 - LERP_ALPHA) * track_x
+                move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
+                track_x = track_x + move
             else:
                 invisible_streak += 1
                 # Gdy gracz niewidoczny, kamera utrzymuje pozycję zamiast dryfować
