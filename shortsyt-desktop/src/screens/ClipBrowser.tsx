@@ -20,6 +20,16 @@ const ACTION_TYPES = [
   { id: "outplay", label: "OUTPLAY / 1v3 🧠", hook: "NOBODY EXPECTED THIS 🎯" },
   { id: "clutch", label: "CLUTCH 1% HP 💀", hook: "1% HP CLUTCH 💀" },
 ];
+
+const GAME_OPTIONS = [
+  { id: "lol", label: "League of Legends", icon: "⚔️" },
+  { id: "valorant", label: "Valorant", icon: "🎯" },
+  { id: "cs2", label: "CS2", icon: "💥" },
+  { id: "fortnite", label: "Fortnite", icon: "🏗️" },
+  { id: "generic", label: "Inna Gra", icon: "🎮" },
+  { id: "product_ad", label: "Reklama / Ad", icon: "📦" },
+];
+
 type AutoStage = "idle" | "selected" | "detecting" | "launching" | "done" | "error";
 
 export default function ClipBrowser() {
@@ -30,6 +40,8 @@ export default function ClipBrowser() {
   const [search, setSearch] = useState("");
   const [selectedFolder, setSelectedFolder] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [gameType, setGameType] = useState<string>("lol");
+
 
   // Auto
   const [autoClip, setAutoClip] = useState<ClipItem | null>(null);
@@ -79,7 +91,9 @@ export default function ClipBrowser() {
     try {
       detected = await apiAutoDetectClip({ source_path: clip.path || clip.filename });
       setAutoResult(detected);
-    } catch { }
+    } catch (e: any) {
+      console.warn("[AutoDetect] Error during auto-detect:", e);
+    }
     setAutoStage("launching");
     const outFile = `short_${Date.now()}_auto.mp4`;
     try {
@@ -91,13 +105,15 @@ export default function ClipBrowser() {
         champion_name: champion || "Katarina",
         rank: "Master",
         peak_moment: detected?.peak_moment ?? 8,
-        hook_text: detected?.hook_text ?? "INSANE OUTPLAY! 🔥",
+        hook_text: detected?.hook_text ?? "INSANE OUTPLAY!",
         output_filename: outFile,
         use_speed_ramp: true,
         use_zoom_punch: true,
         use_smart_camera: true,
         combat_segments: (detected?.action_type === "solo_bolo") ? null : (detected?.combat_segments ?? null),
+        game_type: gameType,
       });
+
       setAutoStage("done");
       setTimeout(() => navigate("/render"), 800);
     } catch (err: any) {
@@ -159,7 +175,9 @@ export default function ClipBrowser() {
         peak_moment: Number(peakMoment), hook_text: hookText, output_filename: outFile,
         use_speed_ramp: useSpeedRamp, use_zoom_punch: useZoomPunch, use_smart_camera: useSmartCamera,
         combat_segments: actionType === 'solo_bolo' ? null : combatSegments,
+        game_type: gameType,
       });
+
       navigate("/render");
     } catch (err: any) {
       setSubmitError(err.response?.data?.detail || err.message || "Blad renderu");
@@ -413,7 +431,32 @@ export default function ClipBrowser() {
                 ))}
               </div>
             </div>
+
+            {/* Wybor Gry / Profilu */}
+            <div className="p-3.5 rounded-xl bg-[#0A0E1A] border border-[#1E2438] space-y-2">
+
+              <label className="text-xs font-bold text-[#8B8FA8] uppercase tracking-wider block">Gra / Profil Treści:</label>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {GAME_OPTIONS.map(g => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setGameType(g.id)}
+                    className={`py-2 px-2 rounded-lg border text-center transition-all text-xs font-bold flex flex-col items-center gap-1 ${
+                      gameType === g.id
+                        ? "bg-[#C89B3C]/20 border-[#C89B3C] text-[#E4D6B5] shadow-sm"
+                        : "bg-[#121624] border-[#1E2438] text-[#8B8FA8] hover:border-[#C89B3C]/40 hover:text-white"
+                    }`}
+                  >
+                    <span className="text-base">{g.icon}</span>
+                    <span className="text-[10px] truncate w-full">{g.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
               <div>
                 <label className="text-xs font-bold text-[#8B8FA8] block mb-1.5">Bohater:</label>
                 <select value={champion} onChange={e=>setChampion(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-[#0A0E1A] border border-[#1E2438] text-xs font-bold text-[#E4D6B5] focus:outline-none focus:border-[#C89B3C]">

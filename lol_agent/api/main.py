@@ -443,16 +443,28 @@ async def auto_detect_clip(req: AutoDetectRequest, payload: dict = Depends(verif
             Path(r"C:\Users\mz100\Videos\Overwolf\Outplayed\League of Legends"),
             Path(r"C:\Medal\Edits"),
         ]
+        target_name = Path(source_path).name
+        found = None
         for search_dir in candidate_dirs:
             if not search_dir.exists():
                 continue
-            for ext in ["*.mp4", "*.mov", "*.mkv", "*.avi"]:
-                for candidate in search_dir.rglob(ext):
-                    if candidate.name == source_path or candidate.name == Path(source_path).name:
-                        source_path = str(candidate.resolve())
-                        break
-                if Path(source_path).exists() and Path(source_path).is_absolute():
-                    break
+            cand = search_dir / target_name
+            if cand.is_file():
+                found = str(cand.resolve())
+                break
+            try:
+                for entry in os.scandir(search_dir):
+                    if entry.is_dir():
+                        sub_cand = Path(entry.path) / target_name
+                        if sub_cand.is_file():
+                            found = str(sub_cand.resolve())
+                            break
+            except Exception:
+                pass
+            if found:
+                break
+        if found:
+            source_path = found
 
     if not Path(source_path).exists():
         raise HTTPException(status_code=404, detail=f"Plik źródłowy nie istnieje: {source_path}")
@@ -471,13 +483,12 @@ async def auto_detect_clip(req: AutoDetectRequest, payload: dict = Depends(verif
     except ImportError:
         from lol_frag_detector import analyze_clip_frags, compute_optimal_clip_window
 
-    # OCR jest CPU-bound i może trwać 30-60s — uruchamiamy w thread pool
-    # żeby nie blokować HTTP event loop i nie wywoływać timeout po stronie klienta
+    # OCR jest CPU-bound — sample_fps=1.0 wykonuje skan 40s klipu w ~2-3s
     try:
         loop = asyncio.get_event_loop()
         frag_res = await loop.run_in_executor(
             None,
-            lambda: analyze_clip_frags(source_path, sample_fps=2.0)
+            lambda: analyze_clip_frags(source_path, sample_fps=1.0)
         )
         detected_action = frag_res.detected_frag_type or "outplay"
         clip_start, clip_end, peak_moment, combat_segs = compute_optimal_clip_window(
@@ -502,15 +513,15 @@ async def auto_detect_clip(req: AutoDetectRequest, payload: dict = Depends(verif
 
     # Dobierz sugestię hook_text
     HOOK_MAP = {
-        "pentakill": "PENTAKILL! 💥",
-        "quadrakill": "QUADRA KILL! ⚡",
-        "triple": "TRIPLE KILL! 🔥",
-        "double": "DOUBLE KILL! ⚔️",
-        "clutch": "1% HP CLUTCH! 💀",
-        "solo_bolo": "SOLO BOLO! 👑",
-        "outplay": "CZY TO JEST MOŻLIWE? 😱",
+        "pentakill": "PENTAKILL!",
+        "quadrakill": "QUADRA KILL!",
+        "triple": "TRIPLE KILL!",
+        "double": "DOUBLE KILL!",
+        "clutch": "1% HP CLUTCH!",
+        "solo_bolo": "SOLO BOLO!",
+        "outplay": "CZY TO JEST MOZLIWE?",
     }
-    hook_text = HOOK_MAP.get(detected_action, f"{detected_action.upper().replace('_', ' ')}! 💥")
+    hook_text = HOOK_MAP.get(detected_action, f"{detected_action.upper().replace('_', ' ')}!")
 
     return {
         "clip_start": clip_start,

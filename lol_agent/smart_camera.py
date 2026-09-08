@@ -513,7 +513,7 @@ def detect_kill_events(video_path: str,
         except ImportError:
             from lol_frag_detector import analyze_clip_frags
 
-        frag_res = analyze_clip_frags(video_path, sample_fps=3.0)
+        frag_res = analyze_clip_frags(video_path, sample_fps=1.0)
         ocr_kills = []
         for k in frag_res.kills:
             raw_t = k.get("timestamp", 0.0)

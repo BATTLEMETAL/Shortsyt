@@ -146,19 +146,17 @@ def _scan_ocr_for_kills(frame: np.ndarray) -> Tuple[int, str, bool]:
         red_cnt = cv2.countNonZero(mask_red)
         blue_cnt = cv2.countNonZero(mask_blue)
 
-        # Jeśli brak wyraźnych pikseli napisów, pomiń
-        if (gold_cnt + white_cnt + red_cnt + blue_cnt) < 50:
+        # Pre-filter: Sprawdź czy są jakiekolwiek piksele tekstu (złote lub białe napisy banera)
+        # Oszczędza 75% czasu OCR przez pomijanie pustych klatek
+        if (gold_cnt + white_cnt) < 40:
             continue
-
-        # Czerwony baner = akcja wroga lub śmierć gracza -> ODRZUĆ
-        is_enemy_banner = (red_cnt > (gold_cnt + white_cnt) * 1.5) and red_cnt > 150
 
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 175, 255, cv2.THRESH_BINARY)
         thresh_up = cv2.resize(thresh, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
 
         text = ""
-        for psm in (6, 11, 7):
+        for psm in (6, 7):
             try:
                 text = pytesseract.image_to_string(thresh_up, config=f"--psm {psm} --oem 1").strip().lower()
                 if text:
@@ -174,27 +172,29 @@ def _scan_ocr_for_kills(frame: np.ndarray) -> Tuple[int, str, bool]:
             return 0, "PLAYER_DEATH", False
 
         # ── 2. FILTR MULTIKILLI WROGÓW ──
-        if is_enemy_banner or re.search(r'(?:enemy\s*penta|enemy\s*quadra|enemy\s*triple|enemy\s*double|an\s*ally\s*has\s*been\s*slain)', text):
+        # Baner multikilla wroga zawiera słowo 'enemy' bezpośrednio przed kill/penta/itp.
+        # UWAGA: NIE odrzucamy przez sam red_cnt, bo banery gracza (zwłaszcza Double/Triple) oraz spelle mają czerwone akcenty!
+        if re.search(r'(?:enemy\s*(?:penta|quadra|triple|double|kill)|an\s*ally\s*has\s*been\s*slain)', text):
             return 0, "ENEMY_KILL", False
 
         # ── 3. FILTR FRAGÓW SOJUSZNIKÓW (TEAMMATE KILLS) ──
-        # Komunikat 'an ally has scored' lub 'an enemy has been slain' oznacza, że to nie gracz zdobył frag/multikill
+        # Komunikat 'an ally has scored' lub 'an enemy has been slain' oznacza, że to sojusznik zdobył frag
         if re.search(r'an\s*ally\s*has\s*scored', text):
             return 0, "ALLY_MULTIKILL", False
         if re.search(r'an\s*enemy\s*has\s*been\s*slain', text) and not re.search(r'\+(?:300|150|1000)', text):
             return 0, "ALLY_KILL", False
 
         # ── 4. POTWIERDZONE WŁASNE FRAGI GRACZA (PLAYER KILLS) ──
-        # Złoty baner lub wyraźny komunikat PENTAKILL / QUADRA / TRIPLE / DOUBLE / YOU HAVE SLAIN
+        # Złoty baner lub wyraźny komunikat PENTAKILL / QUADRA / TRIPLE / DOUBLE / RAMPAGE / YOU HAVE SLAIN
         if re.search(r'penta(?:kill|kut|kit|kil|\s*kill)?', text):
             return 5, "PENTAKILL", True
         if re.search(r'quadra(?:kill|kut|kit|kil|\s*kill)?', text):
             return 4, "QUADRAKILL", True
-        if re.search(r'triple(?:kill|kut|kit|kil|\s*kill)?', text):
+        if re.search(r'tri[pbl][rl]e?(?:kill|kut|kit|kil|\s*kill)?|trie[re]\s*ki|rripre', text):
             return 3, "TRIPLE KILL", True
-        if re.search(r'double(?:kill|kut|kit|kil|\s*kill)?', text):
+        if re.search(r'dou[brv][bl]e?(?:kill|kut|kit|kil|\s*kill)?|doue?le\s*ki', text):
             return 2, "DOUBLE KILL", True
-        if re.search(r'shut\s*down|shutdown|legendary|godlike|unstoppable', text):
+        if re.search(r'ram[pn]a[gc]e|is\s*on\s*a\s*ram|kill(?:ing)?\s*spree|shut\s*down|shutdown|legendary|godlike|unstoppable', text):
             return 1, "OUTPLAY", True
         if re.search(r'(?:you\s*have\s*slain|\+300|\+150|\+1000)', text):
             return 1, "KILL", True
@@ -214,22 +214,22 @@ def find_solo_bolo_window(
       - Cała walka bez żadnych cięć (bez jump-cut).
       - Długość: idealnie 15.0s (złoty standard Shorts).
     """
-    # Jeśli kill jest w pierwszych 14.5 sekundach klipu:
-    # Akcja rozpoczyna się od samego początku — bierzemy dokładnie pierwsze 15 sekund bez wycinania!
-    if kill_t <= 14.5:
+    # Jeśli kill jest w pierwszych 5.5 sekundach klipu:
+    # Akcja rozpoczyna się od samego początku
+    if kill_t <= 5.5:
         start_t = 0.0
         end_t = min(round(total_dur, 1), 15.0)
         peak_moment = max(1.0, round(kill_t, 1))
         return start_t, end_t, peak_moment
 
     if not video_path or not os.path.exists(video_path):
-        start_t = max(0.0, round(kill_t - 12.0, 1))
+        start_t = max(0.0, round(kill_t - 6.0, 1))
         end_t = min(round(total_dur, 1), round(kill_t + 2.5, 1))
         return start_t, end_t, max(1.0, round(kill_t - start_t, 1))
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        start_t = max(0.0, round(kill_t - 12.0, 1))
+        start_t = max(0.0, round(kill_t - 6.0, 1))
         end_t = min(round(total_dur, 1), round(kill_t + 2.5, 1))
         return start_t, end_t, max(1.0, round(kill_t - start_t, 1))
 
@@ -265,16 +265,16 @@ def find_solo_bolo_window(
     if engage_t is not None:
         start_t = max(0.0, round(engage_t - 1.5, 1))
     else:
-        start_t = max(0.0, round(kill_t - 12.0, 1))
+        start_t = max(0.0, round(kill_t - 5.5, 1))
 
-    # Jeśli start wypada blisko początku (<= 4.0s), bierzemy od 0.0s
-    if start_t <= 4.0:
+    # Tylko jeśli start wypada bardzo blisko początku (<= 1.5s), bierzemy od 0.0s
+    if start_t <= 1.5:
         start_t = 0.0
 
     end_t = min(round(total_dur, 1), round(kill_t + 2.5, 1))
     dur = end_t - start_t
-    if dur > 16.0:
-        start_t = max(0.0, round(end_t - 15.0, 1))
+    if dur > 20.0:
+        start_t = max(0.0, round(end_t - 20.0, 1))
 
     peak_moment = max(1.0, round(kill_t - start_t, 1))
     return round(start_t, 1), round(end_t, 1), peak_moment
@@ -332,22 +332,19 @@ def compute_optimal_clip_window(
         if current:
             clusters.append(current)
 
-        # Jeśli mamy co najmniej 2 klastry i przerwa między nimi wynosi > 3.5s
-        # generujemy segmenty Jump-Cut (wycinamy martwy bieg pomiędzy walkami)
-        if len(clusters) >= 2:
+        # Jeśli całkowity czas walki (od engage do outro) mieści się w limicie (max_dur + 2.0s),
+        # montujemy jako jedną płynną, ciągłą akcję bez cięć
+        total_span = (real_kills[-1]["timestamp"] + max(outro, 2.0)) - (real_kills[0]["timestamp"] - max(4.5, buildup * 4.0))
+        if len(clusters) >= 2 and total_span > (max_dur + 2.0):
             segments = []
-            # Bufor wejścia w walkę (doskok / engage / Shunpo):
-            # Baner killa pojawia się z opóźnieniem (~1s po śmierci, a sama walka trwa 2-3s wcześniej).
-            # Aby widz widział fizyczny doskok do wrogów, a nie tylko ciało i bounty,
-            # potrzebujemy min. 3.2s-3.5s przed banerem pierwszego killa w segmencie.
             engage_lead = max(3.5, buildup * 2.5)
 
             for i, c in enumerate(clusters):
                 c_start = c[0]["timestamp"]
                 c_end = c[-1]["timestamp"]
                 if i == 0:
-                    s = max(0.0, round(c_start - max(1.2, buildup), 1))
-                    e = round(c_end + 1.2, 1)
+                    s = max(0.0, round(c_start - max(4.5, buildup * 3.5), 1))
+                    e = round(c_end + 1.5, 1)
                 elif i == len(clusters) - 1:
                     s = max(0.0, round(c_start - engage_lead, 1))
                     e = min(round(total_dur, 1), round(c_end + max(outro, 2.0), 1))
@@ -356,10 +353,10 @@ def compute_optimal_clip_window(
                     e = round(c_end + 1.2, 1)
                 segments.append((s, e))
 
-            # Scal jeśli któryś segment nachodzi na sąsiedni
+            # Scal jeśli któryś segment nachodzi lub przerwa wynosi <= 1.5s (brak mikro-cięć)
             merged_segs = [segments[0]]
             for s, e in segments[1:]:
-                if s <= merged_segs[-1][1]:
+                if s <= (merged_segs[-1][1] + 1.5):
                     merged_segs[-1] = (merged_segs[-1][0], max(merged_segs[-1][1], e))
                 else:
                     merged_segs.append((s, e))
@@ -388,24 +385,54 @@ def compute_optimal_clip_window(
 
         # Aby widz widział całą walkę, wejście w starcie, skillshoty i wymianę ciosów (a nie tylko last-hit):
         # Bufor przed pierwszym fragiem wynosi min. 4.5s - 5.5s
-        lead_in = max(4.5, buildup * 4.0)
-        start = max(0.0, round(first_k - lead_in, 1))
-        end = min(round(total_dur, 1), round(last_k + outro, 1))
+        start = max(0.0, round(first_k - max(4.5, buildup * 3.5), 1))
+        end = min(round(total_dur, 1), round(last_k + max(outro, 2.0), 1))
 
-        # Jeśli klip jest za długi (> max_dur):
-        if end - start > max_dur:
+        # Dla pojedynczego killa: jeśli klip przekracza max_dur, delikatnie przytnij setup
+        if len(real_kills) <= 1 and (end - start) > max_dur:
             start = max(0.0, round(end - max_dur, 1))
+        elif (end - start) > 35.0:
+            # Nawet dla długich multikilli nie przekraczamy 35s, ale dbamy by nie uciąć pierwszego killa
+            max_span = 35.0
+            start = max(0.0, min(round(first_k - 2.5, 1), round(end - max_span, 1)))
 
         # Jeśli klip jest za krótki (< min_dur):
         if end - start < min_dur:
             needed = min_dur - (end - start)
-            # Rozszerzamy głównie w lewo (w stronę wejścia w walkę / setupu)
             start = max(0.0, round(start - needed * 0.75, 1))
             end = min(round(total_dur, 1), round(end + needed * 0.25, 1))
 
         peak_moment = max(1.0, round(last_k - start, 1))
         return start, end, peak_moment, None
     else:
+        # ── BRAK WYKRYTYCH KILLI PRZEZ OCR ──
+        # Nie bierzemy ślepo początku lub końca — wykrywamy realną walkę przez analizę wrogich pasków HP
+        try:
+            from lol_agent.lol_quality_validator import _check_enemy_combat_in_frame
+            cap = cv2.VideoCapture(frag_res.video_path)
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            combat_ts = []
+            for t in np.arange(0.0, total_dur, 0.75):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
+                ret, fr = cap.read()
+                if not ret: break
+                has_c, px, _ = _check_enemy_combat_in_frame(fr)
+                if has_c and px >= 3500:
+                    combat_ts.append(t)
+            cap.release()
+
+            if combat_ts:
+                start = max(0.0, round(combat_ts[0] - 1.5, 1))
+                end = min(round(total_dur, 1), round(combat_ts[-1] + 2.0, 1))
+                # Jeśli walka przekracza 25s, przytnij zachowując engage
+                if end - start > 25.0:
+                    end = min(round(total_dur, 1), round(start + 22.0, 1))
+                peak_moment = max(1.0, round((end - start) * 0.65, 1))
+                print(f"   [FragDetector] Okno wyznaczone przez wizualną analizę walki: {start:.1f}s - {end:.1f}s")
+                return start, end, peak_moment, None
+        except Exception:
+            pass
+
         end = max(5.0, round(total_dur - 1.0, 1))
         start = max(0.0, round(end - max_dur, 1))
         peak_moment = max(1.0, round(end - start - outro, 1))
@@ -414,7 +441,7 @@ def compute_optimal_clip_window(
 
 
 
-def analyze_clip_frags(video_path: str, sample_fps: float = 3.0) -> FragAnalysisResult:
+def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysisResult:
     """
     Główna funkcja auto-detektora: skanuje wideo i zwraca dokładną klasyfikację fraga.
     """
@@ -562,14 +589,14 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 3.0) -> FragAnalysis
         detected_type = "double"
         badge = "DOUBLE KILL"
         color = "#06b6d4"  # Turkusowy
-        hook = "Clean Double Kill ⚔️"
+        hook = "Clean Double Kill"
         conf = 0.85
     elif len(kills_detected) <= 1 and max_kill_tier <= 1 and not is_clutch:
         # Solo Kill / Solo Bolo: 1v1 eliminacja (dokładnie 1 frag lub brak banerów multi-kill)
         detected_type = "solo_bolo"
-        badge = "SOLO BOLO 👑"
+        badge = "SOLO BOLO"
         color = "#FF1744"  # Neonowa czerwień
-        hook = "Clean Solo Bolo – 1v1 Masterclass 👑"
+        hook = "Clean Solo Bolo - 1v1 Masterclass"
         conf = 0.88
     else:
         detected_type = "outplay"

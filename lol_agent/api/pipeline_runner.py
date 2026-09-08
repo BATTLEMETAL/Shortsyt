@@ -152,17 +152,25 @@ def _run_pipeline(
                 Path(r"C:\Users\mz100\Videos\Overwolf\Outplayed\League of Legends"),
                 Path(r"C:\Medal\Edits"),
             ]
+            target_name = Path(source_path).name
             found_path = None
             for search_dir in candidate_dirs:
                 if not search_dir.exists():
                     continue
-                for ext in ["*.mp4", "*.mov", "*.mkv", "*.avi"]:
-                    for candidate in search_dir.rglob(ext):
-                        if candidate.name == source_path or candidate.name == Path(source_path).name:
-                            found_path = str(candidate.resolve())
-                            break
-                    if found_path:
-                        break
+                cand = search_dir / target_name
+                if cand.is_file():
+                    found_path = str(cand.resolve())
+                    break
+                try:
+                    import os
+                    for entry in os.scandir(search_dir):
+                        if entry.is_dir():
+                            sub_cand = Path(entry.path) / target_name
+                            if sub_cand.is_file():
+                                found_path = str(sub_cand.resolve())
+                                break
+                except Exception:
+                    pass
                 if found_path:
                     break
 
@@ -180,6 +188,40 @@ def _run_pipeline(
         # Sprawdź czy plik istnieje
         if not Path(source_path).exists():
             raise FileNotFoundError(f"Plik źródłowy nie istnieje: {source_path}")
+
+        # Safeguard: Sprawdź rzeczywistą długość wideo
+        import cv2
+        cap = cv2.VideoCapture(source_path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+        src_total_dur = frame_count / fps if fps > 0 else 30.0
+        cap.release()
+
+        # Jeśli przekazano domyślne okno (clip_start == 0.0 i clip_end <= 15.0), a klip ma > 20s:
+        # Sprawdzamy czy akcja nie toczy się w dalszej części wideo, aby nie uciąć walki ani nie wyrenderować samego biegania!
+        if src_total_dur > 20.0 and clip_start == 0.0 and clip_end <= 15.0:
+            _update("Weryfikacja okna akcji", 7, f"Klip trwa {src_total_dur:.1f}s — sprawdzam pozycję akcji...")
+            try:
+                from lol_agent.lol_frag_detector import analyze_clip_frags, compute_optimal_clip_window
+                f_res = analyze_clip_frags(source_path, sample_fps=1.0)
+                if f_res.kills:
+                    auto_s, auto_e, auto_p, auto_segs = compute_optimal_clip_window(f_res, src_total_dur, action_type=action_type)
+                    if auto_s > 2.0 or (auto_e - auto_s) > (clip_end - clip_start):
+                        _update("Autocentrowanie na akcję", 8, f"Wykryto kille poza oknem początkowym! Przesuwam na {auto_s:.1f}s - {auto_e:.1f}s")
+                        clip_start = auto_s
+                        clip_end = auto_e
+                        peak_moment = auto_p
+                        if auto_segs and action_type.lower() not in ("solo_bolo", "solo", "1v1"):
+                            combat_segments = auto_segs
+                        if f_res.detected_frag_type:
+                            action_type = f_res.detected_frag_type
+                        with _lock:
+                            _state.clip_start = clip_start
+                            _state.clip_end = clip_end
+                            _state.combat_segments = combat_segments
+                            _state.action_type = action_type
+            except Exception as auto_ex:
+                print(f"[pipeline_runner] Auto-centering warning: {auto_ex}")
 
         # Import tutaj żeby uniknąć circular import
         try:

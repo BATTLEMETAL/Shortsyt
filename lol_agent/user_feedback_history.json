@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "last_updated": "2026-09-07T23:14:26.412967+00:00",
+  "last_updated": "2026-09-08T13:28:22.188243+00:00",
   "total_corrections": 0,
   "total_renders_accepted": 3,
   "total_renders_rejected": 0,
@@ -81,6 +81,14 @@
       "action_type": "solo_bolo",
       "duration": 15.0,
       "qa_score": 100
+    },
+    {
+      "timestamp": "2026-09-08T13:28:22.188230+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788873975393_auto.mp4",
+      "action_type": "outplay",
+      "duration": 6.0,
+      "qa_score": 100
     }
   ],
   "learned_rules": {
@@ -95,6 +103,7 @@
     "title_action_mapping": "Kazdy action_type ma dedykowane slowa kluczowe: solo_bolo=SOLO BOLO/EGO CHECK/DUEL, outplay=OUTPLAYED/MECHANICS, oneshot=DELETED/ONE SHOT, clutch=SURVIVED/ESCAPED, pentakill=RAMPAGE/CLEAN WIPE, triple=TRIPLE KILL/3 DOWN.",
     "youtube_403_block": "YouTube blokuje yt-dlp (HTTP 403) dla wiekszosci NCS trackow bez waznych cookies. cookies.txt istnieje ale DPAPI blokuje --cookies-from-browser. Obejscie: reczne dodanie cookies.txt. Pool 11 MP3 wystarczy przy poprawnej energy map.",
     "minimap_zone_detection": "Wykrywanie strefy walki na minimapie w klatce peak_moment (lol_minimap_analyzer.py). Gdy confidence >= 60%, strefa (np. Mid Lane, Top Lane, River, Dragon Pit) trafia do promptu Gemini i szablonów fallback. Przy confidence < 60% strefa jest pomijana, a wymyślanie lokalizacji w tytule jest surowo zakazane.",
-    "action_context_definition": "Metadane otrzymuja pelen profil akcji (combat_style, verified kill count, clip duration, minimap zone). Usunieto sztuczne slowa Dive/Under Tower ze szablonow fallback i promptu AI, aby tytuly precyzyjnie odpowiadaly rzeczywistej akcji w klipie."
+    "action_context_definition": "Metadane otrzymuja pelen profil akcji (combat_style, verified kill count, clip duration, minimap zone). Usunieto sztuczne slowa Dive/Under Tower ze szablonow fallback i promptu AI, aby tytuly precyzyjnie odpowiadaly rzeczywistej akcji w klipie.",
+    "combat_window_targeting": "Detekcja okna walki nie moze obcinac wejscia w starcie (engage lead-in min. 4.0-4.5s) ani renderowac pustego biegania gracza (0-8s). Dla dlugich klipow (>20s) pipeline automatycznie wycentrowuje render na rzeczywistej walce i killach gracza, a multikille nie moga byc odrzucane ani klasyfikowane jako zabojstwa wroga."
   }
 }
