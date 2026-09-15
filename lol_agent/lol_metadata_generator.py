@@ -125,15 +125,15 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
         templates = [
             f"Clean Outplay or Enemy Griefing? 💀 {champ} Triple #Shorts #LeagueOfLegends #LoL",
             f"Rate this Triple Kill 1-10! 🔥 {champ} #Shorts #LeagueOfLegends #LoL",
-            f"Triple Kill! They Never Saw {champ} Coming 😈 #Shorts #LeagueOfLegends #LoL",
-            f"They cornered {champ}... Bad idea. Triple Kill! 💥 #Shorts #LeagueOfLegends #LoL",
+            f"Triple Kill! They Thought They Could Run 😈 #Shorts #LeagueOfLegends #LoL",
+            f"No Escape From {champ}! Clean Triple Kill 💥 #Shorts #LeagueOfLegends #LoL",
             f"Late Game Chaos – {champ} Triple Kill 💥 #Shorts #LeagueOfLegends #LoL",
-            f"Late Game Teamfight Masterclass – Triple Kill! 🔥 #Shorts #LeagueOfLegends #LoL",
-            f"They Tried To Jump {champ}? Not Today! 💥 Triple Kill #Shorts #LeagueOfLegends #LoL",
+            f"Hunting Down The Entire Team! 🔥 Triple Kill #Shorts #LeagueOfLegends #LoL",
+            f"They Tried To Run Away? Not Today! 💥 {champ} Triple #Shorts #LeagueOfLegends #LoL",
             f"Underestimated {champ}? 😈 Triple Kill Outplay 🩸 #Shorts #LeagueOfLegends #LoL",
         ]
         if map_zone_label:
-            templates.append(f"Clean {map_zone_label} Triple Kill Turnaround! 💥 {champ} #Shorts #LeagueOfLegends #LoL")
+            templates.append(f"Clean {map_zone_label} Triple Kill Rampage! 💥 {champ} #Shorts #LeagueOfLegends #LoL")
     elif "clutch" in act or "1hp" in act or "1%" in act:
         templates = [
             f"Calculated or 100% Luck? 🧠 1% HP {champ} Clutch #Shorts #LeagueOfLegends #LoL",
@@ -148,7 +148,7 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             f"Clean Outplay or Enemy Misplay? 🤔 {champ} 2v1 #Shorts #LeagueOfLegends #LoL",
             f"Rate this 2v1 Double Kill 1-10! 💥 {champ} #Shorts #LeagueOfLegends #LoL",
             f"Clean Double Kill Turnaround! 💥 {champ} Outplay #Shorts #LeagueOfLegends #LoL",
-            f"They Tried a 2v1 Gank on {champ}... Instant Double Kill 💀 #Shorts #LeagueOfLegends #LoL",
+            f"Chasing Down Two In A Blink ⚡ {champ} Double Kill #Shorts #LeagueOfLegends #LoL",
             f"Two Enemies Down In A Blink ⚡ {champ} Double Kill #Shorts #LeagueOfLegends #LoL",
             f"Never Fight A Fed {champ}! 💀 Fast Double Kill #Shorts #LeagueOfLegends #LoL",
         ]
@@ -175,8 +175,8 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             f"Clean Outplay or Complete Luck? 🤔 {champ} #Shorts #LeagueOfLegends #LoL",
             f"Rate This {champ} Play 1-10! 🔥 #Shorts #LeagueOfLegends #LoL",
             f"Did They Misplay or Was This Clean? 💀 {champ} Outplay #Shorts #LeagueOfLegends #LoL",
-            f"They Flashed In for the Kill... Bad Idea 😏 #Shorts #LeagueOfLegends #LoL",
-            f"They Tried to Catch {champ} 💀 It Went Wrong 😏 #Shorts #LeagueOfLegends #LoL",
+            f"They Thought They Were Safe... Big Mistake 😏 #Shorts #LeagueOfLegends #LoL",
+            f"No Escape 💀 Hunting Down The Entire Team #Shorts #LeagueOfLegends #LoL",
             f"All-In On {champ}? Instant Regret 💀 #Shorts #LeagueOfLegends #LoL",
             f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts #LeagueOfLegends #LoL",
             f"Enemy Tried an Outplay... They Got Outplayed. 💀 #Shorts #LeagueOfLegends #LoL",
@@ -314,13 +314,41 @@ def generate_metadata(
     except Exception:
         tuning_params = {"title_tone": "hype"}
 
-    top_structure = directive.get("top_title_structure", "EGO_CHECK")
-    winning_kw = directive.get("winning_keywords", ["RAMPAGE", "PIT", "DIVE", "SOLO BOLO", "CLEAN"])
-    avoid_kw = directive.get("avoid_keywords", ["FIVE", "ONE", "INSANE", "DRAKE"])
-    viral_titles = directive.get("top_viral_titles", [])
+    top_structure = directive.get("top_title_structure", "CLEAN_OUTPLAY")
+    _JUNK_KEYWORDS = {"DIVE", "SHORTS", "LEAGUEOFLEGENDS", "LOL", "RIOTGAMES", "GAMING",
+                      "KATARINA", "LEAGUE", "HIGHLIGHTS", "GAMES", "CLIP", "THE", "AND"}
+    raw_winning = directive.get("winning_keywords", ["RAMPAGE", "NO ESCAPE", "CHASE", "SOLO BOLO", "CLEAN"])
+    winning_kw = [k for k in raw_winning if k.upper() not in _JUNK_KEYWORDS]
+    avoid_kw = directive.get("avoid_keywords", ["INSANE", "DRAKE", "LATE GAME"])
+    raw_viral = directive.get("top_viral_titles", [])
+    viral_titles = [t for t in raw_viral if "dive" not in t.lower()]
     title_tone = tuning_params.get("title_tone", "hype")
 
-    viral_examples_str = "\n".join([f"- {t}" for t in viral_titles[:4]]) if viral_titles else "- Katarina’s Dragon Pit Rampage – Triple Kill! 💥\n- Enemy Tried to Dive Me 💀 It Went Wrong 😏"
+    # Załaduj ostatnie 15 tytułów z published_videos.jsonl do blokady duplikatów
+    _recent_titles = []
+    try:
+        _pub_log = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
+        if os.path.exists(_pub_log):
+            with open(_pub_log, "r", encoding="utf-8") as _f:
+                _lines = [l.strip() for l in _f if l.strip()]
+            for _line in _lines[-20:]:
+                try:
+                    _t = json.loads(_line).get("title", "")
+                    if _t:
+                        _clean = _t.split("#")[0].strip()
+                        _recent_titles.append(_clean)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    _recent_titles_block = ""
+    if _recent_titles:
+        _recent_titles_block = (
+            "\n\nRECENTLY PUBLISHED TITLES (STRICT DEDUPLICATION — DO NOT REPEAT or closely paraphrase ANY of these):\n"
+            + "\n".join(f'- "{t}"' for t in _recent_titles[-15:])
+        )
+
+    viral_examples_str = "\n".join([f"- {t}" for t in viral_titles[:4]]) if viral_titles else "- Katarina’s Dragon Pit Rampage – Triple Kill! 💥\n- No Escape From Katarina 💀 Clean Triple Kill!"
 
     # Przygotuj kontekst lokalizacji z minimapy (jeśli dostępny)
     _ctx = extra_context or {}
@@ -344,14 +372,17 @@ def generate_metadata(
             "DO NOT invent or assume any map location."
         )
 
-    # Dodatkowy kontekst przebiegu akcji (kill count, czas trwania, styl walki)
+    # Dodatkowy kontekst przebiegu akcji (kill count, czas trwania, styl walki, narracja)
     _kill_count = _ctx.get("kill_count")
     _clip_dur = _ctx.get("clip_duration")
     _combat_style = _ctx.get("combat_style", "")
+    _combat_narrative = _ctx.get("combat_narrative", "")
 
     action_context_lines = []
     if _combat_style:
         action_context_lines.append(f"- Combat Style: {_combat_style}")
+    if _combat_narrative:
+        action_context_lines.append(f"- Combat Narrative: {_combat_narrative}")
     if _kill_count is not None and _kill_count > 0:
         action_context_lines.append(f"- Verified Kill Count: {_kill_count}")
     if _clip_dur:
@@ -377,37 +408,50 @@ CONTEXT:
 - Tone: {title_tone} (high energy, engaging, high-CTR){action_context_block}{map_location_block}
 
 ACTION-SPECIFIC TITLE RULES (follow STRICTLY based on action_type):
-- pentakill / quadrakill: Focus on the kill count. Words like "RAMPAGE", "WIPED", "CLEAN WIPE" fit.
-- triple: Focus on the triple kill achievement. "TRIPLE KILL", "3 DOWN" style.
+- pentakill / quadrakill: Focus on the kill count and ace. Words like "RAMPAGE", "WIPED", "CLEAN WIPE", "NO ESCAPE" fit.
+- triple: Focus on the triple kill achievement and relentless pursuit. "TRIPLE KILL", "3 DOWN", "NO ESCAPE", "CHASE & RESET" style.
 - solo_bolo / 1v1: Focus on the 1v1 duel mechanics ("SOLO BOLO", "1v1", "EGO CHECK", "DUEL"). If VERIFIED MAP LOCATION is provided above, you MAY mention that zone (e.g. 'Mid Lane 1v1', 'Top Lane SOLO BOLO'). NEVER mention towers, dives or unverified locations.
-- outplay: Focus on the skill expression. "OUTPLAYED", "MECHANICS", "CLUTCH" style.
+- outplay: Focus on active skill expression, engage, or hunting down fleeing enemies ("OUTPLAYED", "MECHANICS", "HUNTING THEM DOWN", "DISRESPECT").
 - oneshot: Focus on instant burst. "DELETED", "ONE SHOT", "VAPORIZED" style.
 - clutch: Focus on survival / comeback. "SURVIVED", "ESCAPED", "OUTRUN" style.
 - escape: Focus on the chase / evasion. "ESCAPED", "DODGE", "CHASE FAILED" style.
-- double: Focus on quick back-to-back kills. "2 DOWN", "DOUBLE TAP" style.
+- double: Focus on quick back-to-back kills or dual pursuit. "2 DOWN", "DOUBLE TAP", "CHASE & EXECUTE" style.
 - baron / dragon: You MAY mention the objective (Baron, Dragon) since these are objective fights.
+
+NARRATIVE & COMBAT INITIATIVE MANDATE (CRITICAL — PREVENT HALLUCINATIONS):
+- CHAMPION IS THE AGGRESSOR / HUNTER: In high-elo League of Legends, mobile assassins like {champ} engage, flank, chase down, and execute retreating targets.
+- STRICTLY FORBIDDEN DEFENSIVE CLAIMS:
+  * NEVER claim or hallucinate that the enemy "tried to dive me", "tower dived", "ganked me", or "jumped me" unless the context above explicitly describes a tower dive defense.
+  * If the clip is an aggressive chase or hunt, emphasize the relentless pursuit: e.g. "They Thought They Could Run 💀", "No Escape From {champ} 💥", "Chasing Down the Entire Team 😈", "Hunting Them Down 🔥".
 
 LOCATION RULE — CRITICAL:
 {"Use the VERIFIED MAP LOCATION above naturally if confidence is high." if valid_zone else "DO NOT invent or assume map locations (tower, river, dragon pit, jungle) — you have no data about where the fight happened."}
 
 CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
 1. WINNING TITLE STRUCTURE: Prioritize '{top_structure}' formula.
-   (Examples: Ego Check / Disrespect / 1v1 Skill Check / Rampage).
-2. HIGH-CTR POWER KEYWORDS (incorporate 1-2 naturally): {', '.join(winning_kw[:6])}
+   (Examples: Ego Check / Disrespect / Relentless Hunt / Statement / Mechanical Flex)
+2. HIGH-CTR POWER KEYWORDS (incorporate 1-2 naturally): {', '.join(winning_kw[:6]) if winning_kw else 'RAMPAGE, NO ESCAPE, CHASE, SOLO BOLO'}
 3. STRICTLY FORBIDDEN / LOW-CTR WORDS (DO NOT USE): {', '.join(avoid_kw[:6])}
 4. CHANNEL BENCHMARK VIRAL TITLES (Model your style after these top hits):
 {viral_examples_str}
-5. FORMATTING: Title under 65 chars + hashtags, 1-2 emojis, MUST include #Shorts #LeagueOfLegends #LoL.
-6. ENGAGEMENT TRIGGER MANDATE (VITAL TO BREAK PAST 1.5K VIEWS):
-   - Title MUST pose a provocative question or challenge (e.g. 'Clean or Luck?', 'Rate 1-10', 'Ego Challenged').
-   - Pinned comment MUST ask a fast question requiring a rating (1-10) or short reaction AND end with a like trigger in parentheses (e.g. 'Rate 1-10 👇 (Drop a LIKE if you would have died here 💀)').
+5. FORMATTING: Hook phrase first (max 45 visible chars before hashtags), then ONLY #Shorts at end of title. Put #LeagueOfLegends #LoL in DESCRIPTION, NOT in title. 1-2 emojis max.
+6. TITLE ARCHETYPE ROTATION — choose ONE archetype that fits this clip best, DO NOT default to questions:
+   - DISRESPECT / EGO: "They Grouped For Free 💀", "All-In On Katarina? Instant Regret 💀"
+   - STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "One Reset. Five Graves. 🩸"
+   - STORY / RETRIBUTION: "Trash Talk Turned Into Silence 😈", "They Cornered Her. Bad Idea. 💥"
+   - MECHANICAL FLEX: "Perfect Reset Machine 🔥 Full Domination 😈", "Zero Hesitation. Pure Execution. 💀"
+   - CLUTCH / STAKES: "Surviving on 1 HP to Win 🩸", "They Were 1 Second Too Late 😏"
+   - HUNT / CHASE: "No Escape 💀 Hunting Down The Entire Team 🔥", "They Tried to Run. Nowhere to Go."
+   QUESTIONS ("Rate 1-10", "Clean or Luck?") are ALLOWED but MUST be used sparingly — max 20% of output. Never two in a row.
+7. PINNED COMMENT: Ask one direct question to trigger comments (e.g. "Would you have survived that? Drop 💀 if not!")
+{_recent_titles_block}
 
 GENERATE JSON ONLY (no markdown fences, raw json):
 {{
-  "title": "Provocative/High-CTR Short title with 1-2 emojis ending with #Shorts #LeagueOfLegends #LoL",
+  "title": "Strong punchy hook (max 45 chars) + #Shorts ONLY at end. No #LeagueOfLegends in title.",
   "hook_text": "3-4 words punchy overlay in ALL CAPS (e.g. CLEAN OUTPLAY)",
   "description": "Engaging 2-3 sentence description encouraging likes and comments with hashtags #LeagueOfLegends #LoL #{champ.replace(' ', '')} #Shorts",
-  "pinned_comment": "Specific rating question 1-10 with an engaging like trigger in parentheses",
+  "pinned_comment": "Direct question that triggers comments + like trigger",
   "tags": ["{champ.lower()}", "lol {champ.lower()}", "league of legends", "shorts", "gaming", "outplay"]
 }}"""
 

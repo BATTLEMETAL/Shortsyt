@@ -444,17 +444,26 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
 
     # Słowa kluczowe
     word_perf: Dict[str, List[float]] = {}
+    # Słowa śmieciowe — hashtagi, stopwords i nazwy championów nie są sygnałem CTR
+    _JUNK_KW = {
+        "SHORTS", "LEAGUEOFLEGENDS", "LOL", "RIOTGAMES", "GAMING", "LEAGUE",
+        "HIGHLIGHTS", "GAMES", "CLIP", "THE", "AND", "FOR", "THIS", "THEY",
+        "THAT", "KATARINA", "WITH", "YOU", "HAVE", "ARE", "WAS", "WERE",
+        "NOT", "THEIR", "INTO", "BEEN", "FROM", "MORE", "OUT", "ALL",
+    }
+
     for v in all_analyzed:
         title = v.get("title", "")
         vw = v.get("views", 0)
         ratio = (vw / avg_views) if avg_views > 0 else 1.0
         clean_words = re.findall(r"\b[A-Za-z0-9%]{3,}\b", title.upper())
         for w_str in set(clean_words):
-            if w_str in {"SHORTS", "LEAGUEOFLEGENDS", "LOL", "THE", "AND", "FOR", "THIS", "THEY"}:
+            if w_str in _JUNK_KW:
                 continue
             if w_str not in word_perf:
                 word_perf[w_str] = []
             word_perf[w_str].append(ratio)
+
 
     winning_words = []
     avoid_words = []

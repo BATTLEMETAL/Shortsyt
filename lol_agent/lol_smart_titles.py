@@ -294,6 +294,23 @@ def generate_smart_title(
     yt_videos = fetch_channel_shorts_performance()
     top_patterns = get_top_title_patterns(yt_videos)
 
+    # Załaduj ostatnie 15 opublikowanych tytułów do blokady duplikatów
+    _recent_titles = []
+    try:
+        _pub_log = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
+        if os.path.exists(_pub_log):
+            with open(_pub_log, "r", encoding="utf-8") as _f:
+                _lines = [l.strip() for l in _f if l.strip()]
+            for _line in _lines[-20:]:
+                try:
+                    _t = json.loads(_line).get("title", "")
+                    if _t:
+                        _recent_titles.append(_t.split("#")[0].strip())
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     # Analiza wyników per typ akcji
     action_perf = analyze_by_action_type(yt_videos)
     
@@ -385,20 +402,35 @@ TASK:
 3. Do NOT invent overly robotic or generic AI titles like "Pentakill Rampage!".
 4. Do NOT use "dive" unless it was actually a tower dive. Use context clues above.
 
+TITLE ARCHETYPE ROTATION — choose the best fit for this clip:
+- DISRESPECT / EGO: "They Grouped For Free 💀", "All-In On {champion_name}? Instant Regret 💀"
+- STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "One Reset. Five Graves. 🩸"
+- STORY / RETRIBUTION: "Trash Talk Turned Into Silence 😈", "They Cornered Her. Bad Idea. 💥"
+- MECHANICAL FLEX: "Perfect Reset Machine 🔥 Full Domination 😈"
+- CLUTCH / STAKES: "Surviving on 1 HP to Win 🩸"
+- HUNT / CHASE: "No Escape 💀 Hunting Down The Entire Team 🔥"
+QUESTIONS ("Rate 1-10", "Clean or Luck?") are allowed but sparingly — max 20% frequency. Never repeat a question variant.
+
 FORBIDDEN PATTERNS:
 - Generic "[Champion] Pentakill Rampage!"
 - "[Champion]'s Unstoppable [Action]!"
 - "[Champion] MELTS Entire Team"
 - Any title starting with the champion name followed directly by an action noun
 - Titles that don't match the game phase or situation described above
+- Repeating "Clean or Luck?", "Rate 1-10", "Ego Checked" patterns back-to-back
+
+FORMATTING: Hook phrase first (max 45 visible chars), then ONLY #Shorts at end. Put #LeagueOfLegends #LoL in description/tags NOT in title.
+
+RECENTLY PUBLISHED TITLES (DO NOT REPEAT or closely paraphrase — semantic diversity required):
+{chr(10).join(f'- "{t.split("#")[0].strip()}"' for t in _recent_titles[-15:]) if _recent_titles else "(none)"}
 
 Return ONLY valid JSON (no markdown, no comments):
 {{
-  "title": "Short punchy title (35-55 chars), matching the style of channel top hits AND accurate to context. ENGLISH ONLY.",
-  "description": "Short engaging description (80-120 words) with hype, champion context, and subscription call to action. ENGLISH ONLY.",
+  "title": "Short punchy hook (max 45 chars) + #Shorts at end. No #LeagueOfLegends in title. ENGLISH ONLY.",
+  "description": "Short engaging description (80-120 words) with hype, champion context, subscription CTA and hashtags #LeagueOfLegends #LoL. ENGLISH ONLY.",
   "tags": ["15-20 tags in English, NO # symbol in tags, plain lowercase keywords: league of legends, {champion_name.lower()}, {action_type.lower()}"],
   "hook_text": "3-4 word ALL CAPS overlay (e.g. THEY NEVER SAW IT / NO WAY OUT / 1V5 DEFENSE). ENGLISH ONLY.",
-  "why_this_title": "One sentence explaining which top channel video pattern this title matches AND why it fits the actual clip context"
+  "why_this_title": "One sentence explaining which archetype this title uses AND why it fits the actual clip context"
 }}"""
 
 
