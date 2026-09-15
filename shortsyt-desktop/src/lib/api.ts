@@ -108,7 +108,7 @@ export async function createClient(): Promise<AxiosInstance> {
 
   return axios.create({
     baseURL,
-    timeout: 30000,
+    timeout: 60000,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -190,10 +190,12 @@ export async function apiStartPipeline(params: {
   use_smart_camera: boolean;
   expo_push_token?: string;
   combat_segments?: Array<[number, number]> | null;
+  game_type?: string;
 }): Promise<void> {
   const client = await createClient();
   await client.post('/pipeline/start', params);
 }
+
 
 export async function apiStopPipeline(): Promise<void> {
   const client = await createClient();
@@ -504,6 +506,16 @@ export interface CalendarSlot {
   yt_url?: string;
   notes?: string;
   created_at?: string;
+  views?: number;
+  likes?: number;
+  comments?: number;
+  duration_s?: number;
+  engagement_rate?: number;
+  performance_score?: string;
+  performance_ratio?: number;
+  performance_tier?: 'viral_hit' | 'above_avg' | 'average' | 'below_avg';
+  performance_label?: string;
+  performance_diff?: string;
 }
 
 export interface FragAnalysis {
@@ -520,13 +532,15 @@ export interface FragAnalysis {
   suggested_badge_color: string;
 }
 
-export async function apiGetCalendarSlots(startDate?: string, days: number = 14): Promise<{ slots: CalendarSlot[]; days: number; total: number }> {
+export async function apiGetCalendarSlots(startDate?: string, days: number = 14, forceRefresh: boolean = false): Promise<{ slots: CalendarSlot[]; days: number; total: number }> {
   const client = await createClient();
   const params: any = { days };
   if (startDate) params.start_date = startDate;
+  if (forceRefresh) params.force_refresh = true;
   const res = await client.get('/calendar/slots', { params });
   return res.data;
 }
+
 
 export async function apiReserveCalendarSlot(data: {
   slot_id: string;
@@ -556,7 +570,7 @@ export async function apiPublishCalendarSlot(slotId: string): Promise<any> {
 
 export async function apiAutoFillCalendar(maxSlots: number = 4): Promise<any> {
   const client = await createClient();
-  const res = await client.post('/calendar/auto-fill', { max_slots: maxSlots });
+  const res = await client.post('/calendar/auto-fill', { max_slots: maxSlots }, { timeout: 120000 });
   return res.data;
 }
 
@@ -606,5 +620,164 @@ export async function apiRunBenchmarkScan(): Promise<{ status: string; profile: 
   const res = await client.post('/system/benchmark-scan');
   return res.data;
 }
+
+// ── Autonomous Learning Engine API ──────────────────────────────────────────
+
+export interface LearningDirective {
+  timestamp: string;
+  total_videos_analyzed: number;
+  channel_avg_views: number;
+  channel_avg_engagement_rate?: number;
+  top_action_type: string;
+  action_weights: Record<string, number>;
+  action_stats: Record<string, { count: number; avg_views: number; performance_ratio: number; weight: number }>;
+  duration_analysis?: {
+    best_bucket: string;
+    viral_avg_duration_s: number;
+    viral_count: number;
+  };
+  top_title_structure?: string;
+  winning_keywords: string[];
+  avoid_keywords: string[];
+  top_viral_titles?: string[];
+  recommended_pacing: string;
+  evaluator_config?: {
+    base_kill_weights: Record<string, number>;
+    demoted_formats: string[];
+    demoted_penalty_points: number;
+    s_tier_min: number;
+    a_tier_min: number;
+    b_tier_min: number;
+  };
+  retention_analysis?: {
+    channel_avg_swiped_away_pct: number;
+    channel_avg_hook_retention_pct: number;
+    channel_avg_view_pct: number;
+    total_curves_analyzed: number;
+    insights?: string[];
+  };
+  insights: string[];
+}
+
+export async function apiGetLearningStatus(): Promise<{ ok: boolean; directive: LearningDirective }> {
+  const client = await createClient();
+  const res = await client.get('/learning/status');
+  return res.data;
+}
+
+export async function apiRecalibrateLearning(): Promise<{ ok: boolean; result: any }> {
+  const client = await createClient();
+  const res = await client.post('/learning/recalibrate');
+  return res.data;
+}
+
+export async function apiRecordCorrection(
+  param_name: string,
+  old_value: string,
+  new_value: string,
+  source = 'ui_manual',
+  reason = ''
+): Promise<{ ok: boolean }> {
+  try {
+    const client = await createClient();
+    const res = await client.post('/learning/correction', { param_name, old_value, new_value, source, reason });
+    return res.data;
+  } catch {
+    // Fire-and-forget — nie przerywaj UX jeśli endpoint niedostępny
+    return { ok: false };
+  }
+}
+
+// ── YouTube Analytics API (Retention Curve & Swiped Away) ─────────────────────
+
+export interface DropOffPoint {
+  time_s: number;
+  elapsed_pct: number;
+  drop_pct: number;
+  watch_pct_after: number;
+  reason: string;
+}
+
+export interface SampledCurvePoint {
+  percentile: number;
+  time_s: number;
+  retention_pct: number;
+  relative_performance: number;
+}
+
+export interface VideoRetentionPoint {
+  elapsed_ratio: number;
+  time_s: number;
+  watch_ratio: number;
+  watch_pct: number;
+  relative_performance: number;
+}
+
+export interface VideoRetentionData {
+  video_id: string;
+  status: string;
+  has_curve: boolean;
+  message?: string;
+  duration_s?: number;
+  swiped_away_pct?: number;
+  hook_retention_pct?: number;
+  completion_rate_pct?: number;
+  avg_view_pct?: number;
+  avg_view_duration_s?: number;
+  top_drop_offs?: DropOffPoint[];
+  sampled_curve?: SampledCurvePoint[];
+  curve_points_count?: number;
+  raw_curve?: VideoRetentionPoint[];
+  diagnosis?: string;
+  overview?: {
+    views?: number;
+    avg_view_pct?: number;
+    avg_view_duration_s?: number;
+    est_minutes_watched?: number;
+    likes?: number;
+    subscribers_gained?: number;
+  };
+}
+
+export interface ChannelRetentionOverview {
+  status: string;
+  total_curves_analyzed: number;
+  channel_avg_swiped_away_pct: number;
+  channel_avg_hook_retention_pct: number;
+  channel_avg_view_pct: number;
+  videos: Array<{
+    video_id: string;
+    title: string;
+    action_type: string;
+    duration_s: number;
+    views: number;
+    swiped_away_pct: number;
+    hook_retention_pct: number;
+    avg_view_pct: number;
+    diagnosis: string;
+    top_drop_offs: DropOffPoint[];
+  }>;
+  insights: string[];
+}
+
+export async function apiGetVideoRetention(
+  videoId: string,
+  durationS: number = 13.0,
+  forceRefresh: boolean = false
+): Promise<{ ok: boolean; data: VideoRetentionData }> {
+  const client = await createClient();
+  const res = await client.get(`/analytics/video/${encodeURIComponent(videoId)}`, {
+    params: { duration_s: durationS, force_refresh: forceRefresh }
+  });
+  return res.data;
+}
+
+export async function apiGetChannelRetention(): Promise<{ ok: boolean; data: ChannelRetentionOverview }> {
+  const client = await createClient();
+  const res = await client.get('/analytics/channel/retention');
+  return res.data;
+}
+
+
 
 

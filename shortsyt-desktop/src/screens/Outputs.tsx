@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import {
   apiListOutputs, OutputItem, apiGetOutputUrl, apiListThumbnails,
   ThumbnailItem, apiUploadToYt, apiGetNextPeakSlot, PeakSlotInfo,
-  apiGetOutputMetadata, apiSaveOutputMetadata, OutputMetadata, apiStartPipeline
+  apiGetOutputMetadata, apiSaveOutputMetadata, OutputMetadata, apiStartPipeline,
+  apiRecordCorrection
 } from "../lib/api";
 import {
   Video, RefreshCw, Upload, Play, Film, FolderOpen, Image as ImageIcon,
@@ -81,8 +82,12 @@ export default function Outputs() {
   const handleOpenImage = (p: string) => window.electronApp?.openPath?.(p);
   const handleCopyPath = (p: string) => { navigator.clipboard.writeText(p); setCopiedPath(p); setTimeout(()=>setCopiedPath(null),2000); };
 
+  const [uploadOriginalTitle, setUploadOriginalTitle] = useState("");
+
   const openUploadModal = (filename: string) => {
-    setUploadTitle("Sick Play! #Shorts #LoL");
+    const aiTitle = "Sick Play! #Shorts #LoL";
+    setUploadTitle(aiTitle);
+    setUploadOriginalTitle(aiTitle);
     setUploadModal({ filename }); setUploadResult(null);
   };
 
@@ -94,6 +99,10 @@ export default function Outputs() {
       if (uploadMode==="peak" && peakSlot) { privacy="private"; publishAt=peakSlot.publish_at; scheduledLabel=peakSlot.label; }
       else if (uploadMode==="private") { privacy="private"; }
       const matchThumb = findMatchingThumb(uploadModal.filename);
+      // Rejestruj korektę tytułu jeśli użytkownik go zmienił (fire-and-forget)
+      if (uploadTitle !== uploadOriginalTitle && uploadOriginalTitle) {
+        apiRecordCorrection("title", uploadOriginalTitle, uploadTitle, "ui_upload_modal");
+      }
       const res = await apiUploadToYt(uploadModal.filename, uploadTitle, uploadDesc,
         ["league of legends","lol","shorts","gaming"], privacy,
         "What would you have done here? Rate 1-10! 🔥", matchThumb?.path, publishAt);
@@ -101,6 +110,7 @@ export default function Outputs() {
     } catch (e: any) { setUploadResult({ ok: false, error: String(e) }); }
     finally { setUploading(false); }
   };
+
 
   // ── EDIT PANEL ─────────────────────────────────────────────────────────────
   const openEditModal = async (filename: string) => {
@@ -127,11 +137,19 @@ export default function Outputs() {
         description: editMeta.description,
         tags: editMeta.tags,
       });
+      // Rejestruj korekty tytułu i opisu w pętli uczenia (fire-and-forget)
+      if (editOriginal?.title !== editMeta.title) {
+        apiRecordCorrection("title", editOriginal?.title ?? "", editMeta.title, "ui_edit_panel");
+      }
+      if (editOriginal?.description !== editMeta.description) {
+        apiRecordCorrection("description", editOriginal?.description ?? "", editMeta.description, "ui_edit_panel");
+      }
       setEditOriginal(prev => prev ? { ...prev, title: editMeta.title, description: editMeta.description, tags: editMeta.tags } : prev);
       setEditSaved(true); setTimeout(() => setEditSaved(false), 3000);
     } catch (e: any) { setEditError(String(e)); }
     finally { setEditSaving(false); }
   };
+
 
   const handleRerender = async () => {
     if (!editModal || !editMeta) return;

@@ -13,6 +13,7 @@ from typing import Optional, List, Tuple
 os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -30,10 +31,42 @@ from .youtube_uploader import (
     get_next_optimal_publish_time, post_pinned_comment, flush_pending_comments
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Zarządza cyklem życia aplikacji — procesy w tle i czyszczenie."""
+    import asyncio
+    stop_event = asyncio.Event()
+
+    async def _flusher_loop():
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=60)
+                break
+            except asyncio.TimeoutError:
+                pass
+            try:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, flush_pending_comments)
+            except Exception as e:
+                import logging
+                logging.getLogger("shortsyt.flusher").debug("Comment flush check: %s", e)
+
+    flusher_task = asyncio.create_task(_flusher_loop())
+    yield
+    stop_event.set()
+    flusher_task.cancel()
+    try:
+        await flusher_task
+    except asyncio.CancelledError:
+        pass
+
+
 app = FastAPI(
     title="Shortsyt API",
-    description="Backend dla apki Android — zarządzanie LOL Shorts pipeline",
+    description="Shortsyt Studio Backend API",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -43,21 +76,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def startup_comment_flusher():
-    """Uruchamia proces w tle sprawdzający co 60 sekund zaplanowane komentarze YouTube."""
-    import asyncio
-    async def _flusher_loop():
-        while True:
-            await asyncio.sleep(60)
-            try:
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, flush_pending_comments)
-            except Exception:
-                pass
-    asyncio.create_task(_flusher_loop())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -210,7 +228,10 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
     # 4. Zapisz do processed_hashes.json dla ochrony przed duplikatami
     if source_path and Path(source_path).exists():
         try:
-            from run_lol_agent import _clip_hash, _extract_clip_stem
+            try:
+                from lol_agent.run_lol_agent import _clip_hash, _extract_clip_stem
+            except ImportError:
+                from run_lol_agent import _clip_hash, _extract_clip_stem
             h = _clip_hash(source_path)
             stem = _extract_clip_stem(Path(source_path).name)
             processed_path = Path(__file__).parent.parent / "processed_hashes.json"
@@ -283,7 +304,10 @@ def start_pipeline(req: PipelineStartRequest, payload: dict = Depends(verify_tok
     """Uruchom renderowanie klipu."""
     # Safeguard przed duplikatami
     try:
-        from run_lol_agent import check_duplicate_clip
+        try:
+            from lol_agent.run_lol_agent import check_duplicate_clip
+        except ImportError:
+            from run_lol_agent import check_duplicate_clip
         is_dup, reason, dup_info = check_duplicate_clip(req.source_path)
         if is_dup:
             raise HTTPException(
@@ -359,7 +383,10 @@ def stop_pipeline(payload: dict = Depends(verify_token)):
 def list_clips(folder: Optional[str] = None, payload: dict = Depends(verify_token)):
     """Lista plików MP4 w folderach nagrań (Outplayed / Medal lub podany folder) wraz ze statusem publikacji (dedup)."""
     try:
-        from run_lol_agent import check_duplicate_clip
+        try:
+            from lol_agent.run_lol_agent import check_duplicate_clip
+        except ImportError:
+            from run_lol_agent import check_duplicate_clip
     except ImportError:
         check_duplicate_clip = None
 
@@ -738,13 +765,14 @@ def get_camera_preview(
         "ffmpeg", "-y", "-ss", str(max(0.0, timestamp)),
         "-i", str(p),
         "-vframes", "1",
+        "-vf", "scale=1920:1080",
         "-f", "image2pipe",
         "-vcodec", "rawvideo",
         "-pix_fmt", "bgr24",
         "-"
     ]
     try:
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=15)
         frame_bytes = proc.stdout
         frame = np.frombuffer(frame_bytes, np.uint8).reshape((1080, 1920, 3)).copy()
 
@@ -1132,6 +1160,31 @@ def recalibrate_learning_cycle(payload: dict = Depends(verify_token_flexible)):
         raise HTTPException(status_code=500, detail=f"Błąd rekalibracji: {e}")
 
 
+class UserCorrectionRequest(BaseModel):
+    param_name: str
+    old_value: str = ""
+    new_value: str
+    source: str = "ui_manual"
+    reason: str = ""
+
+
+@app.post("/learning/correction", tags=["Learning"])
+def record_correction(req: UserCorrectionRequest, payload: dict = Depends(verify_token_flexible)):
+    """Rejestruje korektę parametru wykonaną przez użytkownika (tytuł, opis, suwaki)."""
+    try:
+        from lol_agent.user_learning_memory import record_user_correction
+        learned = record_user_correction(
+            param_name=req.param_name,
+            old_val=req.old_value,
+            new_val=req.new_value,
+            source=req.source,
+            reason=req.reason or None,
+        )
+        return {"ok": True, "learned": learned}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd zapisu korekty: {e}")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # YOUTUBE ANALYTICS API (Frame-by-Frame Retention & Swiped Away)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1304,7 +1357,11 @@ def dark_run(
     """Uruchom agenta dark_psychology w tle (generuje + publikuje shorty)."""
     agent_script = DARK_ROOT / "agent_dark_psychology.py"
     if not agent_script.exists():
-        raise HTTPException(status_code=404, detail="agent_dark_psychology.py nie znaleziony")
+        archive_cand = DARK_ROOT / "_archive" / "agent_dark_psychology.py"
+        if archive_cand.exists():
+            agent_script = archive_cand
+        else:
+            return {"status": "archived", "detail": "Moduł dark psychology jest zarchiwizowany"}
 
     def _run_agent():
         try:
