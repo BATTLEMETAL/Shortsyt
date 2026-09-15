@@ -7,9 +7,9 @@ Scoring formula (0-100):
   kill_score      (40%) — kill count × type weight (penta=10, quadra=7, triple=4)
   intensity_score (30%) — average momentum / VFX score in the clip
   resolution_score(15%) — is source >= 1080p?
-  duration_score  (15%) — how close is clip length to optimal Short duration (20-30s)
+  duration_score  (15%) — how close is clip length to optimal Short duration
 
-Uses PySceneDetect for scene density analysis to find action-rich segments.
+Uses OpenCV motion analysis (from smart_camera) for intensity scoring.
 """
 import os
 import sys
@@ -27,14 +27,46 @@ import re
 from datetime import datetime
 from typing import Optional
 
-try:
-    from scenedetect import open_video, SceneManager, ContentDetector
-    SCENEDETECT_OK = True
-except ImportError:
-    SCENEDETECT_OK = False
-    print("  PySceneDetect not available — scene scoring disabled (pip install scenedetect)")
+# FIX: Usunięto import scenedetect — zastąpiony przez OpenCV-based motion analysis z smart_camera.
+# scenedetect był martwą zależnością (ImportError na każdym starcie) i nie był właściwie używany.
+SCENEDETECT_OK = False  # Zachowane dla kompatybilności z kodem score_clip (fallback do kill count)
 
-from lol_config import LOL_INPUT_DIR, SUPPORTED_FORMATS, SHORT_MAX_DURATION
+try:
+    import cv2
+    import numpy as np
+    CV2_OK = True
+except ImportError:
+    CV2_OK = False
+
+try:
+    from lol_agent.lol_config import LOL_INPUT_DIR, SUPPORTED_FORMATS, SHORT_MAX_DURATION
+except ImportError:
+    from lol_config import LOL_INPUT_DIR, SUPPORTED_FORMATS, SHORT_MAX_DURATION
+
+# Pobierz optymalne progi czasu trwania z tuning_config.json (Closed Pacing Loop)
+# Fallback do stałych jeśli learning_engine niedostępny.
+def _load_optimal_duration_range() -> tuple:
+    """Dynamicznie ładuje optymalne zakresy czasu shorta z tuning_config."""
+    try:
+        from lol_agent.autonomous.learning_engine import get_pacing_parameters
+        params = get_pacing_parameters()
+    except Exception:
+        try:
+            from autonomous.learning_engine import get_pacing_parameters
+            params = get_pacing_parameters()
+        except Exception:
+            params = {}
+
+    # Jeśli learning engine wskazuje na "short_10_13s" jako best_bucket,
+    # ustaw OPTIMAL_MIN=10, OPTIMAL_MAX=16; w przeciwnym razie używaj 15-30s.
+    best_bucket = params.get("best_bucket", "")
+    if "10_13" in best_bucket or "short_10" in best_bucket:
+        return 10.0, 16.0
+    elif "13_17" in best_bucket or "short_13" in best_bucket:
+        return 13.0, 20.0
+    else:
+        # Domyślny zakres (zgodny z tuning_config dopóki learning_engine nie ma danych)
+        return 15.0, 30.0
 
 # Kill type weights for scoring
 KILL_WEIGHTS = {
@@ -45,14 +77,13 @@ KILL_WEIGHTS = {
     "KILL": 1,
 }
 
-# Optimal Short duration range (seconds)
-OPTIMAL_MIN = 18.0
-OPTIMAL_MAX = 30.0
+# Dynamiczne progi czasu trwania (ładowane z tuning_config przez learning_engine)
+OPTIMAL_MIN, OPTIMAL_MAX = _load_optimal_duration_range()
 
 # Minimum score to be considered for upload (0-100)
-# Note: without pytesseract+PySceneDetect, max reachable score = ~30
-# (resolution 15% + duration 15%). Keep below 30 until deps installed.
 RANKABLE_THRESHOLD = 20
+
+
 
 RANK_CACHE_PATH = os.path.join(os.path.dirname(__file__), "clip_rank_cache.json")
 
@@ -158,29 +189,53 @@ def fast_kill_scan(video_path: str, sample_every_n_seconds: float = 0.5) -> list
 
 
 
-# ─── Scene density via PySceneDetect ──────────────────────────────────────────
+
+# ─── Scene density via OpenCV motion analysis ──────────────────────────────────
 
 def get_scene_density(video_path: str) -> float:
     """
-    Uses PySceneDetect ContentDetector to count scene changes per minute.
-    High scene density = high action = better clip.
-    Returns scenes_per_minute (float).
+    FIX: Zastąpiona PySceneDetect (martwa zależność) przez OpenCV frame-diff analysis.
+    Mierzy procent klatek z wysokim ruchem (motion_mean > 25) jako wskaźnik akcji.
+    Zwraca wynik 0-100 (jak scenes_per_min * 10 w starej implementacji).
     """
-    if not SCENEDETECT_OK:
+    if not CV2_OK:
         return 0.0
 
     try:
-        video = open_video(video_path)
-        scene_manager = SceneManager()
-        scene_manager.add_detector(ContentDetector(threshold=27.0))
-        scene_manager.detect_scenes(video, show_progress=False)
-        scenes = scene_manager.get_scene_list()
-        duration = video.duration.get_seconds()
-        if duration > 0:
-            return round(len(scenes) / (duration / 60.0), 2)
-        return 0.0
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames < 2:
+            cap.release()
+            return 0.0
+
+        sample_step = max(1, int(fps * 0.5))  # co 0.5s
+        high_motion_frames = 0
+        sampled = 0
+        prev_gray = None
+
+        for frame_idx in range(0, total_frames, sample_step):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                continue
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            if prev_gray is not None:
+                diff = cv2.absdiff(gray, prev_gray)
+                motion_mean = float(np.mean(diff))
+                if motion_mean > 20.0:  # próg ruchu (tune'owalny)
+                    high_motion_frames += 1
+                sampled += 1
+            prev_gray = gray
+
+        cap.release()
+        if sampled == 0:
+            return 0.0
+        # Normalizacja: 50% klatek z wysokim ruchem → 100 pkt
+        return round(min(100.0, (high_motion_frames / sampled) * 200.0), 1)
+
     except Exception as e:
-        print(f"  SceneDetect error: {e}")
+        print(f"  Motion analysis error: {e}")
         return 0.0
 
 

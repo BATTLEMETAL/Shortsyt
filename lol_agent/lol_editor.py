@@ -1407,7 +1407,10 @@ def render_short(
     # Kill captions (QUADRAKILL/PENTAKILL) sa dodawane w add_dynamic_captions (krok 5)
     _hook = hook_text.strip() if hook_text else ""
     if not _hook:
-        from lol_config import ACTION_LABELS
+        try:
+            from lol_agent.lol_config import ACTION_LABELS
+        except ImportError:
+            from lol_config import ACTION_LABELS
         _hook = ACTION_LABELS.get(action_type, "").replace("🔥","").replace("⚡","").replace("💥","").replace("🎯","").replace("👑","").strip()
     print(f"\n[6/7] Hook overlay: '{_hook}' @ 0.0s (zatrzymanie scrolla)...")
     hook_show_start = 0.0   # od klatki 0.0s — kluczowe dla obniżenia wskaźnika Swiped Away (<15%)
