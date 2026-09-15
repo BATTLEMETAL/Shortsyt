@@ -29,13 +29,19 @@ try:
 except ImportError:
     GENAI_OK = False
 
-from lol_config import (
-    GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODELS,
-    LOL_INPUT_DIR, LOL_ARCHIVE_DIR, SHORT_MAX_DURATION
-)
+try:
+    from lol_agent.lol_config import (
+        GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODELS,
+        LOL_INPUT_DIR, LOL_ARCHIVE_DIR, SHORT_MAX_DURATION
+    )
+except ImportError:
+    from lol_config import (
+        GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODELS,
+        LOL_INPUT_DIR, LOL_ARCHIVE_DIR, SHORT_MAX_DURATION
+    )
 
 KNOWN_ACTIONS = [
-    "pentakill", "quadrakill", "triple", "double",
+    "pentakill", "quadrakill", "triple", "double", "solo_bolo",
     "outplay", "clutch", "escape", "oneshot", "baron", "dragon"
 ]
 
@@ -45,6 +51,7 @@ KILL_LABEL_TO_ACTION = {
     "QUADRAKILL":   "quadrakill",
     "TRIPLE KILL":  "triple",
     "DOUBLE KILL":  "double",
+    "SOLO BOLO":    "solo_bolo",
     "LEGENDARY":    "outplay",
     "GODLIKE":      "outplay",
     "UNSTOPPABLE":  "outplay",
@@ -111,7 +118,10 @@ def _detect_champion_vision(video_path: str) -> str:
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
 
-        from lol_config import CHAMPION_WHITELIST
+        try:
+            from lol_agent.lol_config import CHAMPION_WHITELIST
+        except ImportError:
+            from lol_config import CHAMPION_WHITELIST
         whitelist_str = ", ".join(CHAMPION_WHITELIST)
         parts = [{
             "text": (
@@ -145,7 +155,10 @@ def _detect_champion_vision(video_path: str) -> str:
                 if raw_champ.lower() == "unknown" or len(raw_champ) > 25 or len(raw_champ) < 2:
                     continue
                 try:
-                    from lol_config import CHAMPION_WHITELIST
+                    try:
+                        from lol_agent.lol_config import CHAMPION_WHITELIST
+                    except ImportError:
+                        from lol_config import CHAMPION_WHITELIST
                     wl_lower = [c.lower() for c in CHAMPION_WHITELIST]
                     if raw_champ.lower() not in wl_lower:
                         print(f"[VISION] {raw_champ} poza CHAMPION_WHITELIST — ignoruję")
@@ -184,12 +197,15 @@ def _run_momentum_analyzer(video_path: str, action_hint: str = "") -> dict:
         result = analyze_momentum(video_path, use_ocr=True, save_chart=True,
                                   action_hint=action_hint)
 
-        # Typ akcji: z najwyzszego detected killa
-        action_type = "outplay"
+        # Typ akcji: z najwyzszego detected killa (lub z action_hint jesli podano)
+        action_type = (action_hint.lower() if action_hint and action_hint.lower() in KNOWN_ACTIONS else "outplay")
         if result.peaks:
             # Najwyzszy kill w sekwencji = ostatni = PENTA
             last_label = result.peaks[-1][1]
-            action_type = KILL_LABEL_TO_ACTION.get(last_label, "outplay")
+            detected_act = KILL_LABEL_TO_ACTION.get(last_label)
+            if detected_act:
+                if detected_act in ("pentakill", "quadrakill", "triple", "double") or action_type == "outplay":
+                    action_type = detected_act
 
         return {
             "action_type":       action_type,

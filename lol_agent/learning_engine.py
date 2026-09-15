@@ -378,7 +378,10 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         w = max(0.4, min(2.2, combined_w))
         action_weights[act] = w
 
-        if ratio < 0.75:
+        # Democja: wymagana próbka N >= 3, by uniknąć fałszywych wniosków przy małej próbie.
+        # Pentakill i Quadrakill są z natury top contentem — democja z powodu słabych tytułów z przeszłości jest zablokowana.
+        _NEVER_DEMOTE_ACTIONS = {"pentakill", "quadrakill"}
+        if ratio < 0.75 and len(vids) >= 3 and act.lower() not in _NEVER_DEMOTE_ACTIONS:
             demoted_formats.append(act)
 
         action_stats[act] = {
@@ -404,12 +407,18 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
     base_kill_weights["TRIPLE KILL"] = round(min(70.0, max(30.0, 50.0 * triple_ratio)), 1)
     base_kill_weights["DOUBLE KILL"] = round(min(50.0, max(20.0, 25.0 * double_ratio)), 1)
 
-    # Najlepszy format akcji
+    # Najlepszy format akcji (wymaga N >= 2 filmów dla stabilności wnioskowania)
     qualified_actions = [
         (act, data["performance_ratio"])
         for act, data in action_stats.items()
-        if data["count"] >= 1
+        if data["count"] >= 2
     ]
+    if not qualified_actions:
+        qualified_actions = [
+            (act, data["performance_ratio"])
+            for act, data in action_stats.items()
+            if data["count"] >= 1
+        ]
     top_action = max(qualified_actions, key=lambda x: x[1])[0] if qualified_actions else "solo_bolo"
 
     # 3. KROK 1: Closed Pacing Loop (Korelacja kohorty viral_hit)
