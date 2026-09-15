@@ -466,7 +466,16 @@ GENERATE JSON ONLY (no markdown fences, raw json):
                         raw_text = raw_text.split("```")[1].split("```")[0].strip()
 
                     data = json.loads(raw_text)
-                    gen_title = _ensure_shorts_tag(data.get("title", ""), champ, action_type)
+                    # Tytuł: tylko #Shorts na końcu. #LeagueOfLegends #LoL → opis.
+                    _raw_title = data.get("title", "").strip()
+                    if not _raw_title:
+                        _raw_title = f"{action_type.upper()} {champ} #Shorts"
+                    if "#shorts" not in _raw_title.lower():
+                        _raw_title = f"{_raw_title} #Shorts"
+                    # Usuń #LeagueOfLegends i #LoL z tytułu jeśli tam wpadły
+                    _raw_title = re.sub(r'\s*#LeagueOfLegends\b', '', _raw_title, flags=re.IGNORECASE).strip()
+                    _raw_title = re.sub(r'\s*#LoL\b', '', _raw_title, flags=re.IGNORECASE).strip()
+                    gen_title = _raw_title
                     hashtags = _build_hashtags(champ, action_type)
                     raw_desc = (data.get("description") or "").strip()
                     if raw_desc:
