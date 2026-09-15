@@ -8,6 +8,7 @@ import random
 import subprocess
 import glob
 import shutil
+import numpy as np
 from typing import Optional
 try:
     from lol_agent.lol_config import (
@@ -201,15 +202,45 @@ def pick_music_for_action(action_type: str = "outplay", preferred_track: Optiona
     return chosen
 
 
+def _run_ffmpeg(cmd: list, timeout: float = 180.0, desc: str = "") -> subprocess.CompletedProcess:
+    """Bezpieczne wywołanie procesu potomnego z rejestracją procesu i timeoutem."""
+    try:
+        from lol_agent.api.pipeline_runner import set_active_subprocess, clear_active_subprocess, check_cancellation
+        check_cancellation()
+    except Exception:
+        try:
+            from api.pipeline_runner import set_active_subprocess, clear_active_subprocess, check_cancellation
+            check_cancellation()
+        except Exception:
+            set_active_subprocess = lambda p: None
+            clear_active_subprocess = lambda: None
+            check_cancellation = lambda: None
+
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    set_active_subprocess(p)
+    try:
+        stdout, stderr = p.communicate(timeout=timeout)
+        ret = p.returncode
+        return subprocess.CompletedProcess(args=cmd, returncode=ret, stdout=stdout, stderr=stderr)
+    except subprocess.TimeoutExpired as te:
+        p.kill()
+        stdout, stderr = p.communicate()
+        print(f"⚠️  FFmpeg timeout po {timeout}s ({desc}) — proces przerwany")
+        raise RuntimeError(f"Przekroczono limit czasu operacji wideo ({timeout}s: {desc})") from te
+    finally:
+        clear_active_subprocess()
+        check_cancellation()
+
+
 def get_video_duration(path: str) -> float:
     """Zwraca długość wideo w sekundach."""
-    r = subprocess.run([
+    r = _run_ffmpeg([
         "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", path
-    ], capture_output=True, text=True)
+    ], timeout=15.0, desc="ffprobe duration")
     try:
-        return float(r.stdout.strip())
-    except ValueError:
+        return float(r.stdout.decode("utf-8", errors="replace").strip())
+    except (ValueError, AttributeError):
         return 0.0
 
 
@@ -223,7 +254,7 @@ def cut_clip(input_path: str, start: float, end: float, output_path: str) -> str
         "-c", "copy", output_path
     ]
     print(f"✂️  Tnę: {start:.1f}s → {end:.1f}s ({duration:.1f}s)")
-    r = subprocess.run(cmd, capture_output=True)
+    r = _run_ffmpeg(cmd, timeout=60.0, desc="cut_clip")
     if r.returncode != 0:
         raise RuntimeError(f"FFmpeg cut error: {r.stderr.decode('utf-8', errors='replace')[:400]}")
     return output_path
@@ -361,7 +392,7 @@ def apply_editor_effects(input_path: str, output_path: str,
     try:
         if is_gpu or not (has_slowmo and SMOOTH_SLOWMO):
             # Tryb ULTRA-FAST (GPU / Direct Single Pass): ~3-4 sekundy!
-            r = subprocess.run(cmd, capture_output=True)
+            r = _run_ffmpeg(cmd, timeout=180.0, desc="apply_editor_effects GPU")
             if r.returncode != 0:
                 err_msg = r.stderr.decode('utf-8', errors='replace')[:400]
                 print(f"⚠️  GPU encoder ({enc_name}) nie powiódł się na ciężkim klipie: {err_msg}")
@@ -373,7 +404,7 @@ def apply_editor_effects(input_path: str, output_path: str,
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
                     output_path
                 ]
-                r_cpu = subprocess.run(cmd_cpu, capture_output=True)
+                r_cpu = _run_ffmpeg(cmd_cpu, timeout=240.0, desc="apply_editor_effects CPU fallback")
                 if r_cpu.returncode != 0:
                     raise RuntimeError(f"FFmpeg filtergraph error (CPU fallback): {r_cpu.stderr.decode('utf-8', errors='replace')[:800]}")
                 print("✅  Render ukończony pomyślnie przez bezpieczny fallback CPU!")
@@ -387,7 +418,7 @@ def apply_editor_effects(input_path: str, output_path: str,
                 *encoder_draft,
                 tmp_pre_interp
             ]
-            r = subprocess.run(cmd_step1, capture_output=True)
+            r = _run_ffmpeg(cmd_step1, timeout=180.0, desc="apply_editor_effects step 1")
             if r.returncode != 0:
                 raise RuntimeError(f"FFmpeg filtergraph error: {r.stderr.decode('utf-8', errors='replace')[:800]}")
 
@@ -403,7 +434,7 @@ def apply_editor_effects(input_path: str, output_path: str,
                 *encoder_high,
                 output_path
             ]
-            r2 = subprocess.run(cmd_step2, capture_output=True)
+            r2 = _run_ffmpeg(cmd_step2, timeout=180.0, desc="apply_editor_effects minterpolate")
             if r2.returncode != 0:
                 import shutil as _sh
                 _sh.move(tmp_pre_interp, output_path)
@@ -509,7 +540,7 @@ def add_text_overlay(
         output_path
     ]
     print(f"🗨️  Overlay tekstu: '{clean_text}' @ {t_start:.1f}s–{t_end:.1f}s")
-    r = subprocess.run(cmd, capture_output=True)
+    r = _run_ffmpeg(cmd, timeout=60.0, desc="add_text_overlay GPU")
     if r.returncode != 0:
         err = r.stderr.decode('utf-8', errors='replace')[:400]
         print(f"⚠️  Overlay error (próbuję fallback CPU): {err}")
@@ -521,7 +552,7 @@ def add_text_overlay(
             "-c:a", "copy",
             output_path
         ]
-        r_cpu = subprocess.run(cmd_cpu, capture_output=True)
+        r_cpu = _run_ffmpeg(cmd_cpu, timeout=90.0, desc="add_text_overlay CPU")
         if r_cpu.returncode != 0:
             print(f"⚠️  Overlay CPU fallback error (pomijam): {r_cpu.stderr.decode('utf-8', errors='replace')[:400]}")
             import shutil as _sh
@@ -795,7 +826,7 @@ def add_dynamic_captions(
         output_path
     ]
     print(f"🎬 Renderuję {len(drawtext_filters)} filtrów wizualnych (HUD, banery, neon progress bar)...")
-    r = subprocess.run(cmd, capture_output=True)
+    r = _run_ffmpeg(cmd, timeout=120.0, desc="add_dynamic_captions GPU")
     if r.returncode != 0:
         err = r.stderr.decode('utf-8', errors='replace')[:600]
         print(f"⚠️  Dynamiczne napisy error (próbuję fallback CPU): {err}")
@@ -807,7 +838,7 @@ def add_dynamic_captions(
             "-c:a", "copy",
             output_path
         ]
-        r_cpu = subprocess.run(cmd_cpu, capture_output=True)
+        r_cpu = _run_ffmpeg(cmd_cpu, timeout=150.0, desc="add_dynamic_captions CPU")
         if r_cpu.returncode != 0:
             print(f"⚠️  Dynamiczne napisy CPU fallback error (pomijam): {r_cpu.stderr.decode('utf-8', errors='replace')[:600]}")
             import shutil as _sh
@@ -851,14 +882,14 @@ def merge_music(video_path: str, music_path: Optional[str],
 
     # Sprawdź źródło audio gry: preferuj game_audio_path (step1), fallback do video_path
     audio_source = game_audio_path if (game_audio_path and os.path.exists(game_audio_path)) else video_path
-    probe = subprocess.run([
+    probe = _run_ffmpeg([
         "ffprobe", "-v", "quiet",
         "-select_streams", "a:0",
         "-show_entries", "stream=codec_type",
         "-of", "default=noprint_wrappers=1:nokey=1",
         audio_source
-    ], capture_output=True, text=True)
-    has_game_audio = probe.stdout.strip() == "audio"
+    ], timeout=15.0, desc="ffprobe audio stream check")
+    has_game_audio = probe.stdout.decode("utf-8", errors="replace").strip() == "audio"
 
     # Seamless Loop: mikro-fade 40ms wyłącznie na styku zapętlenia (brak wyciszania 1.5s przed końcem)
     fade_dur = 0.04
@@ -941,7 +972,7 @@ def merge_music(video_path: str, music_path: Optional[str],
         ]
         print(f"🎵 Tylko muzyka ({int(MUSIC_VOLUME*100)}%) — brak dźwięku gry w źródle")
 
-    r = subprocess.run(cmd, capture_output=True)
+    r = _run_ffmpeg(cmd, timeout=120.0, desc="merge_music")
     if r.returncode != 0:
         err_msg = r.stderr.decode('utf-8', errors='replace')[:400]
         print(f"⚠️  Błąd zaawansowanego miksowania amix: {err_msg}")
@@ -959,7 +990,7 @@ def merge_music(video_path: str, music_path: Optional[str],
             "-shortest",
             output_path
         ]
-        r_fb = subprocess.run(cmd_fallback, capture_output=True)
+        r_fb = _run_ffmpeg(cmd_fallback, timeout=120.0, desc="merge_music fallback")
         if r_fb.returncode != 0:
             raise RuntimeError(f"Audio merge fallback error: {r_fb.stderr.decode('utf-8', errors='replace')[:600]}")
         print("✅  Audio nałożone pomyślnie przez bezpieczny fallback!")
@@ -1037,7 +1068,7 @@ def add_cta_overlay(
         output_path
     ]
     print(f"🔔 CTA overlay: '{clean_cta}' @ ostatnie {show_duration:.1f}s (fsize={fsize}px)")
-    r = subprocess.run(cmd, capture_output=True)
+    r = _run_ffmpeg(cmd, timeout=90.0, desc="add_cta_overlay GPU")
     if r.returncode != 0:
         err = r.stderr.decode('utf-8', errors='replace')[:400]
         print(f"⚠️  CTA overlay error (próbuję fallback CPU): {err}")
@@ -1050,7 +1081,7 @@ def add_cta_overlay(
             "-c:a", "copy",
             output_path
         ]
-        r_cpu = subprocess.run(cmd_cpu, capture_output=True)
+        r_cpu = _run_ffmpeg(cmd_cpu, timeout=120.0, desc="add_cta_overlay CPU")
         if r_cpu.returncode != 0:
             print(f"⚠️  CTA overlay CPU fallback error (pomijam): {r_cpu.stderr.decode('utf-8', errors='replace')[:400]}")
             import shutil as _sh
@@ -1074,6 +1105,7 @@ def render_short(
     preferred_track: Optional[str] = None,
     output_filename: str = "lol_short_final.mp4",
     combat_segments: list = None,
+    custom_temp_dir: Optional[str] = None,
 ) -> str:
     """
     Pipeline montażu v6 — Combat-Segment-Aware editing:
@@ -1096,12 +1128,13 @@ def render_short(
     print(f"🎬  LOL EDITOR v6 — {action_type.upper()} | {champion_name} | {clip_duration:.1f}s")
     print(f"{'='*55}")
 
-    t = lambda name: os.path.join(LOL_TEMP_DIR, name)
+    _tmp = custom_temp_dir or LOL_TEMP_DIR
+    t = lambda name: os.path.join(_tmp, name)
     step1        = t("01_cut.mp4")
     step4        = t("04_processed.mp4")
     step5_music  = t("05_music.mp4")
     step5_cta    = t("06_cta.mp4")
-    step5        = os.path.join(LOL_TEMP_DIR, output_filename)
+    step5        = os.path.join(_tmp, output_filename)
 
     # ── KROK 1: Wycięcie fragmentu / segmentów ────────────────────────────────
     print("\n[1/4] Wycinanie fragmentu...")
@@ -1109,6 +1142,36 @@ def render_short(
     # Dla SOLO BOLO wykluczamy jakiekolwiek cięcia jump-cut — cała walka ma być płynna od wejścia do finału
     if action_type.lower() in ("solo_bolo", "solo", "1v1"):
         combat_segments = None
+
+    if combat_segments and len(combat_segments) > 1:
+        # Safeguard: Sprawdź czy przerwa między segmentami nie zawiera aktywnej walki
+        # (np. zabójstwo Jhina przykryte powiadomieniem zniszczenia wieży)
+        try:
+            try:
+                from lol_agent.lol_quality_validator import _check_enemy_combat_in_frame
+            except ImportError:
+                from lol_quality_validator import _check_enemy_combat_in_frame
+            import cv2
+            cap = cv2.VideoCapture(source_path)
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            gap_s = combat_segments[0][1] + 1.0
+            gap_e = combat_segments[1][0] - 1.0
+            if gap_e > gap_s + 1.0:
+                test_ts = np.linspace(gap_s, gap_e, 5)
+                c_hits = 0
+                for ts in test_ts:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, int(ts * fps))
+                    ret, fr = cap.read()
+                    if ret:
+                        has_c, px, _ = _check_enemy_combat_in_frame(fr)
+                        if has_c and px > 350:
+                            c_hits += 1
+                if c_hits >= 2:
+                    print("   🛡️  Combat Continuity Guard: Wykryto walkę w luce między segmentami — anuluję jump-cut!")
+                    combat_segments = None
+            cap.release()
+        except Exception as ge:
+            print(f"   [editor] Gap combat check err: {ge}")
 
     if combat_segments and len(combat_segments) > 1:
         # ── Multi-segment jump-cut ──────────────────────────────────────────
@@ -1135,7 +1198,7 @@ def render_short(
             step1
         ]
         print(f"   🔗 Łączę {len(seg_files)} segmentów → {os.path.basename(step1)}")
-        r = subprocess.run(concat_cmd, capture_output=True)
+        r = _run_ffmpeg(concat_cmd, timeout=120.0, desc="concat combat segments")
         if r.returncode != 0:
             err = r.stderr.decode("utf-8", errors="replace")[:400]
             print(f"   ⚠️  Concat error (fallback do single cut): {err}")
@@ -1384,7 +1447,7 @@ def render_short(
                 "-c", "copy",
                 step5_15s
             ]
-            r15 = subprocess.run(cmd_15s, capture_output=True)
+            r15 = _run_ffmpeg(cmd_15s, timeout=60.0, desc="15s snap trim")
             if r15.returncode == 0:
                 import shutil as _sh15
                 _sh15.move(step5_15s, step5)

@@ -1343,6 +1343,16 @@ def dark_directive(payload: dict = Depends(verify_token_flexible)):
     return _dark_load_json("adaptation_directive.json")
 
 
+@app.post("/dark/recalibrate", tags=["Dark Psychology"])
+def dark_recalibrate(payload: dict = Depends(verify_token_flexible)):
+    """Rekalibracja wag audytora Dark Psychology."""
+    return {
+        "ok": True,
+        "status": "archived",
+        "message": "Moduł Dark Psychology jest zarchiwizowany. Aktywny agent: LoL Shortsyt Studio."
+    }
+
+
 class DarkRunRequest(BaseModel):
     dry_run: bool = False
     videos: int = 2

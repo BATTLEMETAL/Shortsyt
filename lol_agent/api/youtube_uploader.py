@@ -7,7 +7,7 @@ import pickle
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 # Relax token scope checks (Google returns extra default scopes like openid)
 os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"

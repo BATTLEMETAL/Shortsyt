@@ -3,6 +3,7 @@ LOL Agent - YouTube Metadata Generator (Dwannellenga Channel Proven Templates)
 High-converting Titles, Descriptions, Pinned Comments & Tags optimised for YouTube Shorts Algorithm.
 """
 import os
+import re
 import json
 import time
 import random
