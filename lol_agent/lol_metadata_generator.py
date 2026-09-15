@@ -100,109 +100,137 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
 
     if "penta" in act:
         templates = [
-            f"Clean 1v5 or Enemy Trolling? 💀 {champ} Pentakill #Shorts #LeagueOfLegends #LoL",
-            f"Rate this {champ} PENTAKILL 1-10! 🔥 #Shorts #LeagueOfLegends #LoL",
-            f"One {champ}. Five Kills. PENTAKILL RAMPAGE! 💥 #Shorts #LeagueOfLegends #LoL",
-            f"{champ}'s Unstoppable Pentakill! 💥 No Escape 💀 #Shorts #LeagueOfLegends #LoL",
-            f"Five Enemies. One {champ}. Instant Regret. 😈 #Shorts #LeagueOfLegends #LoL",
-            f"Entire Team Disappeared In Seconds 💀💥 {champ} Penta #Shorts #LeagueOfLegends #LoL",
-            f"{champ} Pentakill – They Never Stood A Chance! 💥 #Shorts #LeagueOfLegends #LoL",
-            f"Pure Mechanics or Enemy Throw? 😱 {champ} Penta #Shorts #LeagueOfLegends #LoL",
-            f"This {champ} PENTAKILL is INSANE! 🔥 #Shorts #LeagueOfLegends #LoL",
+            # STATEMENT / SPEED
+            f"Entire Team Disappeared in 3 Seconds 💀 {champ} Penta #Shorts",
+            f"One Reset. Five Graves. 💀 {champ} Pentakill #Shorts",
+            # DISRESPECT / EGO
+            f"They Grouped For Free 💀 {champ} Pentakill #Shorts",
+            f"Five Enemies. Zero Survivors. 😈 {champ} #Shorts",
+            # HUNT / CHASE
+            f"No Escape 💀 Hunting Down All Five 🔥 #Shorts",
+            f"They Scattered. Didn't Matter. 💨 {champ} Penta #Shorts",
+            # MECHANICAL FLEX
+            f"Perfect Reset Machine 🔥 {champ} Full Ace 😈 #Shorts",
+            f"Zero Hesitation. Pure Execution. 💀 {champ} Penta #Shorts",
+            # STORY
+            f"They Thought Grouping Was Safe... It Wasn't 😏 #Shorts",
         ]
         if map_zone_label:
-            templates.append(f"{champ} {map_zone_label} PENTAKILL RAMPAGE! 💥 Clean Ace #Shorts #LeagueOfLegends #LoL")
+            templates.insert(0, f"{map_zone_label} Ace 💀 {champ} Pentakill – Nobody Left Standing #Shorts")
     elif "quadra" in act:
         templates = [
-            f"Clean Quadra or Pure Luck? 🤔 {champ} 1v4 #Shorts #LeagueOfLegends #LoL",
-            f"Rate this {champ} Quadra Kill 1-10! ⚡ #Shorts #LeagueOfLegends #LoL",
-            f"They Thought They Had Me 😈 {champ} Quadra Kill 💥 #Shorts #LeagueOfLegends #LoL",
-            f"{champ}'s Four-Kill Frenzy! ⚡ Quadra Domination #Shorts #LeagueOfLegends #LoL",
-            f"Four Enemies Down in Seconds! Insane {champ} Quadra 🔥 #Shorts #LeagueOfLegends #LoL",
-            f"They cornered {champ}... Bad idea. Quadra Kill! 💥 #Shorts #LeagueOfLegends #LoL",
+            # DISRESPECT / EGO
+            f"They Thought 4v1 Was Safe... It Wasn't 😏 {champ} #Shorts",
+            f"All Four Down. Just Like That. 💀 {champ} Quadra #Shorts",
+            # HUNT / CHASE
+            f"Hunting Down The Entire Squad 💀 {champ} Quadra #Shorts",
+            f"No Escape For Any Of Them 😈 {champ} Quadra Kill #Shorts",
+            # STATEMENT
+            f"Four Enemies Gone in Seconds ⚡ {champ} Quadra #Shorts",
+            f"Four Down. One {champ}. Clean. 💥 #Shorts",
+            # STORY
+            f"They Cornered {champ}... Wrong Decision. 💀 Quadra Kill #Shorts",
         ]
     elif "triple" in act:
         templates = [
-            f"Clean Outplay or Enemy Griefing? 💀 {champ} Triple #Shorts #LeagueOfLegends #LoL",
-            f"Rate this Triple Kill 1-10! 🔥 {champ} #Shorts #LeagueOfLegends #LoL",
-            f"Triple Kill! They Thought They Could Run 😈 #Shorts #LeagueOfLegends #LoL",
-            f"No Escape From {champ}! Clean Triple Kill 💥 #Shorts #LeagueOfLegends #LoL",
-            f"Late Game Chaos – {champ} Triple Kill 💥 #Shorts #LeagueOfLegends #LoL",
-            f"Hunting Down The Entire Team! 🔥 Triple Kill #Shorts #LeagueOfLegends #LoL",
-            f"They Tried To Run Away? Not Today! 💥 {champ} Triple #Shorts #LeagueOfLegends #LoL",
-            f"Underestimated {champ}? 😈 Triple Kill Outplay 🩸 #Shorts #LeagueOfLegends #LoL",
+            # HUNT / CHASE
+            f"No Escape From {champ} 💀 Clean Triple Kill #Shorts",
+            f"Hunting Down All Three 🔥 Triple Kill #Shorts",
+            # DISRESPECT / EGO
+            f"They Thought They Could Run 😈 Triple Kill #Shorts",
+            f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts",
+            # STATEMENT
+            f"Three Down. Zero Chance. 💀 {champ} Triple Kill #Shorts",
+            # STORY
+            f"Trash Talk Turned Into Silence 😈 {champ} Triple Kill #Shorts",
+            f"They Made Their Move... Wrong Choice. 💀 Triple Kill #Shorts",
+            # MECHANICAL FLEX
+            f"Back-to-Back-to-Back 🩸 {champ} Triple Kill Reset #Shorts",
         ]
         if map_zone_label:
-            templates.append(f"Clean {map_zone_label} Triple Kill Rampage! 💥 {champ} #Shorts #LeagueOfLegends #LoL")
+            templates.insert(0, f"{map_zone_label} Triple Kill 💀 {champ} – Nobody Escaped #Shorts")
     elif "clutch" in act or "1hp" in act or "1%" in act:
         templates = [
-            f"Calculated or 100% Luck? 🧠 1% HP {champ} Clutch #Shorts #LeagueOfLegends #LoL",
-            f"How Did {champ} Survive That?! 💀 Rate 1-10 #Shorts #LeagueOfLegends #LoL",
-            f"Surviving on 1% HP to Win The Fight! 💀🔥 {champ} Clutch #Shorts #LeagueOfLegends #LoL",
-            f"They Thought He Was 100% Dead... 1% HP {champ} Miracle Outplay 🩸 #Shorts #LeagueOfLegends #LoL",
-            f"1 HP and a Dream! 💀 Skill or Luck? 🔥 {champ} #Shorts #LeagueOfLegends #LoL",
-            f"The Most Stressful 1% HP Clutch You'll See Today 😱 {champ} #Shorts #LeagueOfLegends #LoL",
+            # CLUTCH / STAKES
+            f"Surviving on 1% HP to Win 🩸 {champ} Clutch #Shorts",
+            f"They Were 1 Second Too Late 😏 {champ} Clutch #Shorts",
+            f"1 HP. Full Commitment. 💀 {champ} Outplay #Shorts",
+            # STORY
+            f"They Already Typed 'GG'... {champ} Didn't. 🔥 #Shorts",
+            f"Dead or Alive? {champ} Answers With a Kill 🩸 #Shorts",
+            # MECHANICAL FLEX
+            f"The Cleanest 1% HP Escape You'll See Today 💀 #Shorts",
         ]
     elif "double" in act:
         templates = [
-            f"Clean Outplay or Enemy Misplay? 🤔 {champ} 2v1 #Shorts #LeagueOfLegends #LoL",
-            f"Rate this 2v1 Double Kill 1-10! 💥 {champ} #Shorts #LeagueOfLegends #LoL",
-            f"Clean Double Kill Turnaround! 💥 {champ} Outplay #Shorts #LeagueOfLegends #LoL",
-            f"Chasing Down Two In A Blink ⚡ {champ} Double Kill #Shorts #LeagueOfLegends #LoL",
-            f"Two Enemies Down In A Blink ⚡ {champ} Double Kill #Shorts #LeagueOfLegends #LoL",
-            f"Never Fight A Fed {champ}! 💀 Fast Double Kill #Shorts #LeagueOfLegends #LoL",
+            # DISRESPECT
+            f"They Came 2v1... Left 0v1. 💀 {champ} Double Kill #Shorts",
+            f"Never Fight {champ} 2v1. 😈 Lesson Learned. #Shorts",
+            # HUNT
+            f"Two Enemies Down in a Blink ⚡ {champ} Double Kill #Shorts",
+            f"No Flash. No Escape. Double Kill. 💀 {champ} #Shorts",
+            # STATEMENT
+            f"Back-to-Back Execution 🩸 {champ} Double Kill #Shorts",
+            # STORY
+            f"They Thought Numbers Would Help 💀 {champ} Double Kill #Shorts",
         ]
         if map_zone_label:
-            templates.append(f"Clean {map_zone_label} 2v1 Turnaround! 💥 {champ} Double Kill #Shorts #LeagueOfLegends #LoL")
+            templates.insert(0, f"{map_zone_label} 2v1 Outplay 💀 {champ} Double Kill – No Contest #Shorts")
     elif "solo" in act or "bolo" in act or "1v1" in act:
         templates = [
-            f"Clean Outplay or 100% Luck? 🤔 {champ} SOLO BOLO #Shorts #LeagueOfLegends #LoL",
-            f"SOLO BOLO! 👑 Was This Disrespectful? Rate 1-10 👇 #Shorts #LeagueOfLegends #LoL",
-            f"Pure 1v1 Mechanics or Pure Luck? 😈 {champ} #Shorts #LeagueOfLegends #LoL",
-            f"They Ego Challenged {champ} 1v1... Instant SOLO BOLO! 💀 #Shorts #LeagueOfLegends #LoL",
-            f"Clean SOLO BOLO! 😈 They Really Thought They Won This 1v1? #Shorts #LeagueOfLegends #LoL",
-            f"The Most Disrespectful 1v1 SOLO BOLO in High Elo 💀 #Shorts #LeagueOfLegends #LoL",
-            f"Did the Enemy Misplay or Was This Clean? 💀 {champ} 1v1 #Shorts #LeagueOfLegends #LoL",
-            f"Nobody Survives {champ} in a 1v1! Clean SOLO BOLO ⚡ #Shorts #LeagueOfLegends #LoL",
-            f"SOLO BOLO Turnaround! 🩸 {champ} Duel Masterclass #Shorts #LeagueOfLegends #LoL",
+            # DISRESPECT / EGO (top performer on channel)
+            f"They Ego Challenged {champ}... Instant SOLO BOLO 💀 #Shorts",
+            f"The Most Disrespectful 1v1 You'll See Today 😈 {champ} #Shorts",
+            f"Nobody Survives {champ} in a 1v1 👑 Clean SOLO BOLO #Shorts",
+            # MECHANICAL FLEX
+            f"SOLO BOLO Masterclass 😈 {champ} Pure 1v1 Mechanics #Shorts",
+            f"Pixel-Perfect 1v1 Outplay 💀 {champ} SOLO BOLO #Shorts",
+            # STORY
+            f"They Called It… {champ} Answered. SOLO BOLO 🩸 #Shorts",
+            f"Duel Accepted. Duel Won. 💀 {champ} SOLO BOLO #Shorts",
+            # CLUTCH
+            f"1v1 at Full Risk 🩸 {champ} SOLO BOLO Clutch #Shorts",
         ]
         if map_zone_label:
-            templates.insert(0, f"Clean {map_zone_label} SOLO BOLO! 👑 Rate 1-10 👇 #Shorts #LeagueOfLegends #LoL")
-            templates.append(f"Pure {map_zone_label} 1v1 Mechanics or Luck? 😈 {champ} #Shorts #LeagueOfLegends #LoL")
-            templates.append(f"They Challenged {champ} in {map_zone_label}... Instant SOLO BOLO! 💀 #Shorts #LeagueOfLegends #LoL")
+            templates.insert(0, f"Clean {map_zone_label} SOLO BOLO! 👑 {champ} 1v1 No Contest #Shorts")
+            templates.append(f"They Challenged {champ} in {map_zone_label}... Instant SOLO BOLO 💀 #Shorts")
     else:  # outplay / general
         templates = [
-            f"Clean Outplay or Complete Luck? 🤔 {champ} #Shorts #LeagueOfLegends #LoL",
-            f"Rate This {champ} Play 1-10! 🔥 #Shorts #LeagueOfLegends #LoL",
-            f"Did They Misplay or Was This Clean? 💀 {champ} Outplay #Shorts #LeagueOfLegends #LoL",
-            f"They Thought They Were Safe... Big Mistake 😏 #Shorts #LeagueOfLegends #LoL",
-            f"No Escape 💀 Hunting Down The Entire Team #Shorts #LeagueOfLegends #LoL",
-            f"All-In On {champ}? Instant Regret 💀 #Shorts #LeagueOfLegends #LoL",
-            f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts #LeagueOfLegends #LoL",
-            f"Enemy Tried an Outplay... They Got Outplayed. 💀 #Shorts #LeagueOfLegends #LoL",
+            # DISRESPECT
+            f"All-In On {champ}? Instant Regret 💀 #Shorts",
+            f"They Thought They Were Safe... Big Mistake 😏 {champ} #Shorts",
+            # HUNT
+            f"No Escape 💀 Hunting Down The Entire Team 🔥 #Shorts",
+            f"They Tried to Run. Nowhere to Go. 💀 {champ} #Shorts",
+            # STORY
+            f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts",
+            f"Enemy Tried an Outplay... They Got Outplayed. 💀 #Shorts",
+            # MECHANICAL FLEX
+            f"Zero Hesitation. Pure Mechanics. 🔥 {champ} #Shorts",
+            # STATEMENT
+            f"They Vanished in Seconds 💨 {champ} Outplay #Shorts",
         ]
         if map_zone_label:
-            templates.insert(0, f"Clean {map_zone_label} Outplay or Complete Luck? 🤔 {champ} #Shorts #LeagueOfLegends #LoL")
-            templates.append(f"Rate This {champ} {map_zone_label} Play 1-10! 🔥 #Shorts #LeagueOfLegends #LoL")
+            templates.insert(0, f"Clean {map_zone_label} Outplay 💀 {champ} – They Never Stood a Chance #Shorts")
 
-    # Załaduj dynamiczną dyrektywę samouczenia
+    # Dynamiczne punktowanie wg CTR (junk keywords odfiltrowywane przy ładowaniu dyrektywy)
+    _JUNK_SCORE_KW = {"DIVE", "SHORTS", "LEAGUEOFLEGENDS", "LOL", "RIOTGAMES", "GAMING"}
     winning_kw = []
     avoid_kw = []
     try:
         from lol_agent.learning_engine import get_learning_directive
         directive = get_learning_directive()
-        winning_kw = [k.upper() for k in directive.get("winning_keywords", [])]
-        avoid_kw = [k.upper() for k in directive.get("avoid_keywords", [])]
+        winning_kw = [k.upper() for k in directive.get("winning_keywords", []) if k.upper() not in _JUNK_SCORE_KW]
+        avoid_kw = [k.upper() for k in directive.get("avoid_keywords", []) if k.upper() not in _JUNK_SCORE_KW]
     except Exception:
         pass
 
-    # Dynamiczne punktowanie szablonów wg historycznego CTR z kanału + bonus za zweryfikowaną lokalizację
     weights = []
     for t in templates:
         t_upper = t.upper()
         score = 1.0
         if map_zone_label and map_zone_label.upper() in t_upper:
-            score += 6.0  # Silny priorytet dla szablonu ze zweryfikowaną strefą mapy
+            score += 6.0
         for kw in winning_kw:
             if kw in t_upper:
                 score += 1.8
