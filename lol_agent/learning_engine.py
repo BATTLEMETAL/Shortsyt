@@ -490,6 +490,24 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
     winning_keywords = [w[0] for w in winning_words[:8]] or ["SOLO BOLO", "DISRESPECT", "CLEAN", "1v1", "1% HP", "RAMPAGE"]
     avoid_keywords = [w[0] for w in avoid_words[:5]] or ["LATE GAME", "TRIED TO"]
 
+    # Wczytaj korekty tytułów z pętli user_feedback_history (POST /learning/correction)
+    try:
+        _mem_file = LEARNING_DIR / "user_feedback_history.json"
+        if _mem_file.exists():
+            with open(_mem_file, "r", encoding="utf-8") as _mf:
+                _mem = json.load(_mf)
+            _user_avoid: set = set()
+            for _entry in _mem.get("history", []):
+                if _entry.get("param") == "title" and _entry.get("old_value"):
+                    _words = re.findall(r"\b[A-Za-z0-9]{4,}\b", str(_entry["old_value"]).upper())
+                    _user_avoid.update(w for w in _words if w not in _JUNK_KW)
+            _extra = [w for w in sorted(_user_avoid) if w not in avoid_keywords][:3]
+            if _extra:
+                avoid_keywords = (avoid_keywords + _extra)[:8]
+                _safe_print(f"[Learning] [USER_CORR] Korekty tytułów użytkownika → avoid+{_extra}")
+    except Exception as _ue:
+        _safe_print(f"[Learning] [WARN] Błąd wczytania korekt tytułów: {_ue}")
+
     # Top 5 realnych viralowych tytułów z kanału
     sorted_by_views = sorted(all_analyzed, key=lambda x: x.get("views", 0), reverse=True)
     top_viral_titles = [v.get("title") for v in sorted_by_views[:5] if v.get("title")]
