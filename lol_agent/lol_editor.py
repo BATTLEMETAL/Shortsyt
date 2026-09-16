@@ -1460,6 +1460,16 @@ def render_short(
                 print(f"   ⚠️  15s SNAP błąd (pomijam): {r15.stderr.decode('utf-8', errors='replace')[:200]}")
     # ─────────────────────────────────────────────────────────────────────────
 
+    # ── SPRZĄTANIE PLIKÓW TYMCZASOWYCH ──────────────────────────────────────────
+    temp_intermediates = [step1, step4, step5_music, step5_captions, step5_cta]
+    for temp_f in temp_intermediates:
+        try:
+            if temp_f and os.path.exists(temp_f) and temp_f != step5:
+                os.remove(temp_f)
+        except Exception as ce:
+            print(f"   [editor] Temp cleanup warning ({os.path.basename(temp_f)}): {ce}")
+    # ─────────────────────────────────────────────────────────────────────────
+
     print(f"\n{'='*55}")
     print(f"✅  SHORT GOTOWY: {step5}")
     print(f"   ⏱️  {final_duration:.1f}s | 🎮 {action_type.upper()} | 🎵 {os.path.basename(music) if music else 'brak'} | 🖊️  {_hook}")

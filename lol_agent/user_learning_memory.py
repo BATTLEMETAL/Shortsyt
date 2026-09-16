@@ -60,8 +60,10 @@ def _load_memory() -> Dict[str, Any]:
 def _save_memory(mem: Dict[str, Any]) -> bool:
     try:
         mem["last_updated"] = datetime.now(timezone.utc).isoformat()
-        with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+        tmp_file = MEMORY_FILE.with_suffix(".tmp")
+        with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(mem, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_file, MEMORY_FILE)
         return True
     except Exception as e:
         print(f"[UserLearning] Błąd zapisu {MEMORY_FILE}: {e}")

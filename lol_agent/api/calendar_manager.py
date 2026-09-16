@@ -17,7 +17,7 @@ except Exception:
     TZ_CET = timezone(timedelta(hours=2))
 
 CALENDAR_FILE = Path(__file__).resolve().parent.parent / "publishing_calendar.json"
-PEAK_HOURS_CET = ["08:30", "12:00", "18:30", "20:30"]
+PEAK_HOURS_CET = ["08:30", "18:30"]
 
 
 def _load_calendar_db() -> Dict[str, Any]:
@@ -32,20 +32,83 @@ def _load_calendar_db() -> Dict[str, Any]:
 
 
 def _save_calendar_db(data: Dict[str, Any]):
-    """Zapisz bazę rezerwacji kalendarza."""
+    """Zapisz bazę rezerwacji kalendarza (atomowy zapis do pliku)."""
     CALENDAR_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(CALENDAR_FILE, "w", encoding="utf-8") as f:
+    tmp_file = CALENDAR_FILE.with_suffix(".tmp")
+    with open(tmp_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_file, CALENDAR_FILE)
 
 
-def get_calendar_slots(start_date: Optional[str] = None, days: int = 14) -> List[Dict[str, Any]]:
+def get_calendar_slots(start_date: Optional[str] = None, days: int = 14, force_refresh: bool = False) -> List[Dict[str, Any]]:
     """
-    Zwraca siatkę slotów publikacji na zadany okres (domyślnie 14 dni).
-    Łączy wygenerowane okna Peak Hours z zapisanymi rezerwacjami.
+    Zwraca siatkę slotów publikacji na zadany okres (2 Shortsy dziennie: 08:30 i 18:30 CET).
+    Łączy:
+    1. Opublikowane filmy z YouTube z historycznymi statystykami i Wskaźnikiem Skuteczności
+    2. Zaplanowane filmy na YouTube (status 'scheduled')
+    3. Przyszłe okna Peak Hours (08:30 i 18:30 CET) z zapisanymi rezerwacjami
     """
     db = _load_calendar_db()
     now_cet = datetime.now(TZ_CET)
 
+    # 1. Pobierz dane z YouTube Data API (zaplanowane + opublikowane ze statystykami)
+    try:
+        from .youtube_uploader import get_channel_videos_and_performance
+        sync_data = get_channel_videos_and_performance(max_results=40, force_refresh=force_refresh)
+    except Exception:
+        try:
+            from youtube_uploader import get_channel_videos_and_performance
+            sync_data = get_channel_videos_and_performance(max_results=40, force_refresh=force_refresh)
+        except Exception:
+            sync_data = {"scheduled": {}, "published": [], "avg_views": 0, "total_published": 0}
+
+
+    yt_occupied = sync_data.get("scheduled", {})
+    yt_published = sync_data.get("published", [])
+    avg_views = sync_data.get("avg_views", 0)
+
+    slots: List[Dict[str, Any]] = []
+    seen_video_ids = set()
+
+    # 2. Dodaj opublikowane filmy historyczne (z wyświetleniami i Wskaźnikiem Skuteczności)
+    for pub in yt_published:
+        vid = pub.get("video_id")
+        if not vid or vid in seen_video_ids:
+            continue
+        seen_video_ids.add(vid)
+
+        slots.append({
+            "slot_id": f"pub_{vid}",
+            "date": pub.get("date"),
+            "time": pub.get("time"),
+            "datetime_local": pub.get("datetime_local"),
+            "datetime_utc": pub.get("datetime_utc"),
+            "is_peak": pub.get("time") in PEAK_HOURS_CET,
+            "is_past": True,
+            "status": "published",
+            "title": pub.get("title", ""),
+            "champion": pub.get("champion", "Katarina"),
+            "frag_type": pub.get("frag_type", "outplay"),
+            "source_clip": "",
+            "output_video": "",
+            "thumbnail_url": pub.get("thumbnail_url", ""),
+            "yt_video_id": vid,
+            "yt_url": f"https://www.youtube.com/shorts/{vid}",
+            "views": pub.get("views", 0),
+            "likes": pub.get("likes", 0),
+            "comments": pub.get("comments", 0),
+            "engagement_rate": pub.get("engagement_rate", 0.0),
+            "duration_s": pub.get("duration_s", 13.0),
+            "performance_score": pub.get("performance_score", ""),
+            "performance_ratio": pub.get("performance_ratio", 1.0),
+            "performance_tier": pub.get("performance_tier", "average"),
+            "performance_label": pub.get("performance_label", ""),
+            "performance_diff": pub.get("performance_diff", ""),
+            "notes": f"{pub.get('views', 0):,} wyśw. • {pub.get('likes', 0)} 👍 • {pub.get('performance_label', '')}",
+            "created_at": pub.get("datetime_utc"),
+        })
+
+    # 3. Wygeneruj sloty na dziś i kolejne dni (dokładnie 2 okna dziennie: 08:30 i 18:30 CET)
     if start_date:
         try:
             start_dt = datetime.fromisoformat(start_date).replace(tzinfo=TZ_CET)
@@ -54,8 +117,6 @@ def get_calendar_slots(start_date: Optional[str] = None, days: int = 14) -> List
     else:
         start_dt = now_cet.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    slots = []
-    
     for day_offset in range(days):
         day = start_dt + timedelta(days=day_offset)
         date_str = day.strftime("%Y-%m-%d")
@@ -64,19 +125,38 @@ def get_calendar_slots(start_date: Optional[str] = None, days: int = 14) -> List
             h, m = map(int, time_str.split(":"))
             slot_dt = day.replace(hour=h, minute=m, second=0, microsecond=0)
             slot_id = f"slot_{date_str}_{h:02d}-{m:02d}"
-            
+
             utc_dt = slot_dt.astimezone(timezone.utc)
             publish_at_iso = utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
             is_past = slot_dt < now_cet - timedelta(minutes=15)
-            
+            slot_cet_key = f"{date_str} {time_str}"
+            yt_match = yt_occupied.get(slot_cet_key)
+
             existing = db.get(slot_id, {})
-            
-            slot_status = existing.get("status")
-            if not slot_status:
-                slot_status = "past" if is_past else "free"
-            elif is_past and slot_status == "scheduled":
-                slot_status = "published"
+
+            if yt_match:
+                slot_status = "scheduled"
+                title = yt_match.get("title") or existing.get("title", "")
+                yt_video_id = yt_match.get("video_id") or existing.get("yt_video_id", "")
+                yt_url = f"https://www.youtube.com/shorts/{yt_video_id}" if yt_video_id else ""
+                thumbnail_url = yt_match.get("thumbnail_url") or existing.get("thumbnail_url", "")
+                notes = existing.get("notes") or f"Zaplanowane na YouTube ({yt_match.get('source', 'yt')})"
+            else:
+                slot_status = existing.get("status")
+                if not slot_status:
+                    slot_status = "past" if is_past else "free"
+                elif is_past and slot_status == "scheduled":
+                    slot_status = "published"
+                title = existing.get("title", "")
+                yt_video_id = existing.get("yt_video_id", "")
+                yt_url = existing.get("yt_url", "")
+                thumbnail_url = existing.get("thumbnail_url", "")
+                notes = existing.get("notes", "")
+
+            # Jeśli na ten czas jest już dodany film ze statusem 'published', nie dubluj
+            if any(s.get("yt_video_id") == yt_video_id and yt_video_id for s in slots if yt_video_id):
+                continue
 
             slot_data = {
                 "slot_id": slot_id,
@@ -87,25 +167,53 @@ def get_calendar_slots(start_date: Optional[str] = None, days: int = 14) -> List
                 "is_peak": True,
                 "is_past": is_past,
                 "status": slot_status,  # 'free' | 'reserved' | 'rendering' | 'ready' | 'scheduled' | 'published' | 'past'
-                "title": existing.get("title", ""),
+                "title": title,
                 "champion": existing.get("champion", ""),
                 "frag_type": existing.get("frag_type", "outplay"),
                 "source_clip": existing.get("source_clip", ""),
                 "output_video": existing.get("output_video", ""),
-                "thumbnail_url": existing.get("thumbnail_url", ""),
-                "yt_video_id": existing.get("yt_video_id", ""),
-                "yt_url": existing.get("yt_url", ""),
-                "notes": existing.get("notes", ""),
+                "thumbnail_url": thumbnail_url,
+                "yt_video_id": yt_video_id,
+                "yt_url": yt_url,
+                "notes": notes,
                 "created_at": existing.get("created_at"),
             }
             slots.append(slot_data)
 
-    # Dodaj również niestandardowe (ręcznie dodane) sloty
-    for sid, sval in db.items():
-        if not any(s["slot_id"] == sid for s in slots):
-            slots.append(sval)
+    # 4. Dodaj zaplanowane filmy z YouTube w niestandardowych godzinach (jeśli są)
+    for k, v in yt_occupied.items():
+        try:
+            parts = k.split(" ")
+            d_str, t_str = parts[0], parts[1]
+            vid = v.get("video_id", "")
+            if not any(s.get("yt_video_id") == vid for s in slots if vid):
+                dt_obj = datetime.strptime(k, "%Y-%m-%d %H:%M").replace(tzinfo=TZ_CET)
+                utc_dt = dt_obj.astimezone(timezone.utc)
+                custom_id = f"slot_{d_str}_{dt_obj.hour:02d}-{dt_obj.minute:02d}"
+                slots.append({
+                    "slot_id": custom_id,
+                    "date": d_str,
+                    "time": t_str,
+                    "datetime_local": dt_obj.strftime("%Y-%m-%d %H:%M CET"),
+                    "datetime_utc": utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "is_peak": False,
+                    "is_past": dt_obj < now_cet,
+                    "status": "scheduled",
+                    "title": v.get("title", "Zaplanowany Short YouTube"),
+                    "champion": "",
+                    "frag_type": "outplay",
+                    "source_clip": "",
+                    "output_video": "",
+                    "thumbnail_url": v.get("thumbnail_url", ""),
+                    "yt_video_id": vid,
+                    "yt_url": f"https://www.youtube.com/shorts/{vid}",
+                    "notes": f"Zaplanowane na YouTube ({v.get('source', 'yt')})",
+                    "created_at": None,
+                })
+        except Exception:
+            pass
 
-    # Posortuj chronologicznie
+    # Posortuj chronologicznie (najpierw historia, potem dziś, potem przyszłość)
     slots.sort(key=lambda s: s["datetime_utc"])
     return slots
 
@@ -190,6 +298,7 @@ def update_slot_status(slot_id: str, updates: Dict[str, Any]) -> Optional[Dict[s
 def auto_fill_upcoming_slots(input_clips: List[Dict[str, Any]], max_slots: int = 4) -> List[Dict[str, Any]]:
     """
     Automatycznie przypisuje najlepsze nieprzypisane klipy do najbliższych wolnych slotów Peak Hours.
+    Zoptymalizowane pod kątem szybkości (< 3s): używa pre-analizy, pomija opublikowane klipy.
     """
     try:
         from lol_agent.lol_frag_detector import analyze_clip_frags
@@ -199,24 +308,56 @@ def auto_fill_upcoming_slots(input_clips: List[Dict[str, Any]], max_slots: int =
         from lol_metadata_generator import generate_channel_title
 
     slots = get_calendar_slots(days=7)
-    free_slots = [s for s in slots if s["status"] == "free" and not s["is_past"]]
+    free_slots = [s for s in slots if s["status"] == "free" and not s.get("is_past")]
     
     assigned = []
-    used_clips = set()
     db = _load_calendar_db()
 
-    for clip in input_clips:
+    used_clips = {s.get("source_clip") for s in slots if s.get("source_clip")}
+    used_clips.update({v.get("source_clip") for v in db.values() if v.get("source_clip")})
+
+    try:
+        from lol_agent.learning_engine import get_action_weight
+    except Exception:
+        get_action_weight = lambda a: 1.0
+
+    # Sortuj kandydatów wg wagi samouczenia (najwyższy CTR i wyświetlenia na kanale)
+    sorted_clips = sorted(
+        input_clips,
+        key=lambda c: (
+            get_action_weight(c.get("pre_action") or "outplay"),
+            float(c.get("pre_score", 0) or 0)
+        ),
+        reverse=True
+    )
+
+    for clip in sorted_clips:
         if len(assigned) >= max_slots or not free_slots:
             break
+
+        if clip.get("already_published"):
+            continue
 
         clip_path = clip.get("path") or clip.get("file_path") or ""
         if not clip_path or clip_path in used_clips:
             continue
 
-        # Przeanalizuj typ fraga
-        analysis = analyze_clip_frags(clip_path)
         champ = clip.get("champion") or "Katarina"
-        frag = analysis.detected_frag_type
+        pre_act = clip.get("pre_action")
+
+        if pre_act:
+            frag = pre_act
+            notes_str = f"Auto-rezerwacja AI: {frag.upper()} (Pre-analiza)"
+        else:
+            try:
+                # Szybkie skanowanie (1 fps) aby uniknąć timeoutu requestu
+                analysis = analyze_clip_frags(clip_path, sample_fps=1.0)
+                frag = analysis.detected_frag_type
+                notes_str = f"Auto-rezerwacja AI: {analysis.badge_label} (Pewność: {int(analysis.confidence*100)}%)"
+            except Exception:
+                frag = "outplay"
+                notes_str = "Auto-rezerwacja AI (Fallback)"
+
         title = generate_channel_title(frag, champ)
 
         target_slot = free_slots.pop(0)
@@ -235,7 +376,7 @@ def auto_fill_upcoming_slots(input_clips: List[Dict[str, Any]], max_slots: int =
             "frag_type": frag,
             "source_clip": clip_path,
             "output_video": "",
-            "notes": f"Auto-rezerwacja AI: {analysis.badge_label} (Pewnosc: {int(analysis.confidence*100)}%)",
+            "notes": notes_str,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         db[slot_id] = entry

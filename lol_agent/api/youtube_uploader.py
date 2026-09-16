@@ -13,11 +13,13 @@ from typing import Optional, Dict, Any, List
 os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
+import socket
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from googleapiclient.errors import HttpError
 
 from .config import (
     CLIENT_SECRET_PATH, YT_TOKEN_PATH, ACCOUNTS_DIR,
@@ -697,8 +699,19 @@ def upload_video(
     )
 
     response = None
+    retry_count = 0
     while response is None:
-        status, response = request.next_chunk()
+        try:
+            status, response = request.next_chunk()
+            if status:
+                print(f"[YouTube] 🚀 Postęp uploadu: {int(status.progress() * 100)}%")
+        except (HttpError, socket.error, TimeoutError) as ex:
+            retry_count += 1
+            if retry_count > 5:
+                raise
+            sleep_s = 2 ** retry_count
+            print(f"[YouTube] ⚠️ Chwilowy błąd połączenia ({ex}), ponawiam za {sleep_s}s (próba {retry_count}/5)...")
+            time.sleep(sleep_s)
 
     video_id = response["id"]
     print(f"[YouTube] ✅ Wideo wgrane pomyślnie! ID: {video_id}")
