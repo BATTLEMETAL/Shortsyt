@@ -335,7 +335,7 @@ def get_channel_videos_and_performance(max_results: int = 50, force_refresh: boo
     """
     global _PERF_CACHE
     now_ts = time.time()
-    if not force_refresh and _PERF_CACHE["data"] is not None and (now_ts - _PERF_CACHE["timestamp"] < 60.0):
+    if not force_refresh and _PERF_CACHE["data"] is not None and (now_ts - _PERF_CACHE["timestamp"] < 3600.0):
         return _PERF_CACHE["data"]
 
     try:

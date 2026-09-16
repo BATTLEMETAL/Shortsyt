@@ -246,8 +246,10 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
                 "video_id": result.get("video_id"),
                 "url": result.get("url"),
             }
-            with open(processed_path, "w", encoding="utf-8") as f:
+            _proc_tmp = processed_path.with_suffix(".tmp")
+            with open(_proc_tmp, "w", encoding="utf-8") as f:
                 json.dump(processed, f, ensure_ascii=False, indent=2)
+            os.replace(_proc_tmp, processed_path)
         except Exception as e:
             print(f"[Publish] Warning: could not update processed_hashes.json: {e}")
 

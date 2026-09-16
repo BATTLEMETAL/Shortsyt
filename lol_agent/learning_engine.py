@@ -51,17 +51,17 @@ def _safe_print(msg: str) -> None:
 
 
 def _load_published_history() -> List[Dict[str, Any]]:
-    """Wczytuje lokalną historię publikacji z published_videos.jsonl."""
+    """Wczytuje lokalną historię publikacji z published_videos.jsonl (ostatnie 500 wpisów)."""
     history = []
     if PUB_LOG_FILE.exists():
         try:
             with open(PUB_LOG_FILE, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip():
-                        try:
-                            history.append(json.loads(line.strip()))
-                        except Exception:
-                            pass
+                raw_lines = [l for l in f if l.strip()]
+            for line in raw_lines[-500:]:
+                try:
+                    history.append(json.loads(line.strip()))
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[Learning] Warning reading published_videos.jsonl: {e}")
     return history
