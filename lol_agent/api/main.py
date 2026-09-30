@@ -541,17 +541,22 @@ async def auto_detect_clip(req: AutoDetectRequest, payload: dict = Depends(verif
         peaks = []
         combat_segs = None
 
-    # Dobierz sugestię hook_text
-    HOOK_MAP = {
-        "pentakill": "PENTAKILL!",
-        "quadrakill": "QUADRA KILL!",
-        "triple": "TRIPLE KILL!",
-        "double": "DOUBLE KILL!",
-        "clutch": "1% HP CLUTCH!",
-        "solo_bolo": "SOLO BOLO!",
-        "outplay": "CZY TO JEST MOZLIWE?",
-    }
-    hook_text = HOOK_MAP.get(detected_action, f"{detected_action.upper().replace('_', ' ')}!")
+    # Dobierz sugestię hook_text (priorytet ma dynamiczny hook z OCR / detekcji walki)
+    suggested_hook = getattr(frag_res, "suggested_title_hook", "") if 'frag_res' in locals() and frag_res else ""
+    if suggested_hook and suggested_hook.strip():
+        hook_text = suggested_hook.strip()
+    else:
+        HOOK_MAP = {
+            "pentakill": "PENTAKILL - DID ENEMY FF?",
+            "quadrakill": "QUADRA KILL - ONE MORE LEFT",
+            "triple": "TRIPLE KILL - ENEMY DIFF",
+            "double": "DOUBLE KILL - CLEAN OR LUCKY?",
+            "clutch": "1% HP CLUTCH - WATCH THIS",
+            "solo_bolo": "CLEAN SOLO BOLO 1v1",
+            "outplay": "HOW IS THIS POSSIBLE?",
+        }
+        hook_text = HOOK_MAP.get(detected_action, f"{detected_action.upper().replace('_', ' ')}!")
+
 
     return {
         "clip_start": clip_start,

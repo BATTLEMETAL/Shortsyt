@@ -11,6 +11,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Tuple
+import uuid
 
 # Dodaj lol_agent do path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -55,6 +56,28 @@ class PipelineState:
 _state = PipelineState()
 _lock = threading.Lock()
 _thread: Optional[threading.Thread] = None
+_cancel_event = threading.Event()
+_active_proc = None
+
+
+def set_active_subprocess(proc):
+    """Zarejestruj aktywny proces podrzędny (FFmpeg/FFprobe) do ewentualnego przerwania."""
+    global _active_proc
+    with _lock:
+        _active_proc = proc
+
+
+def clear_active_subprocess():
+    """Wyczyść referencję do procesu podrzędnego."""
+    global _active_proc
+    with _lock:
+        _active_proc = None
+
+
+def check_cancellation():
+    """Rzuć wyjątek InterruptedError jeśli użytkownik zażądał zatrzymania pipeline."""
+    if _cancel_event.is_set():
+        raise InterruptedError("Pipeline został anulowany przez użytkownika")
 
 
 def get_state() -> dict:
@@ -215,6 +238,8 @@ def _run_pipeline(
                             combat_segments = auto_segs
                         if f_res.detected_frag_type:
                             action_type = f_res.detected_frag_type
+                            if (not hook_text or hook_text.upper() in ("PENTAKILL", "OUTPLAY")) and action_type != "pentakill":
+                                hook_text = getattr(f_res, "suggested_title_hook", "") or action_type.upper().replace("_", " ")
                         with _lock:
                             _state.clip_start = clip_start
                             _state.clip_end = clip_end
@@ -282,8 +307,9 @@ def _run_pipeline(
 
 
         # Sprawdź czy kille mają lukę > 3.5s (martwe bieganie) i czy potrzeba jump-cut
-        # Dla SOLO BOLO nigdy nie stosujemy jump-cutów — cała walka 1v1 musi być ciągła
-        if action_type.lower() in ("solo_bolo", "solo", "1v1"):
+        # Dla SOLO BOLO oraz klipów o ciągłej akcji <= 26s nie stosujemy jump-cutów
+        total_clip_span = clip_end - clip_start
+        if action_type.lower() in ("solo_bolo", "solo", "1v1") or total_clip_span <= 26.0:
             combat_segments = None
         elif not combat_segments and peaks and len(peaks) >= 2:
             sorted_p = sorted(peaks, key=lambda x: x[0])
@@ -337,11 +363,17 @@ def _run_pipeline(
                 if qa_res.corrected_action_type:
                     action_type = qa_res.corrected_action_type
                     _update("Korekta typu akcji", 17, f"Skorygowano akcję na {action_type.upper()}")
+                    if not hook_text or "penta" in hook_text.lower():
+                        hook_text = action_type.upper().replace("_", " ")
 
                 is_solo = action_type.lower() in ("solo_bolo", "solo", "1v1")
                 if not is_solo and qa_res.suggested_combat_segments and not combat_segments:
                     combat_segments = qa_res.suggested_combat_segments
                     _update("Jump-Cut z QA", 18, f"QA zaleciło segmenty jump-cut: {combat_segments}")
+                elif not is_solo and qa_res.suggested_combat_segments is None and combat_segments:
+                    # QA wykryło ciągłą walkę (np. zabójstwo w luce bez banera) — anulujemy jump-cut
+                    combat_segments = None
+                    _update("Płynny montaż z QA", 18, "QA potwierdziło ciągłą walkę — anulowano jump-cut aby zachować wszystkie fragi")
 
                 if not is_solo and qa_res.adjusted_trim_start > clip_start and not combat_segments:
                     clip_start = qa_res.adjusted_trim_start
@@ -366,28 +398,31 @@ def _run_pipeline(
             # UWAGA: peaks timestamps są RELATIVE do clip_start; clip_start/clip_end są ABSOLUTNE
             last_kill_t_rel = max((_peak_ts(p) for p in peaks), default=None)
             last_kill_t_abs = (clip_start + last_kill_t_rel) if last_kill_t_rel is not None else None
-            for detail in qa_details:
-                detail_low = detail.lower()
-                if any(kw in detail_low for kw in ("akcja po ostatnim", "pacing", "długość")):
-                    if last_kill_t_abs is not None:
-                        new_end = round(last_kill_t_abs + 2.5, 1)
-                        if new_end < clip_end:
-                            _update("QA Fix: Outro", 19, f"Skracam outro: clip_end {clip_end}→{new_end}s")
-                            clip_end = new_end
-                            fixed = True
-                    break
-            # 2) Kill poza kadrem — przesuń clip_start bliżej pierwszego killa (abs coords)
-            for detail in qa_details:
-                detail_low = detail.lower()
-                if any(kw in detail_low for kw in ("poza krawędzią", "poza kadrem")):
-                    if last_kill_t_abs is not None:
-                        first_kill_t_abs = clip_start + min((_peak_ts(p) for p in peaks), default=last_kill_t_rel)
-                        new_start = round(max(clip_start, first_kill_t_abs - 4.0), 1)
-                        if new_start > clip_start:
-                            _update("QA Fix: Intro", 19, f"Przesuwam intro: clip_start {clip_start}→{new_start}s")
-                            clip_start = new_start
-                            fixed = True
-                    break
+            # 1) Outro za długie — skróć clip_end do last_kill + 2.5s (tylko dla pojedynczego klipu)
+            if not combat_segments:
+                for detail in qa_details:
+                    detail_low = detail.lower()
+                    if any(kw in detail_low for kw in ("akcja po ostatnim", "pacing", "długość")):
+                        if last_kill_t_abs is not None:
+                            new_end = round(last_kill_t_abs + 2.5, 1)
+                            if new_end < clip_end:
+                                _update("QA Fix: Outro", 19, f"Skracam outro: clip_end {clip_end}→{new_end}s")
+                                clip_end = new_end
+                                fixed = True
+                        break
+            # 2) Kill poza kadrem — przesuń clip_start bliżej pierwszego killa (tylko dla pojedynczego klipu)
+            if not combat_segments:
+                for detail in qa_details:
+                    detail_low = detail.lower()
+                    if any(kw in detail_low for kw in ("poza krawędzią", "poza kadrem")):
+                        if last_kill_t_abs is not None:
+                            first_kill_t_abs = clip_start + min((_peak_ts(p) for p in peaks), default=last_kill_t_rel)
+                            new_start = round(max(clip_start, first_kill_t_abs - 4.0), 1)
+                            if new_start > clip_start:
+                                _update("QA Fix: Intro", 19, f"Przesuwam intro: clip_start {clip_start}→{new_start}s")
+                                clip_start = new_start
+                                fixed = True
+                        break
             if fixed:
                 smart_cam_track2 = smart_cam_track
                 if use_smart_camera:
@@ -444,6 +479,7 @@ def _run_pipeline(
             _update("Minimap skip", 19, f"Minimap detection pominięta: {me}")
 
         # Krok 2 — render
+        check_cancellation()
         _update("Renderowanie klipu", 20, "Uruchamiam render_short...")
 
         output = render_short(
@@ -463,6 +499,7 @@ def _run_pipeline(
             combat_segments=combat_segments,
         )
 
+        check_cancellation()
         _update("Generowanie miniaturki & metadanych", 90, "Tworzę miniaturkę 9:16 i tytuł...")
         
         # Miniaturka
@@ -504,24 +541,32 @@ def _run_pipeline(
             
             if action_type.lower() in ("solo_bolo", "solo", "1v1"):
                 c_style = f"1v1 Lane Duel / Pure Mechanical Skill Check{' in ' + z_label if z_label else ''}"
+                c_narrative = "Aggressive 1v1 mechanical outplay and ego check."
             elif k_count >= 5 or "penta" in action_type.lower():
                 c_style = f"Full Teamfight Ace (5 Kills / Pentakill){' at ' + z_label if z_label else ''}"
+                c_narrative = "Relentless pentakill chase & teamfight wipe. Zero escape for the enemy."
             elif "oneshot" in action_type.lower():
                 c_style = "Instant Burst Combo / Assassination"
+                c_narrative = "Instant proactive assassination and burst execution."
             elif "clutch" in action_type.lower():
                 c_style = "1% HP Survival / Miracle Turnaround"
+                c_narrative = "Extreme low HP survival and comeback clutch."
             elif "triple" in action_type.lower() or k_count == 3:
-                c_style = f"3v1 Outplay / Triple Kill Rampage{' in ' + z_label if z_label else ''}"
+                c_style = f"Relentless Triple Kill Chase & Rampage{' in ' + z_label if z_label else ''}"
+                c_narrative = "Offensive pursuit: Chasing down and hunting enemies across the map. NOT defending a tower dive."
             elif "double" in action_type.lower() or k_count == 2:
-                c_style = f"2v1 Outplay / Fast Double Kill{' in ' + z_label if z_label else ''}"
+                c_style = f"Fast Double Kill Pursuit{' in ' + z_label if z_label else ''}"
+                c_narrative = "Aggressive engage and double kill execution."
             else:
-                c_style = f"Skillshot Dodging / Turnaround Outplay{' in ' + z_label if z_label else ''}"
+                c_style = f"Aggressive Outplay / Hunting Enemies{' in ' + z_label if z_label else ''}"
+                c_narrative = "Offensive hunting and mechanical execution of fleeing opponents."
 
             extra_ctx = {
                 "map_zone": map_zone_info,
                 "kill_count": k_count,
                 "clip_duration": c_dur,
                 "combat_style": c_style,
+                "combat_narrative": c_narrative,
                 "is_solo": action_type.lower() in ("solo_bolo", "solo", "1v1"),
             }
 
@@ -556,6 +601,9 @@ def _run_pipeline(
                     "pinned_comment": "Rate this play 1-10! 👇",
                 }
 
+        if _cancel_event.is_set():
+            return
+
         with _lock:
             _state.status = PipelineStatus.DONE
             _state.progress = 100
@@ -585,6 +633,13 @@ def _run_pipeline(
         if notify_token:
             _send_push(notify_token, "✅ Short gotowy!", f"{output_filename} wyrenderowany")
 
+    except InterruptedError as ie:
+        with _lock:
+            _state.status = PipelineStatus.ERROR
+            _state.error = str(ie)
+            _state.finished_at = datetime.now().isoformat()
+            _state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] 🛑 {ie}")
+        return
     except Exception as e:
         err = traceback.format_exc()
         with _lock:
@@ -638,6 +693,7 @@ def start_pipeline(
     with _lock:
         if _state.status == PipelineStatus.RUNNING:
             return False
+        _cancel_event.clear()
 
     _thread = threading.Thread(
         target=_run_pipeline,
@@ -666,9 +722,21 @@ def start_pipeline(
 
 
 def stop_pipeline():
-    """Zatrzymaj pipeline (soft stop — czeka na koniec bieżącego ffmpeg)."""
+    """Zatrzymaj pipeline natychmiastowo: flaga anulowania + ubicie aktywnego procesu FFmpeg."""
+    global _active_proc
     with _lock:
         if _state.status == PipelineStatus.RUNNING:
+            _cancel_event.set()
             _state.status = PipelineStatus.ERROR
             _state.error = "Zatrzymano przez użytkownika"
             _state.finished_at = datetime.now().isoformat()
+            if _active_proc is not None:
+                try:
+                    _active_proc.terminate()
+                except Exception:
+                    try:
+                        _active_proc.kill()
+                    except Exception:
+                        pass
+                _active_proc = None
+            _state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] 🛑 Pipeline przerwany przez użytkownika")

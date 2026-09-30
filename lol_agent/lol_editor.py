@@ -1004,12 +1004,13 @@ def prepend_freeze_hook(
     hook_text: str,
     output_path: str,
     freeze_duration: float = 0.6,
+    clean_source_path: Optional[str] = None,
 ) -> str:
     """
     Wstawia freeze-frame z wielkim hookiem na początku shorta (0.0s – freeze_duration).
 
     Mechanizm:
-      1. Wyciąga pierwszą klatkę jako [0:v]trim=end=0.04,loop=N → freeze_duration s
+      1. Wyciąga pierwszą klatkę jako [clean:v]trim=end=0.04,loop=N → freeze_duration s
       2. Na freeze narzuca drawbox + drawtext z hookiem (duże litery, góra ekranu)
       3. concat filter: [freeze][glowne wideo] → output
       4. Audio freeze = adelay (muzyka przesunięta o freeze_duration ms)
@@ -1089,19 +1090,25 @@ def prepend_freeze_hook(
     )
 
     # filter_complex: freeze segment z hookiem, concat z glownym wideo
-    # Audio: adelay przesuwa audio o freeze_duration ms (muzyka startuje razem z glownym wideo)
+    # Używamy clean_source_path (jeśli dostępny), aby tło klatki freeze było czyste bez podwójnego tekstu
     delay_ms = int(freeze_duration * 1000)
+    has_clean = bool(clean_source_path and os.path.exists(clean_source_path))
+    frz_in = "1:v" if has_clean else "0:v"
+    inputs = ["-i", video_path]
+    if has_clean:
+        inputs.extend(["-i", clean_source_path])
+
     fc = (
-        f"[0:v]trim=end=0.04,loop={n_loop}:size=1:start=0,setpts=N/FRAME_RATE/TB,"
+        f"[{frz_in}]trim=end=0.04,loop={n_loop}:size=1:start=0,setpts=N/FRAME_RATE/TB,"
         f"{drawbox},{drawtext},{arrow_text}[frz];"
         f"[0:v]setpts=PTS-STARTPTS[main];"
         f"[frz][main]concat=n=2:v=1:a=0[outv];"
-        f"[0:a]adelay={delay_ms}|{delay_ms},apad[outa]"
+        f"[0:a]adelay=delays={delay_ms}:all=1,apad[outa]"
     )
 
     cmd = [
         "ffmpeg", "-y",
-        "-i", video_path,
+        *inputs,
         "-filter_complex", fc,
         "-map", "[outv]",
         "-map", "[outa]",
@@ -1116,7 +1123,7 @@ def prepend_freeze_hook(
         print(f"Freeze hook GPU error (CPU fallback): {err}")
         cmd_cpu = [
             "ffmpeg", "-y",
-            "-i", video_path,
+            *inputs,
             "-filter_complex", fc,
             "-map", "[outv]",
             "-map", "[outa]",
@@ -1577,6 +1584,7 @@ def render_short(
             hook_text=_hook,
             output_path=step5_freeze,
             freeze_duration=0.6,
+            clean_source_path=step5_captions,
         )
         if os.path.exists(step5_freeze) and os.path.getsize(step5_freeze) > 10_000:
             import shutil as _shfz
