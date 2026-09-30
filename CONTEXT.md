@@ -1,6 +1,6 @@
 # LOL AGENT — MASTER CONTEXT (2026 PRODUCTION REVISION)
-> Ostatnia aktualizacja: 2026-09-06 (Sesja: Naprawa Kamery, Diagnostyka QA, Hardware Profile, Restrukturyzacja Kontekstu)
-> Wersja: v35 — PRODUKCYJNY PIPELINE + NATIVE DESKTOP STUDIO + SMART CAMERA v25 + AUTO-REPAIR QA ENGINE
+> Ostatnia aktualizacja: 2026-09-30 (Sesja: Phrase-Level Title Dedup, Eliminacja wycieku tagów z tytułu, Rozszerzenie puli szablonów CTR, Rzetelna klasyfikacja solo_bolo vs outplay przez liczenie wrogów CV, Backfill statusu publikacji)
+> Wersja: v37 — PRODUKCYJNY PIPELINE + DEDUP FRAZOWY TYTUŁÓW + ENEMY BAR CLASSIFIER + DESKTOP STUDIO v25
 > **CZYTAJ TEN PLIK NA POCZĄTKU KAŻDEJ SESJI — zastępuje analizę rozproszonych plików i chroni przed regresjami.**
 
 ---
@@ -43,22 +43,27 @@ Zgodnie z audytem `data/system_hardware_profile.json` system posiada dedykowane,
 
 ### A. Kinematyka Kamery (`lol_agent/smart_camera.py`)
 Kamera konwertuje materiał 16:9 (1920x1080) na wertykalny 9:16 (608x1080 przeskalowany do 1080x1920).
-- **Detekcja paska gracza**: 
-  - Maska koloru złotego: `(r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)`
-  - Geometria paska: `cw >= 14`, `3 <= ch <= 16`, `2.0 <= asp <= 20.0`, `area >= 30`
+- **Detekcja paska gracza (Pure Player Tracking — ZERO wież/minionów)**: 
+  - Maska koloru zielonego (standard): `(g > 130) & (r < 125) & (b < 120) & ((g - r) > 20) & ((g - b) > 25)`
+  - Maska koloru złotego (colorblind): `(r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)`
+  - Geometria paska bohatera: `18 <= cw <= 150`, `5 <= ch <= 18`, `2.0 <= asp <= 12.0`, `area >= 45`
+  - **Odrzucanie wież**: Paski wież mają `cw > 180px` oraz wysoki asp — filtr `cw <= 150` i `asp <= 12.0` bezwzględnie eliminuje wieże.
+  - **BRAK FALLBACKU NA WROGÓW**: Usunięto detekcję `enemy_cx` (czerwone paski), ponieważ płonące/niszczone wieże generowały czerwone artefakty, kradnąc kamerę na wieżę.
 - **Maski wykluczeń (HUD / Overlays)**:
-  - Scoreboard górny: `y < 140`
+  - Scoreboard górny (precyzyjny): `excl[:95, 680:1240] = False` (nigdy `excl[:140, :]`, by nie maskować walk w rzece/krzakach!).
   - Dolny pasek skilli: `y > 864`
-  - Minimapa: `y > 626 oraz x > 1459`
-  - Chat i portret: `y > 670 oraz x < 345`
-  - Marginesy boczne: `x < 100` oraz `x > 1720` (watermarki Outplayed/statystyki)
+  - Minimapa i panel przedmiotów: `y > 626 oraz x > 1459`
+  - Chat i portret gracza: `y > 670 oraz x < 345`
+  - Portrety sojuszników HUD (prawe skrzydło): `excl[:450, 1540:] = False`
+  - Marginesy boczne: `x < 45` oraz `x > 1740` (watermarki Outplayed/statystyki)
 - **Parametry kinematyki kinowej**:
   - **`DEADBAND_PX = 30.0`**: Mikro-ruchy gracza w granicach 30px nie poruszają kamerą (stabilność statywu).
-  - **`LERP_ALPHA = 0.35`**: Szybkie, responsywne doganianie postaci podczas walki.
-  - **`MAX_PAN_PX = 80`**: Maksymalny przesuw na próbkę (zapobiega opóźnieniom w krótkich walkach).
+  - **`LERP_ALPHA = 0.45`**: Responsywne doganianie postaci podczas walki i po doskokach.
+  - **`MAX_PAN_PX = 80`**: Maksymalny przesuw na próbkę.
   - **`SNAP_DELTA = 280`**: Natychmiastowy przeskok kamery przy Shunpo Katariny, Flashu lub skoku.
-  - **`SMOOTH_WIN = 5`**: Okno wygładzania kroczącego (5 próbek). **Nigdy nie ustawiać 13**, gdyż okno 13 uśrednia skok snap i spóźnia kadr o 3 sekundy!
-  - **`end_freeze_sec = 0.6`**: Zamrożenie pozycji kadru w ostatnich 0.6s klipu. **Nigdy nie ustawiać 1.8s**, bo zamrozi kadr przed ostatnim fragiem!
+  - **`SMOOTH_WIN = 5`**: Segmentowane wygładzanie kroczące per-segment z wykrywaniem granic skoków (>180px).
+  - **`MOMENTUM_FRAMES = 3` + `MOMENTUM_DECAY = 0.6`**: Gdy gracz chwilowo niewidoczny (VFX Death Lotus, obrót), kamera kontynuuje wektor prędkości z zanikaniem 60% przez max 3 klatki, po czym twardo zamraża pozycję (nigdy nie dryfuje na inne obiekty).
+  - **`end_freeze_sec = 0.6`**: Zamrożenie pozycji kadru w ostatnich 0.6s klipu. Nigdy nie ustawiać 1.8s!
 
 ### B. Kadrowanie Czasowe & Pacing (`lol_agent/lol_frag_detector.py`, `PROJECT_GUIDELINES.md`)
 - **Solo Bolo (1v1)**:
@@ -82,11 +87,35 @@ Kamera konwertuje materiał 16:9 (1920x1080) na wertykalny 9:16 (608x1080 przesk
   - Zapisuje wyuczone preferencje w `lol_agent/user_feedback_history.json`.
   - Przyszłe rendery automatycznie adaptują parametry (muzyka, pacing, lead-in) bez konieczności ręcznego ustawiania.
 
+### D. Combat Continuity Guard — Zakaz Wycinania Trwającej Walki
+- **Zasada**: W klipach o łącznej rozpiętości `total_span <= 26.0s` lub w przerw między fragami zawierających wrogie paski HP / walkę, **jump-cut jest kategorycznie zablokowany**.
+- **Cztery poziomy ochrony**:
+  1. `pipeline_runner.py`: Jeśli `total_clip_span <= 26.0s`, wymusza `combat_segments = None`.
+  2. `lol_frag_detector.py`: Próbkuje 5 klatek w luce między zabójstwami; jeśli występuje wymiana ognia lub `span <= 26.0s`, ustawia `allow_jump_cut = False`.
+  3. `lol_quality_validator.py`: Wykrycie walki w luce anuluje sugerowane segmenty (`suggested_segments = None`), zapobiegając cięciom w locie.
+  4. `lol_editor.py`: Ostatnia linia obrony w `render_short()` przed generowaniem listy FFmpeg concat sprawdza klatki luki i resetuje `combat_segments = None`.
+- **Przypadek referencyjny**: Zabójstwo Jhina przykryte komunikatem "Your team destroyed the first turret!" w środku ekranu. OCR nie widział banera, ale Combat Continuity Guard zachował ciągłość wideo (24.5s) i wszystkie 3 zabójstwa znalazły się w finalnym shortsie.
+
+### E. Tytuły, SEO & Deduplikacja Frazowa (`lol_agent/lol_metadata_generator.py`, `lol_agent/lol_publisher.py`)
+- **Tylko `#Shorts` w tytule**: Zakaz wstrzykiwania `#LeagueOfLegends` czy `#LoL` do tytułu. Tytuł ma mieć mocny hook (<45 znaków) i wyłącznie `#Shorts` na końcu. Wszystkie pozostałe tagi i bloki wiralowe trafiają do opisu filmu (`_build_hashtags()`).
+- **Deduplikacja frazowa (Fingerprint Guard)**: Ostatnie 15 opublikowanych filmów z `published_videos.jsonl` jest analizowane pod kątem odcisków pierwszych 3-4 słów (bez emoji i hashtagów). Szablony pasujące do odcisku otrzymują karę -85% wagi (`score * 0.15`), a Gemini dostaje listę `FORBIDDEN opening phrases`.
+- **Rozszerzona pula szablonów CTR**: Każda kategoria akcji ma 12-16 unikalnych szablonów nasyconych słowami o najwyższym CTR z dyrektywy samouczenia (`WRONG`, `ENEMY`, `OUTPLAY`, `TRIED`, `EGO`, `SOLO`, `BOLO`) oraz wyczyszczonych ze słów zakazanych (`HUNT`, `ESCAPE`, `INSTANT`).
+
+### F. Rzetelna Klasyfikacja Akcji (`lol_agent/lol_frag_detector.py`, `lol_agent/medal_db.py`)
+- **`solo_bolo` vs `outplay`**:
+  - Detektor zlicza wrogie paski HP w oknie walki (`_count_enemy_bars_in_frame()`).
+  - Jeśli na ekranie podczas walki jest $\ge 2$ przeciwników (1v2, 1v3, teamfight/skirmish) $\rightarrow$ bezwzględnie **`outplay`**.
+  - Jeśli OCR wykrył baner `SHUTDOWN`, `RAMPAGE`, `GODLIKE`, `KILLING SPREE`, `UNSTOPPABLE` $\rightarrow$ **`outplay`**.
+  - Jeśli na klipie jest 0 killi (juke, ucieczka, contest smoka/barona) $\rightarrow$ **`outplay`**.
+  - **`solo_bolo`** jest zarezerwowane wyłącznie dla pojedynków, gdzie na ekranie walczy dokładnie 1 wróg i padł dokładnie 1 kill bez shutdownu.
+- **Medal DB Mapping**:
+  - `MEDAL_TITLE_MAP` w `medal_db.py` mapuje `"solo kill"`, `"solo bolo"`, `"1v1"` na `solo_bolo`, a `"shutdown"`, `"outplay"`, `"1v2"`, `"1v3"`, `"ace"` na `outplay`.
+
 ---
 
 ## 2. POST-MORTEM AWARII: PRZYCZYNY I WYCIĄGNIĘTE WNIOSKI
 
-W ostatnich sesjach wystąpiły 4 poważne regresje, które zrujnowały jakość montażu. Poniżej zebrano ich dokładne źródło, aby żaden model AI nie powtórzył tych błędów:
+W ostatnich sesjach wystąpiło 7 poważnych awarii / regresji. Poniżej zebrano ich dokładne źródło, aby żaden model AI nie powtórzył tych błędów:
 
 ### ❌ BŁĄD 1: Spóźniona kamera, ucięte pierwsze zabójstwo, kamera ucieka w prawo
 - **Objaw**: Przy podwójnym/potrójnym zabójstwie pierwszy frag (np. rel 4.33s) jest ucięty z lewej strony, kamera dociera do akcji dopiero po 5-6 sekundach.
@@ -125,6 +154,48 @@ W ostatnich sesjach wystąpiły 4 poważne regresje, które zrujnowały jakość
   - Obie ścieżki (gra i muzyka) miały ustawiony ten sam target głośności `-14 LUFS` w filtrze `loudnorm`.
 - **Wniosek i Rozwiązanie**:
   - Muzyka musi być w tle: `I=-21:TP=-2.0` oraz balans 45%. Gra: `I=-14:TP=-1.5` oraz balans 85%.
+
+### ❌ BŁĄD 5: Wycinanie środkowego zabójstwa przez jump-cut (brakujące zabójstwo Jhina)
+- **Objaw**: Po pierwszym fragu (Warwick) kamera przeskakuje natychmiast do trzeciego (Double Kill), wycinając drugie zabójstwo (Jhin pod wieżą).
+- **Źródło błędu (Root Cause)**:
+  - Komunikat "Your team destroyed the first turret!" w centrum ekranu przysłonił baner OCR zabójstwa Jhina w klatkach 18-21s.
+  - Powstała 11.5-sekundowa luka detekcji między OUTPLAY a DOUBLE KILL. Algorytm uznał to za "puste bieganie" i podzielił klip na 2 segmenty, wycinając trwającą walkę.
+- **Wniosek i Rozwiązanie**:
+  - Wdrożono `Combat Continuity Guard` (Sekcja 1.D) — weryfikacja pikseli walki w luce oraz limit `total_span <= 26.0s` blokują jump-cuty.
+
+### ❌ BŁĄD 6: Kamera skacząca na wieżę i gubiąca gracza w trakcie walki
+- **Objaw**: Kamera w trakcie walki przy wieży nagle blokuje się na wieży zamiast śledzić Katarinę i przeciwników.
+- **Źródło błędu (Root Cause)**:
+  - Płonąca lub niszczona wieża generowała czerwone piksele i miała szeroki pasek HP, który wygrywał w starym fallbacku wrogów (`enemy_cx`) oraz przy braku górnego limitu szerokości paska gracza (`cw`).
+- **Wniosek i Rozwiązanie**:
+  - Wdrożono dyrektywę `camera_player_only_tracking`: filtr paska bohatera `18 <= cw <= 150` (wieże mają >180px), bezwzględne usunięcie `enemy_cx` fallbacku. Kamera śledzi WYŁĄCZNIE championa gracza.
+
+### ❌ BŁĄD 7: Statyczna kamera w centrum kadru (Unpack Bug w first_x search)
+- **Objaw**: Po wdrożeniu zmian kamera w ogóle się nie ruszała, stała w miejscu (`crop_x = 656`), a bohater i cel uciekali poza kadr 9:16.
+- **Źródło błędu (Root Cause)**:
+  - Po zmianie struktury `frames_data` z krotek `(hp_bars, enemy_cx)` na płaską listę `hp_bars`, w linii 760 pozostało `for hp_b, _ in frames_data:`.
+  - Pętla rzucała `ValueError: not enough values to unpack (expected 2, got 1)`, co cicho aktywowało `except Exception:` i zwracało statyczny fallback centrum `[(0.0, 656), (duration, 656)]`.
+- **Wniosek i Rozwiązanie**:
+  - Poprawiono na `for hp_b in frames_data:`. Wprowadzono testowanie `find_action_path()` przed i po restarcie backendu, weryfikując generowanie dynamicznych punktów zamiast 2-punktowego fallbacku.
+
+### ❌ BŁĄD 8: Monotonia tytułów i zombie-tagi (#LeagueOfLegends) w tytule
+- **Objaw**: Wszystkie tytuły kończyły się `#Shorts #LeagueOfLegends #LoL`, ucinając widoczną część tytułu na smartfonach, a nazwy typu "They Tried to Run" i "Master Tier SOLO BOLO" powtarzały się po 4 razy z rzędu w publikacjach.
+- **Źródło błędu (Root Cause)**:
+  1. `lol_publisher.py` siłowo doklejał `#LeagueOfLegends #LoL` w `upload_lol_short()` tuż przed wysłaniem do YouTube API.
+  2. Dedup sprawdzał tylko pełne identyczne stringi tytułów, więc drobna zmiana emoji ignorowała blokadę powtórzeń.
+  3. Pula szablonów miała zaledwie 6-8 pozycji per typ akcji i zawierała słowa z listy `avoid_keywords` (`HUNT`, `ESCAPE`, `INSTANT`).
+- **Wniosek i Rozwiązanie**:
+  - Usunięto doklejanie tagów w uploaderze (tylko `#Shorts` jako safety net).
+  - Wdrożono deduplikację na poziomie odcisków frazowych (pierwsze 3-4 słowa bez emoji) z karą -85% wagi na pasujące szablony i listą `FORBIDDEN opening phrases` dla Gemini.
+  - Rozszerzono bazę do 12-16 szablonów nasyconych słowami o wysokim CTR (`WRONG`, `ENEMY`, `OUTPLAY`, `TRIED`, `EGO`, `SOLO`, `BOLO`).
+
+### ❌ BŁĄD 9: Wszystkie pojedyncze kille klasyfikowane fałszywie jako SOLO BOLO
+- **Objaw**: Teamfighty, walki 1v2, shutdowny i klipy bez fraga były fałszywie oznaczane jako `solo_bolo` z czerwonymi banerami i tytułami 1v1. `outplay` nigdy się nie pojawiał w gotowych filmach.
+- **Źródło błędu (Root Cause)**:
+  - W `lol_frag_detector.py` warunek `elif len(kills_detected) <= 1 and max_kill_tier <= 1 and not is_clutch:` był sprawdzany przed `else: outplay`, co czyniło `outplay` kodem martwym i wymuszało `solo_bolo` na każdym 1-killowym i 0-killowym klipie.
+- **Wniosek i Rozwiązanie**:
+  - Dodano `_count_enemy_bars_in_frame()`. Jeśli w kadrze walki jest $\ge 2$ wrogów lub OCR wykrył baner SHUTDOWN/RAMPAGE/itp., klip jest uczciwie oznaczany jako `outplay`.
+  - `solo_bolo` jest ściśle ograniczone do walk 1v1 (dokładnie 1 wróg w kadrze, brak banera shutdown).
 
 ---
 
