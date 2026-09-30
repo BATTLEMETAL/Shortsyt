@@ -225,12 +225,10 @@ def upload_lol_short(
 
     youtube = get_lol_youtube_service()
 
-    # Dodaj viralne hashtagi do tytułu (Shorts algorytm preferuje 2-4 mocne tagi w tytule)
-    viral_hashtags = ["#Shorts", "#LeagueOfLegends", "#LoL"]
-    for ht in viral_hashtags:
-        if ht.lower() not in title.lower():
-            if len(title) + len(ht) + 1 <= 98:
-                title = f"{title} {ht}"
+    # Upewnij się że #Shorts jest w tytule — reszta tagów (#LeagueOfLegends #LoL) idzie do opisu
+    if "#shorts" not in title.lower():
+        if len(title) + 7 <= 98:
+            title = f"{title} #Shorts"
 
     status_dict = {
         "selfDeclaredMadeForKids": False,

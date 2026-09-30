@@ -226,9 +226,36 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
     except Exception:
         pass
 
+    # Dedup — ładuje odciski (pierwsze 4 słowa) z ostatnich 15 opublikowanych tytułów
+    # i mocno obniża wagę szablonów które pasują do już użytej frazy
+    _used_fingerprints: set = set()
+    try:
+        _pub_log = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
+        if os.path.exists(_pub_log):
+            with open(_pub_log, "r", encoding="utf-8") as _pf:
+                _plines = [l.strip() for l in _pf if l.strip()]
+            for _pl in _plines[-15:]:
+                try:
+                    _pt = json.loads(_pl).get("title", "")
+                    if _pt:
+                        # Usuń hashtagi, emoji i interpunkcję → pierwsze 4 słowa jako odcisk
+                        _pt_clean = re.sub(r'#\S+', '', _pt)
+                        _pt_clean = re.sub(r'[^\w\s]', '', _pt_clean).strip().upper()
+                        _words = _pt_clean.split()
+                        if len(_words) >= 3:
+                            _used_fingerprints.add(" ".join(_words[:4]))
+                            _used_fingerprints.add(" ".join(_words[:3]))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     weights = []
     for t in templates:
         t_upper = t.upper()
+        t_clean = re.sub(r'#\S+', '', t_upper)
+        t_clean = re.sub(r'[^\w\s]', '', t_clean).strip()
+        t_words = t_clean.split()
         score = 1.0
         if map_zone_label and map_zone_label.upper() in t_upper:
             score += 6.0
@@ -237,7 +264,13 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
                 score += 1.8
         for akw in avoid_kw:
             if akw in t_upper:
-                score = max(0.1, score - 1.2)
+                score = max(0.05, score - 1.2)
+        # Penalizuj szablony których frazy kluczowe były niedawno użyte
+        for fp in _used_fingerprints:
+            fp_words = fp.split()
+            if len(fp_words) >= 3 and all(w in t_clean for w in fp_words[:3]):
+                score = max(0.05, score * 0.15)  # -85% wagi przy trafieniu odcisku
+                break
         weights.append(score)
     return random.choices(templates, weights=weights, k=1)[0]
 
@@ -353,8 +386,9 @@ def generate_metadata(
     viral_titles = [t for t in raw_viral if "dive" not in t.lower()]
     title_tone = tuning_params.get("title_tone", "hype")
 
-    # Załaduj ostatnie 15 tytułów z published_videos.jsonl do blokady duplikatów
+    # Załaduj ostatnie 20 tytułów — buduj odciski frazowe (pierwsze 4 słowa bez emoji/hashtag)
     _recent_titles = []
+    _recent_fingerprints = []
     try:
         _pub_log = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
         if os.path.exists(_pub_log):
@@ -364,16 +398,24 @@ def generate_metadata(
                 try:
                     _t = json.loads(_line).get("title", "")
                     if _t:
-                        _clean = _t.split("#")[0].strip()
-                        _recent_titles.append(_clean)
+                        _recent_titles.append(_t.split("#")[0].strip())
+                        _fp = re.sub(r'#\S+', '', _t)
+                        _fp = re.sub(r'[^\w\s]', '', _fp).strip().upper()
+                        _fp_words = _fp.split()
+                        if len(_fp_words) >= 3:
+                            _recent_fingerprints.append(" ".join(_fp_words[:4]))
                 except Exception:
                     pass
     except Exception:
         pass
     _recent_titles_block = ""
     if _recent_titles:
+        fp_block = "\n".join(f'- "{fp}"' for fp in _recent_fingerprints[-15:]) if _recent_fingerprints else ""
         _recent_titles_block = (
-            "\n\nRECENTLY PUBLISHED TITLES (STRICT DEDUPLICATION — DO NOT REPEAT or closely paraphrase ANY of these):\n"
+            "\n\nRECENTLY PUBLISHED — STRICT DEDUPLICATION:\n"
+            "FORBIDDEN opening phrases (do NOT start title with these first 3+ words):\n"
+            + fp_block
+            + "\nFull recent titles (do NOT repeat or closely paraphrase):\n"
             + "\n".join(f'- "{t}"' for t in _recent_titles[-15:])
         )
 
