@@ -999,6 +999,139 @@ def merge_music(video_path: str, music_path: Optional[str],
     return output_path
 
 
+def prepend_freeze_hook(
+    video_path: str,
+    hook_text: str,
+    output_path: str,
+    freeze_duration: float = 0.6,
+) -> str:
+    """
+    Wstawia freeze-frame z wielkim hookiem na początku shorta (0.0s – freeze_duration).
+
+    Mechanizm:
+      1. Wyciąga pierwszą klatkę jako [0:v]trim=end=0.04,loop=N → freeze_duration s
+      2. Na freeze narzuca drawbox + drawtext z hookiem (duże litery, góra ekranu)
+      3. concat filter: [freeze][glowne wideo] → output
+      4. Audio freeze = adelay (muzyka przesunięta o freeze_duration ms)
+
+    Warunek wywołania: tylko gdy hook_text niepusty i action_type != solo_bolo
+    """
+    import re, shutil
+
+    if not hook_text:
+        shutil.copy(video_path, output_path)
+        return output_path
+
+    font = _get_font_path()
+    if not font:
+        print("brak czcionki — pomijam freeze hook")
+        shutil.copy(video_path, output_path)
+        return output_path
+
+    # Sanityzacja tekstu (identyczna jak w add_text_overlay)
+    clean_hook = re.sub(r'[^\x00-\x7F]+', '', hook_text).strip()
+    clean_hook = clean_hook.replace("'", "")
+    clean_hook = clean_hook.replace(":", "\\:")
+    clean_hook = clean_hook.replace("%", "%%")
+    if not clean_hook:
+        shutil.copy(video_path, output_path)
+        return output_path
+
+    # Skroc hook do maks 32 znakow zeby zmiesci sie w 1080px
+    if len(clean_hook) > 32:
+        clean_hook = clean_hook[:29] + "..."
+
+    font_safe = font.replace(chr(92), '/').replace(':', '\\:')
+
+    # Ile klatek freeze (fps=30 → 18 klatek ≈ 0.6s)
+    n_loop = max(18, int(freeze_duration * 30))
+
+    # Rozmiar tekstu — dynamiczny wzgledem dlugosci
+    fsize = max(68, min(110, int(3700 // max(len(clean_hook), 1))))
+
+    # Szerokosc tla pod tekst
+    approx_w = min(max(int(len(clean_hook) * fsize * 0.55) + 60, 400), 1060)
+
+    drawbox = (
+        f"drawbox="
+        f"x=trunc((iw-{approx_w})/2)"
+        f":y=trunc(ih*0.06)"
+        f":w={approx_w}"
+        f":h={int(fsize * 1.45)}"
+        f":color=black@0.72"
+        f":t=fill"
+    )
+    drawtext = (
+        f"drawtext="
+        f"fontfile='{font_safe}'"
+        f":text='{clean_hook}'"
+        f":x=(w-text_w)/2"
+        f":y=h*0.075"
+        f":fontsize={fsize}"
+        f":fontcolor=0xFFD700"
+        f":borderw=5"
+        f":bordercolor=black"
+        f":shadowx=3:shadowy=3:shadowcolor=black@0.85"
+    )
+
+    # Strzalka pod tekstem (v = wizualna wskazowka ze idzie dalej)
+    arrow_y = int(0.075 * 1920) + int(fsize * 1.45) + 8
+    arrow_text = (
+        f"drawtext="
+        f"fontfile='{font_safe}'"
+        f":text='v'"
+        f":x=(w-text_w)/2"
+        f":y={arrow_y}"
+        f":fontsize=52"
+        f":fontcolor=white@0.85"
+        f":borderw=3"
+        f":bordercolor=black"
+    )
+
+    # filter_complex: freeze segment z hookiem, concat z glownym wideo
+    # Audio: adelay przesuwa audio o freeze_duration ms (muzyka startuje razem z glownym wideo)
+    delay_ms = int(freeze_duration * 1000)
+    fc = (
+        f"[0:v]trim=end=0.04,loop={n_loop}:size=1:start=0,setpts=N/FRAME_RATE/TB,"
+        f"{drawbox},{drawtext},{arrow_text}[frz];"
+        f"[0:v]setpts=PTS-STARTPTS[main];"
+        f"[frz][main]concat=n=2:v=1:a=0[outv];"
+        f"[0:a]adelay={delay_ms}|{delay_ms},apad[outa]"
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-filter_complex", fc,
+        "-map", "[outv]",
+        "-map", "[outa]",
+        *get_optimal_encoder_args("high"),
+        "-shortest",
+        output_path
+    ]
+    print(f"Freeze hook: '{clean_hook}' ({freeze_duration:.1f}s) -> {os.path.basename(output_path)}")
+    r = _run_ffmpeg(cmd, timeout=120.0, desc="prepend_freeze_hook GPU")
+    if r.returncode != 0:
+        err = r.stderr.decode('utf-8', errors='replace')[:500]
+        print(f"Freeze hook GPU error (CPU fallback): {err}")
+        cmd_cpu = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-filter_complex", fc,
+            "-map", "[outv]",
+            "-map", "[outa]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
+            "-shortest",
+            output_path
+        ]
+        r_cpu = _run_ffmpeg(cmd_cpu, timeout=180.0, desc="prepend_freeze_hook CPU")
+        if r_cpu.returncode != 0:
+            print(f"Freeze hook CPU error (pomijam): {r_cpu.stderr.decode('utf-8', errors='replace')[:400]}")
+            shutil.copy(video_path, output_path)
+    return output_path
+
+
 def add_cta_overlay(
     video_path: str,
     video_duration: float,
@@ -1432,15 +1565,45 @@ def render_short(
     print(f"\n[7/7] Engagement CTA overlay: '{_end_cta}'...")
     add_cta_overlay(step5_cta, final_duration, step5, cta_text=_end_cta, show_duration=1.8)
 
+    # ── KROK 8: Freeze-frame hook na klatce 0.0s (P2 — Hook Frame Zero) ─────────
+    # Wstawia 0.6s freeze pierwszej klatki z hookiem żeby zatrzymać scrollera.
+    # Nie dotyczy solo_bolo (tam walka zaczyna się natychmiast — freeze by zepsuła dynamikę).
+    _do_freeze = bool(_hook) and action_type.lower() not in ("solo_bolo", "solo", "1v1")
+    if _do_freeze:
+        step5_freeze = t("08_freeze_hook.mp4")
+        print(f"\n[8/8] Freeze-frame hook: '{_hook[:30]}' (0.6s freeze na starcie)...")
+        prepend_freeze_hook(
+            video_path=step5,
+            hook_text=_hook,
+            output_path=step5_freeze,
+            freeze_duration=0.6,
+        )
+        if os.path.exists(step5_freeze) and os.path.getsize(step5_freeze) > 10_000:
+            import shutil as _shfz
+            _shfz.move(step5_freeze, step5)
+            final_duration += 0.6
+            print(f"   Freeze hook wklejony — nowa dlugosc: {final_duration:.1f}s")
+        else:
+            print("   Freeze hook: plik wyjsciowy niepoprawny — pomijam")
+            if os.path.exists(step5_freeze):
+                os.remove(step5_freeze)
+    else:
+        print(f"\n[8/8] Freeze-frame hook: pomijam (solo_bolo lub brak hooka)")
+    # ─────────────────────────────────────────────────────────────────────────
+
     # ── POST-RENDER 15s SNAP ─────────────────────────────────────────────────
     # Stosuj TYLKO dla pojedynczych wymian/akcji (15.5-18.0s), NIGDY nie niszcz multi-killów ani nie ucinaj pierwszego fraga!
+    # Guard: jeśli freeze hook został dodany (+0.6s), odejmujemy go z progu żeby SNAP nie ciął właśnie freeze segmentu
+    _freeze_offset = 0.6 if _do_freeze and os.path.exists(step5) and os.path.getsize(step5) > 10_000 else 0.0
+    _snap_duration_base = final_duration - _freeze_offset  # rzeczywista długość bez freeze
     is_multikill = action_type in ("pentakill", "quadrakill") or (peaks and len(peaks) >= 3)
     is_solo_fight = action_type.lower() in ("solo_bolo", "solo", "1v1")
-    if 15.5 <= final_duration <= 18.0 and not is_multikill and not is_solo_fight:
+    if 15.5 <= _snap_duration_base <= 18.0 and not is_multikill and not is_solo_fight:
         trim_from_start = final_duration - 15.0
         first_peak_rel = min((t_k for (t_k, _) in (peaks or [])), default=999.0)
         # Przytnij tylko jeśli pierwszy kill jest bezpiecznie po punkcie cięcia
-        if first_peak_rel > trim_from_start + 1.0:
+        # Dodatkowy guard: nie tnij jeśli trim_from_start <= freeze_offset (wycięlibyśmy freeze)
+        if first_peak_rel > trim_from_start + 1.0 and trim_from_start > _freeze_offset + 0.05:
             step5_15s = step5.replace(".mp4", "_15s.mp4")
             cmd_15s = [
                 "ffmpeg", "-y",
@@ -1458,7 +1621,10 @@ def render_short(
                 print(f"   ⚡ 15s SNAP zastosowany: przycięto -{trim_from_start:.2f}s od początku → 15.0s")
             else:
                 print(f"   ⚠️  15s SNAP błąd (pomijam): {r15.stderr.decode('utf-8', errors='replace')[:200]}")
+        elif trim_from_start <= _freeze_offset + 0.05:
+            print(f"   ℹ️  15s SNAP pominięty — trim ({trim_from_start:.2f}s) wciął by freeze hook ({_freeze_offset:.1f}s)")
     # ─────────────────────────────────────────────────────────────────────────
+
 
     # ── SPRZĄTANIE PLIKÓW TYMCZASOWYCH ──────────────────────────────────────────
     temp_intermediates = [step1, step4, step5_music, step5_captions, step5_cta]

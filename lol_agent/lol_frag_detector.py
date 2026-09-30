@@ -614,32 +614,32 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
         detected_type = "pentakill"
         badge = "PENTAKILL"
         color = "#eab308"  # Złoty
-        hook = "Insane 1v5 Pentakill Rampage"
+        hook = "PENTAKILL - DID ENEMY FF?"
         conf = 0.95
     elif max_kill_tier == 4:
         detected_type = "quadrakill"
         badge = "QUADRA KILL"
         color = "#f97316"  # Pomarańczowy
-        hook = "Unstoppable Quadra Kill Frenzy"
+        hook = "QUADRA KILL - ONE MORE LEFT"
         conf = 0.92
     elif is_clutch:
         detected_type = "clutch"
         badge = "1% HP CLUTCH"
         color = "#ef4444"  # Czerwony neon
-        hook = f"Survives with {int(min_hp)}% HP & Outplays"
+        hook = f"HE HAD {int(min_hp)}% HP - WATCH THIS"
         conf = 0.90
     elif max_kill_tier == 3 or len(kills_detected) >= 3:
         detected_type = "triple"
         badge = "TRIPLE KILL" if max_kill_tier == 3 else f"MULTI-KILL ({len(kills_detected)} FRAGI)"
         color = "#a855f7"  # Fioletowy
-        hook = "Dominating Triple Kill"
+        hook = "TRIPLE KILL - ENEMY DIFF"
         conf = 0.88
     elif max_kill_tier == 2 or len(kills_detected) >= 2:
         # Gra wyświetliła baner DOUBLE KILL lub zarejestrowano 2 fragi
         detected_type = "double"
         badge = "DOUBLE KILL"
         color = "#06b6d4"  # Turkusowy
-        hook = "Clean Double Kill"
+        hook = "DOUBLE KILL - CLEAN OR LUCKY?"
         conf = 0.85
     elif len(kills_detected) == 1:
         # Dokładnie 1 kill: rozróżniamy Solo Bolo (czyste 1v1) od Outplay (1v2, shutdown, teamfight)
@@ -650,13 +650,14 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
             detected_type = "outplay"
             badge = "INSANE OUTPLAY"
             color = "#3b82f6"  # Niebieski
-            hook = "1v2 Clean Mechanical Outplay" if max_enemies_around_fight == 2 else "Insane Teamfight Outplay"
+            _enemy_str = "1v2" if max_enemies_around_fight == 2 else f"1v{max_enemies_around_fight}"
+            hook = f"{_enemy_str} - CAN HE WIN?"
             conf = 0.86
         elif is_explicit_outplay:
             detected_type = "outplay"
             badge = "INSANE OUTPLAY"
             color = "#3b82f6"  # Niebieski
-            hook = "Shutdown & Pure Mechanical Outplay"
+            hook = "ENEMY DIDNT EXPECT THIS"
             conf = 0.87
         else:
             # Czyste 1v1: 1 wróg w kadrze, brak banera shutdown
@@ -670,8 +671,9 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
         detected_type = "outplay"
         badge = "INSANE OUTPLAY"
         color = "#3b82f6"  # Niebieski
-        hook = "Frame-Perfect Mechanical Outplay"
+        hook = "WRONG MOVE - WATCH WHAT HAPPENS"
         conf = 0.80
+
 
     temp_res = FragAnalysisResult(
         video_path=video_path,
