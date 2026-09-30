@@ -332,10 +332,38 @@ def compute_optimal_clip_window(
         if current:
             clusters.append(current)
 
-        # Jeśli całkowity czas walki (od engage do outro) mieści się w limicie (max_dur + 2.0s),
-        # montujemy jako jedną płynną, ciągłą akcję bez cięć
+        # Jeśli całkowity czas walki mieści się w dopuszczalnym limicie (do 28s dla multikilli),
+        # lub przerwa między klastrami zawiera aktywną walkę (np. zabójstwo bez banera lub wymianę ciosów),
+        # montujemy jako jedną płynną, ciągłą akcję bez cięć!
         total_span = (real_kills[-1]["timestamp"] + max(outro, 2.0)) - (real_kills[0]["timestamp"] - max(4.5, buildup * 4.0))
-        if len(clusters) >= 2 and total_span > (max_dur + 2.0):
+
+        # Sprawdź czy przerwa między klastrami zawiera aktywną walkę (aby nie wyciąć np. fraga Jhina pod wieżą):
+        gap_has_combat = False
+        if len(clusters) >= 2:
+            try:
+                from lol_agent.lol_quality_validator import _check_enemy_combat_in_frame
+                cap = cv2.VideoCapture(frag_res.video_path)
+                fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+                g_start = clusters[0][-1]["timestamp"] + 1.2
+                g_end = clusters[1][0]["timestamp"] - 1.2
+                if g_end > g_start + 1.0:
+                    test_samples = np.linspace(g_start, g_end, 5)
+                    c_count = 0
+                    for ts in test_samples:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, int(ts * fps))
+                        ret, fr = cap.read()
+                        if ret:
+                            has_c, px, _ = _check_enemy_combat_in_frame(fr)
+                            if has_c and px > 400:
+                                c_count += 1
+                    if c_count >= 2:
+                        gap_has_combat = True
+                cap.release()
+            except Exception:
+                pass
+
+        allow_jump_cut = (len(clusters) >= 2) and (not gap_has_combat) and (total_span > max(26.0, max_dur + 3.0))
+        if allow_jump_cut:
             segments = []
             engage_lead = max(3.5, buildup * 2.5)
 
@@ -441,6 +469,28 @@ def compute_optimal_clip_window(
 
 
 
+def _count_enemy_bars_in_frame(frame: np.ndarray) -> int:
+    """Zlicza widoczne paski HP przeciwników (czerwone paski nad bohaterami)."""
+    h, w = frame.shape[:2]
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    m1 = cv2.inRange(hsv, (0, 120, 140), (10, 255, 255))
+    m2 = cv2.inRange(hsv, (170, 120, 140), (180, 255, 255))
+    red_mask = cv2.bitwise_or(m1, m2)
+
+    # Wyklucz HUD, scoreboard górny i minimapę
+    red_mask[int(h * 0.82):, :] = 0
+    red_mask[:int(h * 0.10), :] = 0
+    red_mask[int(h * 0.70):, int(w * 0.75):] = 0
+
+    cnts, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    count = 0
+    for c in cnts:
+        x, y, bw, bh = cv2.boundingRect(c)
+        if 20 <= bw <= 160 and 4 <= bh <= 20 and (bw / max(1, bh)) >= 2.0:
+            count += 1
+    return count
+
+
 def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysisResult:
     """
     Główna funkcja auto-detektora: skanuje wideo i zwraca dokładną klasyfikację fraga.
@@ -486,9 +536,10 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
     hp_readings = []
     kills_detected = []
     max_kill_tier = 0
-    highest_label = "OUTPLAY"
+    highest_label = ""
     last_kill_t = -10.0
     has_crit_vignette = False
+    max_enemies_around_fight = 0
 
     for t in timestamps:
         frame_idx = int(t * fps)
@@ -506,7 +557,12 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
         if not has_crit_vignette and _detect_critical_low_hp_vignette(frame):
             has_crit_vignette = True
 
-        # 3. Sprawdź napisy Kill przez OCR z Guardem własności gracza
+        # 3. Zlicz wrogie paski HP w kadrze (do weryfikacji 1v1 vs 1v2 / walki grupowej)
+        e_bars = _count_enemy_bars_in_frame(frame)
+        if e_bars > 0:
+            max_enemies_around_fight = max(max_enemies_around_fight, e_bars)
+
+        # 4. Sprawdź napisy Kill przez OCR z Guardem własności gracza
         k_tier, k_label, is_player_kill = _scan_ocr_for_kills(frame)
         if is_player_kill and k_tier > 0:
             # Ignoruj słabe sygnały OUTPLAY w pierwszych 1.2s jeśli nie są multikillem
@@ -572,18 +628,12 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
         color = "#ef4444"  # Czerwony neon
         hook = f"Survives with {int(min_hp)}% HP & Outplays"
         conf = 0.90
-    elif max_kill_tier == 3:
+    elif max_kill_tier == 3 or len(kills_detected) >= 3:
         detected_type = "triple"
-        badge = "TRIPLE KILL"
+        badge = "TRIPLE KILL" if max_kill_tier == 3 else f"MULTI-KILL ({len(kills_detected)} FRAGI)"
         color = "#a855f7"  # Fioletowy
         hook = "Dominating Triple Kill"
         conf = 0.88
-    elif len(kills_detected) >= 3:
-        detected_type = "triple"
-        badge = f"MULTI-KILL ({len(kills_detected)} FRAGI)"
-        color = "#a855f7"  # Fioletowy
-        hook = "Insane Multi-Kill Sequence 💥"
-        conf = 0.87
     elif max_kill_tier == 2 or len(kills_detected) >= 2:
         # Gra wyświetliła baner DOUBLE KILL lub zarejestrowano 2 fragi
         detected_type = "double"
@@ -591,14 +641,32 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
         color = "#06b6d4"  # Turkusowy
         hook = "Clean Double Kill"
         conf = 0.85
-    elif len(kills_detected) <= 1 and max_kill_tier <= 1 and not is_clutch:
-        # Solo Kill / Solo Bolo: 1v1 eliminacja (dokładnie 1 frag lub brak banerów multi-kill)
-        detected_type = "solo_bolo"
-        badge = "SOLO BOLO"
-        color = "#FF1744"  # Neonowa czerwień
-        hook = "Clean Solo Bolo - 1v1 Masterclass"
-        conf = 0.88
+    elif len(kills_detected) == 1:
+        # Dokładnie 1 kill: rozróżniamy Solo Bolo (czyste 1v1) od Outplay (1v2, shutdown, teamfight)
+        is_multi_enemy = (max_enemies_around_fight >= 2)
+        is_explicit_outplay = (highest_label == "OUTPLAY")
+
+        if is_multi_enemy:
+            detected_type = "outplay"
+            badge = "INSANE OUTPLAY"
+            color = "#3b82f6"  # Niebieski
+            hook = "1v2 Clean Mechanical Outplay" if max_enemies_around_fight == 2 else "Insane Teamfight Outplay"
+            conf = 0.86
+        elif is_explicit_outplay:
+            detected_type = "outplay"
+            badge = "INSANE OUTPLAY"
+            color = "#3b82f6"  # Niebieski
+            hook = "Shutdown & Pure Mechanical Outplay"
+            conf = 0.87
+        else:
+            # Czyste 1v1: 1 wróg w kadrze, brak banera shutdown
+            detected_type = "solo_bolo"
+            badge = "SOLO BOLO"
+            color = "#FF1744"  # Neonowa czerwień
+            hook = "Clean Solo Bolo - 1v1 Masterclass"
+            conf = 0.89
     else:
+        # Brak potwierdzonych killi (0 killi)
         detected_type = "outplay"
         badge = "INSANE OUTPLAY"
         color = "#3b82f6"  # Niebieski

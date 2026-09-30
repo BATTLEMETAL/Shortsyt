@@ -214,6 +214,7 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
         "action_type": action,
         "champion": champ,
         "thumbnail": req.thumbnail_path or str(Path(video_path).with_suffix("")).replace(".mp4", "_thumb.jpg"),
+        "status": "scheduled" if result.get("publish_at") else "published",
         "privacy": result.get("status", "public"),
         "scheduled_publish_at": result.get("publish_at"),
         "source_path": source_path,
