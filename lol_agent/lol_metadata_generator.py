@@ -103,18 +103,24 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
         templates = [
             # STATEMENT / SPEED
             f"Entire Team Disappeared in 3 Seconds 💀 {champ} Penta #Shorts",
-            f"One Reset. Five Graves. 💀 {champ} Pentakill #Shorts",
+            f"Enemy Team Wiped Clean 💀 {champ} Pentakill #Shorts",
             # DISRESPECT / EGO
             f"They Grouped For Free 💀 {champ} Pentakill #Shorts",
-            f"Five Enemies. Zero Survivors. 😈 {champ} #Shorts",
-            # HUNT / CHASE
-            f"No Escape 💀 Hunting Down All Five 🔥 #Shorts",
+            f"They Tried to Contest... Complete Wipe 😈 {champ} #Shorts",
+            f"Enemy Made the Wrong Call 💀 {champ} Pentakill #Shorts",
+            # CHASE & CLEANUP
             f"They Scattered. Didn't Matter. 💨 {champ} Penta #Shorts",
+            f"Full Squad Execution 💀 {champ} Pentakill #Shorts",
             # MECHANICAL FLEX
             f"Perfect Reset Machine 🔥 {champ} Full Ace 😈 #Shorts",
             f"Zero Hesitation. Pure Execution. 💀 {champ} Penta #Shorts",
-            # STORY
+            f"They Challenged the Reset Queen 👑 Full Pentakill #Shorts",
+            # STORY / TURNAROUND
             f"They Thought Grouping Was Safe... It Wasn't 😏 #Shorts",
+            f"They Tried to Turn the Fight... Terrible Idea 💀 {champ} #Shorts",
+            f"Enemy Team Deleted in Seconds ⚡ {champ} Pentakill #Shorts",
+            f"Pure Reset Rampage 🔥 {champ} Clean Pentakill #Shorts",
+            f"Absolute Teamfight Domination 💥 {champ} Pentakill #Shorts",
         ]
         if map_zone_label:
             templates.insert(0, f"{map_zone_label} Ace 💀 {champ} Pentakill – Nobody Left Standing #Shorts")
@@ -123,93 +129,132 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             # DISRESPECT / EGO
             f"They Thought 4v1 Was Safe... It Wasn't 😏 {champ} #Shorts",
             f"All Four Down. Just Like That. 💀 {champ} Quadra #Shorts",
-            # HUNT / CHASE
-            f"Hunting Down The Entire Squad 💀 {champ} Quadra #Shorts",
-            f"No Escape For Any Of Them 😈 {champ} Quadra Kill #Shorts",
-            # STATEMENT
+            f"Enemy Squad Disassembled 💀 {champ} Quadra Kill #Shorts",
+            f"They Tried to Collapse... Wrong Move 😈 {champ} #Shorts",
+            f"They Thought Numbers Would Win 😏 {champ} Quadra #Shorts",
+            # STATEMENT / SPEED
             f"Four Enemies Gone in Seconds ⚡ {champ} Quadra #Shorts",
-            f"Four Down. One {champ}. Clean. 💥 #Shorts",
+            f"Four Down. Clean Execution. 💥 {champ} Quadra #Shorts",
+            f"Clean Cleanup ⚡ {champ} Quadra Kill #Shorts",
             # STORY
             f"They Cornered {champ}... Wrong Decision. 💀 Quadra Kill #Shorts",
+            f"Enemy Team Tried to Fight Back 😈 Quadra Kill #Shorts",
+            f"They Tried to Overstay... Quadra Kill 🩸 #Shorts",
+            # MECHANICAL FLEX
+            f"Unstoppable Reset Chain 🔥 {champ} Quadra Kill #Shorts",
+            f"Disrespectful Quadra Kill 💀 {champ} Outplay #Shorts",
+            f"Pure Mechanical Dominance 💀 {champ} Quadra #Shorts",
         ]
     elif "triple" in act:
         templates = [
-            # HUNT / CHASE
-            f"No Escape From {champ} 💀 Clean Triple Kill #Shorts",
-            f"Hunting Down All Three 🔥 Triple Kill #Shorts",
             # DISRESPECT / EGO
-            f"They Thought They Could Run 😈 Triple Kill #Shorts",
+            f"Enemy Tried to Engage... Wrong Move 💀 Triple Kill #Shorts",
             f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts",
+            f"They Tried to 3v1 {champ}... Bad Idea 💀 Triple Kill #Shorts",
+            f"Disrespect Punished 🩸 {champ} Triple Kill #Shorts",
             # STATEMENT
             f"Three Down. Zero Chance. 💀 {champ} Triple Kill #Shorts",
+            f"Three Down. Clean Outplay. 💀 {champ} Triple Kill #Shorts",
+            f"Three Enemies Down in Seconds ⚡ {champ} Triple Kill #Shorts",
             # STORY
             f"Trash Talk Turned Into Silence 😈 {champ} Triple Kill #Shorts",
             f"They Made Their Move... Wrong Choice. 💀 Triple Kill #Shorts",
+            f"Enemy Team Walked Right Into It 😈 Triple Kill #Shorts",
+            f"Enemy Flank Turned Into Disaster 💀 Triple Kill #Shorts",
             # MECHANICAL FLEX
             f"Back-to-Back-to-Back 🩸 {champ} Triple Kill Reset #Shorts",
+            f"Three Resets in Seconds ⚡ {champ} Triple Kill #Shorts",
+            f"Clean Reset Sequence 🔥 {champ} Triple Kill #Shorts",
+            f"Triple Kill Masterclass 😈 {champ} Outplay #Shorts",
         ]
         if map_zone_label:
-            templates.insert(0, f"{map_zone_label} Triple Kill 💀 {champ} – Nobody Escaped #Shorts")
+            templates.insert(0, f"{map_zone_label} Triple Kill 💀 {champ} – Clean Reset #Shorts")
     elif "clutch" in act or "1hp" in act or "1%" in act:
         templates = [
             # CLUTCH / STAKES
             f"Surviving on 1% HP to Win 🩸 {champ} Clutch #Shorts",
             f"They Were 1 Second Too Late 😏 {champ} Clutch #Shorts",
             f"1 HP. Full Commitment. 💀 {champ} Outplay #Shorts",
+            f"The Cleanest 1% HP Outplay You'll See Today 💀 #Shorts",
             # STORY
             f"They Already Typed 'GG'... {champ} Didn't. 🔥 #Shorts",
             f"Dead or Alive? {champ} Answers With a Kill 🩸 #Shorts",
+            f"They Tried to Finish Me... Impossible Outplay 🩸 #Shorts",
+            f"Enemy Got Greedy 😏 1% HP Turnaround #Shorts",
+            f"They Thought It Was Over 💀 {champ} Clutch Outplay #Shorts",
+            f"Enemy Celebrated Too Early 😈 1 HP Clutch #Shorts",
             # MECHANICAL FLEX
-            f"The Cleanest 1% HP Escape You'll See Today 💀 #Shorts",
+            f"Pure Calculation on 1 HP 🧠 {champ} Clutch #Shorts",
+            f"Survived the Full Burst ⚡ {champ} Miracle Outplay #Shorts",
         ]
     elif "double" in act:
         templates = [
             # DISRESPECT
             f"They Came 2v1... Left 0v1. 💀 {champ} Double Kill #Shorts",
             f"Never Fight {champ} 2v1. 😈 Lesson Learned. #Shorts",
-            # HUNT
-            f"Two Enemies Down in a Blink ⚡ {champ} Double Kill #Shorts",
-            f"No Flash. No Escape. Double Kill. 💀 {champ} #Shorts",
-            # STATEMENT
-            f"Back-to-Back Execution 🩸 {champ} Double Kill #Shorts",
-            # STORY
             f"They Thought Numbers Would Help 💀 {champ} Double Kill #Shorts",
+            f"Enemy Duo Tried to Collapse... Wrong Target 💀 #Shorts",
+            f"They Ganked the Wrong Champion 😈 {champ} Double Kill #Shorts",
+            f"They Tried to Pinch {champ}... Regret 💀 #Shorts",
+            # SPEED & STATEMENT
+            f"Two Enemies Down in a Blink ⚡ {champ} Double Kill #Shorts",
+            f"Back-to-Back Execution 🩸 {champ} Double Kill #Shorts",
+            f"Two Down. Zero Hesitation. 🩸 {champ} Double Kill #Shorts",
+            f"Enemy Duo Deleted 💥 {champ} Double Kill #Shorts",
+            # MECHANICAL FLEX
+            f"2v1 Outplay Masterclass 🔥 {champ} Double Kill #Shorts",
+            f"Double Reset Precision ⚡ {champ} Double Kill #Shorts",
+            f"Clean 2v1 Turnaround 💀 {champ} Double Kill #Shorts",
         ]
         if map_zone_label:
             templates.insert(0, f"{map_zone_label} 2v1 Outplay 💀 {champ} Double Kill – No Contest #Shorts")
     elif "solo" in act or "bolo" in act or "1v1" in act:
         templates = [
             # DISRESPECT / EGO (top performer on channel)
-            f"They Ego Challenged {champ}... Instant SOLO BOLO 💀 #Shorts",
+            f"They Ego Challenged {champ}... Clean SOLO BOLO 💀 #Shorts",
             f"The Most Disrespectful 1v1 You'll See Today 😈 {champ} #Shorts",
             f"Nobody Survives {champ} in a 1v1 👑 Clean SOLO BOLO #Shorts",
+            f"Enemy Ego Checked Hard 👑 {champ} SOLO BOLO #Shorts",
+            f"Enemy Walked Up With Too Much Confidence 😏 SOLO BOLO #Shorts",
+            f"Master Tier 1v1 Ego Check 😈 {champ} SOLO BOLO #Shorts",
             # MECHANICAL FLEX
             f"SOLO BOLO Masterclass 😈 {champ} Pure 1v1 Mechanics #Shorts",
             f"Pixel-Perfect 1v1 Outplay 💀 {champ} SOLO BOLO #Shorts",
+            f"Pure Outplay in the 1v1 🔥 {champ} SOLO BOLO #Shorts",
+            f"Unforgiving 1v1 Mechanics 👑 {champ} SOLO BOLO #Shorts",
             # STORY
             f"They Called It… {champ} Answered. SOLO BOLO 🩸 #Shorts",
             f"Duel Accepted. Duel Won. 💀 {champ} SOLO BOLO #Shorts",
+            f"They Tried to Trade With {champ}... Terrible Mistake 💀 #Shorts",
+            f"They Thought They Won the Duel 💀 Clean SOLO BOLO #Shorts",
+            f"Enemy Stepped Up... Sent Back to Base 💀 SOLO BOLO #Shorts",
             # CLUTCH
             f"1v1 at Full Risk 🩸 {champ} SOLO BOLO Clutch #Shorts",
         ]
         if map_zone_label:
             templates.insert(0, f"Clean {map_zone_label} SOLO BOLO! 👑 {champ} 1v1 No Contest #Shorts")
-            templates.append(f"They Challenged {champ} in {map_zone_label}... Instant SOLO BOLO 💀 #Shorts")
+            templates.append(f"They Challenged {champ} in {map_zone_label}... Clean SOLO BOLO 💀 #Shorts")
     else:  # outplay / general
         templates = [
             # DISRESPECT
-            f"All-In On {champ}? Instant Regret 💀 #Shorts",
+            f"All-In On {champ}? Regret 💀 #Shorts",
             f"They Thought They Were Safe... Big Mistake 😏 {champ} #Shorts",
-            # HUNT
-            f"No Escape 💀 Hunting Down The Entire Team 🔥 #Shorts",
-            f"They Tried to Run. Nowhere to Go. 💀 {champ} #Shorts",
-            # STORY
-            f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts",
             f"Enemy Tried an Outplay... They Got Outplayed. 💀 #Shorts",
-            # MECHANICAL FLEX
+            f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts",
+            f"Enemy Confidence Shattered 💀 {champ} Outplay #Shorts",
+            f"Disrespect Turned Into Disaster 🩸 {champ} Outplay #Shorts",
+            # SPEED & STATEMENT
             f"Zero Hesitation. Pure Mechanics. 🔥 {champ} #Shorts",
-            # STATEMENT
             f"They Vanished in Seconds 💨 {champ} Outplay #Shorts",
+            f"Frame-Perfect Reaction 🔥 {champ} Outplay #Shorts",
+            # STORY / TURNAROUND
+            f"Enemy Tried to Engage... Walked Into a Trap 💀 #Shorts",
+            f"They Thought It Was Free Kills 😏 {champ} Outplay #Shorts",
+            f"Enemy Team Miscalculated 💀 {champ} Clean Outplay #Shorts",
+            f"They Tried to Turn... Huge Mistake 😈 {champ} #Shorts",
+            f"They Tried Everything... Nothing Worked 😈 {champ} #Shorts",
+            # MECHANICAL FLEX
+            f"Outplayed at Every Step 🧠 {champ} Mechanical Flex #Shorts",
         ]
         if map_zone_label:
             templates.insert(0, f"Clean {map_zone_label} Outplay 💀 {champ} – They Never Stood a Chance #Shorts")
