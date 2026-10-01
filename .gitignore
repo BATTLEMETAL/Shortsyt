@@ -1,92 +1,131 @@
 # ============================================
-# Shortsyt — .gitignore
+# Shortsyt — .gitignore (Production Security & Hygiene)
 # ============================================
 
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyo
+*.pyd
 *.so
+*$py.class
 *.egg-info/
 dist/
 build/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Virtual environments
 venv*/
 .venv/
+env/
 
-# IDE
+# IDE & OS
 .idea/
 .vscode/
 *.swp
+.DS_Store
+Thumbs.db
+desktop.ini
 
 # ============================================
-# SECRETS & TOKENS — NEVER COMMIT THESE
+# SECRETS, TOKENS & SENSITIVE CREDENTIALS — NEVER COMMIT
 # ============================================
 accounts/
-client_secret.json
+client_secret*.json
 *.pickle
 token*.pickle
 cookies.txt
 .env
+.env.*
+*.key
+*.pem
+token*.json
+auth_url.txt
+*auth_url*.txt
 
 # ============================================
-# GENERATED MEDIA — too large for git
+# PERSONAL RESUME & INSTALLER BINARIES
+# ============================================
+*CV*
+*Curriculum*
+*.pdf
+*.exe
+*.blockmap
+*.7z
+
+# ============================================
+# NODE / ELECTRON / MOBILE BUILDS
+# ============================================
+node_modules/
+*/node_modules/
+dist-app/
+dist-electron/
+dist-installer/
+*/dist-installer/
+shortsyt-desktop/dist/
+shortsyt-desktop/dist-app/
+shortsyt-desktop/dist-electron/
+shortsyt-desktop/dist-installer/
+shortsyt-desktop/release/
+shortsyt-app/node_modules/
+shortsyt-app/.expo/
+shortsyt-app/android/
+shortsyt-app/ios/
+
+# ============================================
+# GENERATED MEDIA & CACHE (Too large / ephemeral)
 # ============================================
 temp_videos/
 videos/
 music/
 thumbnails/
+lol_temp/
+lol_agent/lol_temp/
+temp/
+*.tmp
 *.mp4
 *.mp3
 *.wav
 *.avi
 *.mkv
 *.gif
-*.jpg
-*.jpeg
-*.png
-!shortsyt-desktop/public/*.png
-!shortsyt-desktop/src/assets/*.png
 
-# Node / Desktop / Mobile
-node_modules/
-dist-app/
-dist-electron/
-dist-installer/
-*.exe
-*.blockmap
-*.7z
-shortsyt-desktop/node_modules/
-shortsyt-desktop/dist/
-shortsyt-desktop/dist-app/
-shortsyt-desktop/dist-electron/
-shortsyt-desktop/dist-installer/
-shortsyt-desktop/release/
-shortsyt-app/
+# Large raw graphics in root (keep docs/ and UI assets)
+katarina_pentakill_thumbnail.jpg
+kick_stream_thumbnail_*.png
+kick_stream_thumbnail_*.jpg
+latest_thumbnail.jpg
+yt_banner_*.png
+yt_banner_*.jpg
+lol_agent/latest_thumbnail.jpg
+lol_agent/test_thumb_*.jpg
+lol_agent/thumbnails/
+
+# Debug directories & logs
+logs/
+*.log
+.last_track
+lol_agent/lol_music/.last_track
+scratch/
+scratch_*.py
+lol_agent/debug_*/
+lol_agent/debug_*.jpg
+linkedin_post_grafiki/
+lol_agent/clip_scan.txt
+lol_agent/debug_ocr.txt
+lol_agent/output_clips/
+lol_agent/preview_shorts/
+outputs/
 data/
+_archive/
 
-# ML models
+# ML models & runtime data files
 *.pkl
 *.h5
 *.pt
 *.pth
-
-# Logs & Debug
-*.log
-logs/
-.last_track
-lol_agent/lol_music/.last_track
-scratch/
-lol_agent/debug_*/
-lol_agent/debug_frames/
-lol_agent/debug_jinx/
-lol_agent/debug_last_frag/
-lol_agent/lol_temp/
-lol_agent/clip_scan.txt
-lol_agent/debug_ocr.txt
-
-# Data files & runtime caches
 *.csv
 *.xlsx
 *.jsonl
@@ -106,23 +145,13 @@ lol_agent/quality_log.jsonl
 lol_agent/last_dry_run.json
 lol_agent/beat_drop_cache.json
 lol_agent/lol_pre_analysis.json
+yt-dlp.conf
+update_schedule_19h.ps1
 
-# OS
-Thumbs.db
-.DS_Store
-
-# Backup files
-*.bak
-*.bak_full
-
-# Internal one-off debug / utility scripts (not portfolio material)
-_check_status.py
-_check_token_scopes.py
-_patch_synapsa_bridge.py
-_run_film2_now.py
-_run_film2_only.py
-_run_today_2shorts.py
-_test_micro_shorts.py
+# Temporary local scripts
+_check_*.py
+_run_*.py
+_test_*.py
 check_syntax.py
 custom_analysis.py
 fix_prehook.py
@@ -133,13 +162,4 @@ show_yt_cache.py
 complete_oauth.py
 open_port_8765.bat
 setup_token_refresh.ps1
-
-# Config / runtime files
-yt-dlp.conf
-update_schedule_19h.ps1
-
-# Archive of legacy experiments & scrapers
-_archive/
-auth_url.txt
-*auth_url*.txt
-
+verify_truth.py
