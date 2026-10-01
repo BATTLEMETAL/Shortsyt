@@ -122,7 +122,8 @@ YT_BASE_TAGS = [
 # ==========================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not GEMINI_API_KEY:
-    raise EnvironmentError("GEMINI_API_KEY is not set. Add it to your .env file.")
+    import warnings
+    warnings.warn("GEMINI_API_KEY is not set in environment or .env — AI generation features will use rule-based fallback.", stacklevel=2)
 
 GEMINI_MODEL = "gemini-flash-lite-latest"
 GEMINI_FALLBACK_MODELS = [
