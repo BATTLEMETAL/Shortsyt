@@ -107,7 +107,7 @@ def get_state() -> dict:
             "error": _state.error,
             "started_at": _state.started_at,
             "finished_at": _state.finished_at,
-            "logs": _state.logs[-50:],  # ostatnie 50 linii
+            "logs": list(_state.logs[-50:]),  # ostatnie 50 linii
         }
 
 
@@ -227,24 +227,23 @@ def _run_pipeline(
             try:
                 from lol_agent.lol_frag_detector import analyze_clip_frags, compute_optimal_clip_window
                 f_res = analyze_clip_frags(source_path, sample_fps=1.0)
-                if f_res.kills:
-                    auto_s, auto_e, auto_p, auto_segs = compute_optimal_clip_window(f_res, src_total_dur, action_type=action_type)
-                    if auto_s > 2.0 or (auto_e - auto_s) > (clip_end - clip_start):
-                        _update("Autocentrowanie na akcję", 8, f"Wykryto kille poza oknem początkowym! Przesuwam na {auto_s:.1f}s - {auto_e:.1f}s")
-                        clip_start = auto_s
-                        clip_end = auto_e
-                        peak_moment = auto_p
-                        if auto_segs and action_type.lower() not in ("solo_bolo", "solo", "1v1"):
-                            combat_segments = auto_segs
-                        if f_res.detected_frag_type:
-                            action_type = f_res.detected_frag_type
-                            if (not hook_text or hook_text.upper() in ("PENTAKILL", "OUTPLAY")) and action_type != "pentakill":
-                                hook_text = getattr(f_res, "suggested_title_hook", "") or action_type.upper().replace("_", " ")
-                        with _lock:
-                            _state.clip_start = clip_start
-                            _state.clip_end = clip_end
-                            _state.combat_segments = combat_segments
-                            _state.action_type = action_type
+                auto_s, auto_e, auto_p, auto_segs = compute_optimal_clip_window(f_res, src_total_dur, action_type=action_type)
+                if auto_s > 2.0 or (auto_e - auto_s) > (clip_end - clip_start):
+                    _update("Autocentrowanie na akcję", 8, f"Wykryto akcję poza oknem początkowym! Przesuwam na {auto_s:.1f}s - {auto_e:.1f}s")
+                    clip_start = auto_s
+                    clip_end = auto_e
+                    peak_moment = auto_p
+                    if auto_segs and action_type.lower() not in ("solo_bolo", "solo", "1v1"):
+                        combat_segments = auto_segs
+                    if f_res.detected_frag_type:
+                        action_type = f_res.detected_frag_type
+                        if (not hook_text or hook_text.upper() in ("PENTAKILL", "OUTPLAY")) and action_type != "pentakill":
+                            hook_text = getattr(f_res, "suggested_title_hook", "") or action_type.upper().replace("_", " ")
+                    with _lock:
+                        _state.clip_start = clip_start
+                        _state.clip_end = clip_end
+                        _state.combat_segments = combat_segments
+                        _state.action_type = action_type
             except Exception as auto_ex:
                 print(f"[pipeline_runner] Auto-centering warning: {auto_ex}")
 

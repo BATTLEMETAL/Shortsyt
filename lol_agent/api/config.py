@@ -24,9 +24,10 @@ JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "720"))  # 30 dni
 
 # ── Ścieżki projektu ─────────────────────────────────────────────────────────
 LOL_AGENT_DIR = Path(__file__).parent.parent
-LOL_INPUT_DIR = Path(os.getenv("LOL_INPUT_DIR", r"C:\Medal\Edits"))
-LOL_OUTPUT_DIR = Path(os.getenv("LOL_OUTPUT_DIR", r"C:\Users\mz100\Videos\lol_shorts_output"))
+LOL_INPUT_DIR = Path(os.getenv("LOL_INPUT_DIR", str(Path.home() / "Videos" / "Overwolf" / "Outplayed" / "League of Legends")))
+LOL_OUTPUT_DIR = Path(os.getenv("LOL_OUTPUT_DIR", str(Path.home() / "Videos" / "lol_shorts_output")))
 LOL_TEMP_DIR = LOL_AGENT_DIR / "lol_temp"
+
 
 # ── YouTube OAuth ─────────────────────────────────────────────────────────────
 ACCOUNTS_DIR = _ROOT / "accounts"
@@ -38,8 +39,11 @@ EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8765",
+    "http://127.0.0.1:8765",
     "http://localhost:8081",
     "http://localhost:19006",
     "exp://localhost:8081",
-    "*",  # Cloudflare Tunnel — apka mobilna
 ]

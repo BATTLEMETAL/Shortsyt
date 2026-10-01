@@ -10,7 +10,7 @@ Dlaczego HP bar?
 
 Nie wymaga AI/CV — tylko PIL + numpy.
 """
-import sys, os
+import sys, os, math
 sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -251,7 +251,7 @@ def detect_kill_events_from_audio(video_path: str,
             '-vn', '-ac', '1', '-ar', str(SAMPLE_RATE),
             '-f', 'f32le', tmp_path
         ]
-        r = subprocess.run(cmd, capture_output=True)
+        r = subprocess.run(cmd, capture_output=True, timeout=30)
         if r.returncode != 0:
             print(f"   [kills-audio] ffmpeg error — pomijam")
             return []
@@ -708,23 +708,31 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
     default_x = (source_w - crop_w) // 2
 
     try:
+        # Ogranicz rozdzielczość analizy do max 1920×1080, aby nie wysadzić RAM-u na klipach 1440p/4K
+        analysis_w = min(source_w, 1920)
+        analysis_h = min(source_h, 1080)
+        # Skala do przeliczenia pozycji z przestrzeni analizy na przestrzeń źródłową
+        analysis_scale = source_w / analysis_w   # 1.0 dla 1080p, ~1.33 dla 1440p
+        crop_w_a = max(1, int(round(crop_w / analysis_scale)))  # crop_w w przestrzeni analizy
         frames = extract_sample_frames(video_path, clip_start, clip_end,
                                        n_frames=n_samples,
-                                       scale_w=source_w, scale_h=source_h)
+                                       scale_w=analysis_w, scale_h=analysis_h)
         if len(frames) < 2:
             raise ValueError("Za mało klatek do analizy ruchu")
 
         t_points = np.linspace(0.0, duration, len(frames))
 
-        # ── Maska wykluczenia HUD i statycznych elementów ──
-        excl = np.ones((source_h, source_w), dtype=bool)
-        excl[:140, :] = False                                        # Górny pasek/tablica/KDA
-        excl[864:, :] = False                                        # Dolny pasek umiejętności
-        excl[626:, 1459:] = False                                    # Minimapa i panel przedmiotów
-        excl[670:, :345] = False                                     # Chat i portret
-        excl[:, :100] = False                                        # Lewy margines
-        excl[:, 1720:] = False                                       # Prawy margines / Outplayed watermark
-        excl[:450, 1540:] = False                                    # Portrety sojuszników HUD (prawe skrzydło)
+        # ── Maska wykluczenia HUD i statycznych elementów (w przestrzeni analizy) ──
+        sw = analysis_w / 1920.0   # skala szerokości względem 1920px referencji
+        sh = analysis_h / 1080.0   # skala wysokości względem 1080px referencji
+        excl = np.ones((analysis_h, analysis_w), dtype=bool)
+        excl[:int(95*sh), int(680*sw):int(1240*sw)] = False     # Centralna tablica KDA / czas
+        excl[int(815*sh):, :] = False                           # Blokuj dolny HUD (skille, cooldowny, level up 815-1080px)
+        excl[int(626*sh):, int(1459*sw):] = False               # Minimapa i panel przedmiotów
+        excl[int(670*sh):, :int(345*sw)] = False                # Chat i portret
+        excl[:, :int(45*sw)] = False                            # Skrajny lewy margines
+        excl[:, int(1740*sw):] = False                          # Prawy margines / Outplayed watermark
+        excl[:int(550*sh), int(1450*sw):] = False               # Portrety sojuszników HUD + Outplayed leak (1503, 207)
 
         # KROK 1: Wykrycie paska gracza (zielony - standardowy, złoty - colorblind) + centroid wrogów
         frames_data = []
@@ -744,90 +752,119 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
             for comp_i in range(1, num_p):
                 cx, cy, cw, ch, area = stats_p[comp_i]
                 asp = cw / max(ch, 1)
-                # Pasek HP bohatera ma przynajmniej 5px wysokości i 18px szerokości w 1080p (odrzucamy cienkie linie wież/terenu)
-                if cw >= 18 and 5 <= ch <= 18 and 2.0 <= asp <= 15.0 and area >= 45:
+                # Pasek HP bohatera: odporny na VFX Death Lotus, skoki Shunpo do sztyletu i cząsteczki walki
+                if cw >= 16 and cw <= 150 and 4 <= ch <= 38 and 1.1 <= asp <= 15.0 and area >= 30:
                     cen_x = float(centroids_p[comp_i][0])
-                    hp_bars.append((cx, cy, cw, ch, area * asp, cen_x))
+                    cen_y = float(centroids_p[comp_i][1])
+                    score = float(area + cw * 10)
+                    hp_bars.append((cx, cy, cw, ch, score, cen_x, cen_y))
 
-            # Zbierz centroid wrogich HP barów (czerwone) — Combat Centroid Fallback
-            red_mask = ((r > 150) & (g < 95) & (b < 85) & ((r - g) > 60) & ((r - b) > 70)) & excl
-            enemy_cx = None
-            if red_mask.astype(np.uint8).sum() > 0:
-                num_r, _, stats_r, centroids_r = cv2.connectedComponentsWithStats(red_mask.astype(np.uint8))
-                enemy_xs = []
-                for comp_i in range(1, num_r):
-                    cx, cy, cw, ch, area = stats_r[comp_i]
-                    asp = cw / max(ch, 1)
-                    if cw >= 8 and 2 <= ch <= 10 and 2.0 <= asp <= 20.0 and area >= 8:
-                        enemy_xs.append(int(centroids_r[comp_i][0]))
-                if enemy_xs:
-                    enemy_cx = int(np.mean(enemy_xs))
+            frames_data.append(hp_bars)
 
-            frames_data.append((hp_bars, enemy_cx))
 
         # KROK 2: Znalezienie pierwszego pewnego punktu zaczepienia gracza
-        first_x = float(source_w // 2)
-        for hp_b, _ in frames_data:
+        first_x = float(analysis_w // 2)
+        first_y = float(analysis_h // 2)
+
+        for hp_b in frames_data:
             if hp_b:
                 hp_b.sort(key=lambda c: -c[4])
                 first_x = float(hp_b[0][5])
+                first_y = float(hp_b[0][6])
                 break
 
-        # KROK 3: Płynne śledzenie gracza z Combat Centroid Fallback
-        # ── Parametry płynności (Kinowa stabilizacja) ────────────────────────
-        LERP_ALPHA    = 0.35   # responsywne doganianie gracza (CONTEXT_PRIME v32)
+        # KROK 3: Płynne śledzenie gracza z kinową stabilizacją (sprawdzone parametry)
+        # ── Parametry płynności ────────────────────────────────────────────────
+        LERP_ALPHA    = 0.35   # kinowa płynność doganiania (sprawdzona wartość bez drgań)
         MAX_PAN_PX    = 80     # max przesunięcie [px] na próbkę
-        SNAP_DELTA    = 280    # powyżej tej różnicy → natychmiastowy snap (Flash/Shunpo/Jump-cut)
-        DEADBAND_PX   = 30.0   # mikro-ruchy gracza wewnątrz 30px nie ruszają kamery
-        # ─────────────────────────────────────────────────────────────────────
+        SNAP_DELTA    = 220    # powyżej → natychmiastowy snap na doskok Shunpo / sztylet
+        MAX_TELEPORT_DELTA = 480  # powyżej → odrzuć jako fałszywy wynik
+        DEADBAND_PX   = 30.0   # mikro-ruchy wewnątrz 30px nie ruszają kamery
+        MOMENTUM_DECAY = 0.6   # zanik prędkości na klatkę gdy gracz niewidoczny
+        MOMENTUM_FRAMES = 3    # max klatek kontynuacji momentum (potem hard freeze)
+        # ──────────────────────────────────────────────────────────────────────
 
         track_x = first_x
+        track_y = first_y
         crop_xs = []
         champ_detected = 0
-        invisible_streak = 0   # ile klatek z rzędu gracz niewidoczny
+        invisible_streak = 0
+        last_velocity = 0.0
 
-        for hp_b, enemy_cx in frames_data:
+        for hp_b in frames_data:
             if hp_b:
                 champ_detected += 1
                 invisible_streak = 0
-                # Wybierz pasek gracza najbliższy aktualnej trajektorii
-                hp_b.sort(key=lambda c: c[4] - 0.8 * abs(c[5] - track_x), reverse=True)
+                # Wybierz pasek gracza najbliższy aktualnej trajektorii z umiarkowaną karą dystansu
+                hp_b.sort(key=lambda c: c[4] - 0.8 * math.hypot(c[5] - track_x, c[6] - track_y), reverse=True)
                 player_target_x = float(hp_b[0][5])
+                player_target_y = float(hp_b[0][6])
                 target_x = player_target_x
 
+                dist = math.hypot(target_x - track_x, player_target_y - track_y)
                 delta = abs(target_x - track_x)
-                if delta > SNAP_DELTA:
-                    # Gwałtowny doskok / Flash / Shunpo / Jump-cut: natychmiastowy snap
+                if dist > MAX_TELEPORT_DELTA:
+                    # Zbyt daleko — fałszywy wynik (Outplayed HUD leak, wieża poza ekranem)
+                    # Zamroź pozycję i kontynuuj momentum jeśli istnieje
+                    if abs(last_velocity) > 2.0:
+                        momentum = last_velocity * MOMENTUM_DECAY
+                        track_x = float(np.clip(track_x + momentum, 0, analysis_w - crop_w_a))
+                        last_velocity = momentum
+                    # track_y bez zmian — zachowaj ostatni znany Y
+                elif delta > SNAP_DELTA or dist > (SNAP_DELTA * 1.2):
+                    # Gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
                     track_x = target_x
+                    track_y = player_target_y
+                    last_velocity = 0.0
                 elif delta < DEADBAND_PX:
-                    # Wewnątrz strefy martwej — kamera stabilna jak na statywie, zero drgań
-                    pass
+                    # Strefa martwa — zero drgań, tłumienie prędkości
+                    last_velocity *= 0.5
                 else:
-                    # Płynne, kinowe doganianie: lerp + limit prędkości
+                    # Płynne doganianie: lerp + limit prędkości
                     desired = LERP_ALPHA * target_x + (1.0 - LERP_ALPHA) * track_x
                     move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
                     track_x = track_x + move
-            elif enemy_cx is not None and invisible_streak > 3:
-                invisible_streak += 1
-                desired = LERP_ALPHA * float(enemy_cx) + (1.0 - LERP_ALPHA) * track_x
-                move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
-                track_x = track_x + move
+                    track_y = LERP_ALPHA * player_target_y + (1.0 - LERP_ALPHA) * track_y
+                    last_velocity = move   # zapamiętaj prędkość do momentum
             else:
                 invisible_streak += 1
-                # Gdy gracz niewidoczny, kamera utrzymuje pozycję zamiast dryfować
+                if invisible_streak <= MOMENTUM_FRAMES and abs(last_velocity) > 2.0:
+                    # Krótka niewidoczność (VFX Death Lotus itp.) — kontynuuj momentum z zanikaniem
+                    momentum = last_velocity * (MOMENTUM_DECAY ** invisible_streak)
+                    track_x = float(np.clip(track_x + momentum, 0, analysis_w - crop_w_a))
+                else:
+                    # Długa niewidoczność → ZAMROŻENIE (nigdy nie dryfujemy na wieże/inne obiekty)
+                    last_velocity = 0.0
 
-            crop_x = int(max(0, min(track_x - crop_w // 2, source_w - crop_w)))
+            crop_x_a = int(max(0, min(track_x - crop_w_a // 2, analysis_w - crop_w_a)))
+            # Przelicz z przestrzeni analizy na przestrzeń źródłową
+            crop_x = int(round(crop_x_a * analysis_scale))
+            crop_x = int(max(0, min(crop_x, source_w - crop_w)))
             crop_xs.append(crop_x)
+
 
         print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames)} klatek z graczem w kadrze")
 
-        # KROK 4: Wygładzanie adaptacyjne — okno=5 (responsywne, preservuje snap)
+        # KROK 4: Wygładzanie adaptacyjne — zachowuje ostre cięcia (snapy i jump-cuts > 180px)
         SMOOTH_WIN = 5
         raw_arr = np.array(crop_xs, dtype=float)
-        smoothed = np.array([
-            raw_arr[max(0, i - SMOOTH_WIN // 2):min(len(raw_arr), i + SMOOTH_WIN // 2 + 1)].mean()
-            for i in range(len(raw_arr))
-        ])
+        smoothed = np.zeros_like(raw_arr)
+
+        # Podziel na niezależne sekcje w miejscach gwałtownych przeskoków (jump-cut / Shunpo)
+        cut_indices = [0]
+        for idx in range(1, len(raw_arr)):
+            if abs(raw_arr[idx] - raw_arr[idx - 1]) > 180:
+                cut_indices.append(idx)
+        cut_indices.append(len(raw_arr))
+
+        for s_i in range(len(cut_indices) - 1):
+            s_start = cut_indices[s_i]
+            s_end = cut_indices[s_i + 1]
+            seg_len = s_end - s_start
+            for local_i in range(seg_len):
+                w_start = max(0, local_i - SMOOTH_WIN // 2)
+                w_end = min(seg_len, local_i + SMOOTH_WIN // 2 + 1)
+                smoothed[s_start + local_i] = raw_arr[s_start:s_end][w_start:w_end].mean()
 
         # KROK 5: End Freeze — ostatnie 0.6s klipu (PROJECT_GUIDELINES.md) — brak zamrażania przed fragiem
         end_freeze_sec = 0.6

@@ -53,9 +53,41 @@ KILL_WEIGHTS = {
 }
 
 
+def _get_evaluator_cfg() -> dict:
+    """Wczytuje dynamiczne wagi i progi ewaluatora wyliczone przez learning_engine.py."""
+    try:
+        from lol_agent.learning_engine import get_evaluator_tuning_config
+        return get_evaluator_tuning_config()
+    except Exception:
+        try:
+            from learning_engine import get_evaluator_tuning_config
+            return get_evaluator_tuning_config()
+        except Exception:
+            return {
+                "base_kill_weights": {
+                    "PENTAKILL": 100.0,
+                    "QUADRAKILL": 75.0,
+                    "TRIPLE KILL": 50.0,
+                    "DOUBLE KILL": 25.0,
+                    "SOLO BOLO": 95.0,
+                    "OUTPLAY": 80.0,
+                    "CLUTCH": 80.0,
+                    "KILL": 10.0,
+                },
+                # FIX: Pentakill i Quadrakill NIE są demoted — to najlepszy content kanału.
+                # Demoted mogą być double (za słabe) jeśli historycznie słabo konwertują.
+                "demoted_formats": [],
+                "demoted_penalty_points": 8.0,
+                "s_tier_min": 82.0,
+                "a_tier_min": 68.0,
+                "b_tier_min": 50.0,
+            }
+
+
 def evaluate_clip_quality(video_path: str, fast_mode: bool = False) -> dict:
     """
-    Pełna ocena merytoryczna i emocjonalna klipu z League of Legends.
+    Pełna ocena merytoryczna i emocjonalna klipu z League of Legends (KROK 3: Auto-Tuning).
+    Dynamicznie koryguje wagi akcji i progi kwalifikacji na podstawie konwersji kanału.
     Zwraca słownik z composite_score (0-100), tier (S/A/B/REJECT) i szczegółowymi metrykami.
     """
     if not os.path.exists(video_path):
@@ -73,8 +105,15 @@ def evaluate_clip_quality(video_path: str, fast_mode: bool = False) -> dict:
         cap.release()
         return {"error": "Clip too short (<5s)", "worthy": False, "score": 0, "tier": "REJECT"}
 
+    # Wczytaj konfigurację auto-tuningu ewaluatora
+    eval_cfg = _get_evaluator_cfg()
+    dynamic_kill_weights = eval_cfg.get("base_kill_weights", KILL_WEIGHTS)
+
     # ── 1. OCR Kills Scan ──────────────────────────────────────────────────────
-    from lol_momentum_analyzer import _compute_kill_scores
+    try:
+        from lol_agent.lol_momentum_analyzer import _compute_kill_scores
+    except ImportError:
+        from lol_momentum_analyzer import _compute_kill_scores
     scores_list, detected_kills = _compute_kill_scores(cap, fps, use_ocr=True)
 
     # ── 2. Kill Weight Score (35%) ─────────────────────────────────────────────
@@ -82,7 +121,7 @@ def evaluate_clip_quality(video_path: str, fast_mode: bool = False) -> dict:
     kill_weight_score = 0.0
     if detected_kills:
         for _, label in detected_kills:
-            w = KILL_WEIGHTS.get(label.upper(), 10.0)
+            w = float(dynamic_kill_weights.get(label.upper(), KILL_WEIGHTS.get(label.upper(), 10.0)))
             if w > kill_weight_score:
                 kill_weight_score = w
                 highest_kill = label.upper()
@@ -226,44 +265,103 @@ def evaluate_clip_quality(video_path: str, fast_mode: bool = False) -> dict:
             highest_kill = f"{highest_kill} (DIED BUT 3+ KILLS)"
     else:
         # Player survived!
+        # Inicjalizuj zmienne wynikowe aby uniknąć NameError przy 0 killach
+        inferred_act = "outplay"
+        act_multiplier = 1.0
+        is_demoted = False
+        qual_reason = ""
+        penalty = 0.0
+
         if num_kills == 0:
             composite = 25.0
             tier = "REJECT"
             worthy = False
+            qual_reason = "Brak wykrytych killów (0 OCR hits)"
         else:
-            composite = (
+            try:
+                from lol_agent.learning_engine import get_action_weight
+            except Exception:
+                try:
+                    from learning_engine import get_action_weight
+                except Exception:
+                    get_action_weight = lambda a: 1.0
+
+            inferred_act = "outplay"
+            if "PENTA" in highest_kill:
+                inferred_act = "pentakill"
+            elif "QUADRA" in highest_kill:
+                inferred_act = "quadrakill"
+            elif "TRIPLE" in highest_kill:
+                inferred_act = "triple"
+            elif "DOUBLE" in highest_kill:
+                inferred_act = "double"
+            elif num_kills == 1:
+                inferred_act = "solo_bolo" if (is_clutch or duration <= 25.0) else "outplay"
+                if inferred_act == "solo_bolo":
+                    solo_base = float(dynamic_kill_weights.get("SOLO BOLO", 95.0))
+                    kill_weight_score = max(kill_weight_score, solo_base)
+                    highest_kill = "SOLO BOLO (1v1 DUEL)"
+                else:
+                    outplay_base = float(dynamic_kill_weights.get("OUTPLAY", 80.0))
+                    kill_weight_score = max(kill_weight_score, outplay_base)
+                    highest_kill = "OUTPLAY (CLEAN KILL)"
+
+            raw_composite = (
                 kill_weight_score * 0.35 +
                 pacing_score      * 0.25 +
                 clutch_score      * 0.20 +
                 motion_vfx_score  * 0.20
             )
-            composite = round(min(100.0, max(0.0, composite)), 1)
-            if composite >= 85.0:
-                tier = "S_TIER"
-                worthy = True
-            elif composite >= 70.0:
-                tier = "A_TIER"
-                worthy = True
-            elif composite >= 50.0:
-                tier = "B_TIER"
-                worthy = True
-            else:
-                tier = "REJECT"
-                worthy = False
+            # FIX: Nie używamy act_multiplier jako mnożnika composite — to tworzyłoby
+            # potrójną karę bo waga akcji jest JUŻ uwzględniona w dynamic_kill_weights.
+            # act_multiplier jest zachowany tylko do logowania (diagnostyka).
+            act_multiplier = get_action_weight(inferred_act)
+            composite = round(min(100.0, max(0.0, raw_composite)), 1)
 
-        # ── 7. Przypisanie Tieru ───────────────────────────────────────────────────
-        if composite >= 82.0 or highest_kill == "PENTAKILL":
-            tier = "S_TIER"     # Gotowe do natychmiastowej publikacji
-            worthy = True
-        elif composite >= 68.0:
-            tier = "A_TIER"     # Bardzo dobra akcja (Quadra / dynamiczny Triple)
-            worthy = True
-        elif composite >= 50.0:
-            tier = "B_TIER"     # Średnia akcja (wymaga decyzji lub kolejkowania)
-            worthy = False
-        else:
-            tier = "REJECT"     # Nudna akcja / stomp / brak fragów
-            worthy = False
+            # Safety floor: spektakularne multi-kille ZAWSZE kwalifikują do publikacji.
+            # Gracz przeżył + multi-kill = content godny kanału, niezależnie od pacing_delta
+            # (pentakill może trwać 25s na gorzkim klipie — pacing karze za to, ale to błąd).
+            if "PENTA" in highest_kill and composite < 82.0:
+                composite = 82.0   # Gwarantuje S_TIER — pentakill to zawsze hit content
+            elif "QUADRA" in highest_kill and composite < 70.0:
+                composite = 70.0   # Gwarantuje A_TIER dla quadrakill
+            elif "TRIPLE" in highest_kill and composite < 52.0:
+                composite = 52.0   # Gwarantuje B_TIER dla triple
+
+            # KROK 3: Dynamiczne progi kwalifikacji — demoted formaty mają wyższy próg
+            # (ale nie obniżamy composite — tylko podnosimy wymaganą poprzeczkę).
+            demoted_formats = [f.lower() for f in eval_cfg.get("demoted_formats", [])]
+            # HARD CONSTRAINT: pentakill i quadrakill NIGDY nie mogą być demoted —
+            # to najlepszy content kanału bez względu na historyczne dane z learning_engine.
+            _NEVER_DEMOTE = {"pentakill", "quadrakill"}
+            is_demoted = inferred_act.lower() in demoted_formats and inferred_act.lower() not in _NEVER_DEMOTE
+            # Kara: podwyższamy próg S/A-tier dla historycznie słabo konwertujących formatów
+            penalty = float(eval_cfg.get("demoted_penalty_points", 8.0)) if is_demoted else 0.0
+
+            s_min = float(eval_cfg.get("s_tier_min", 82.0)) + penalty
+            a_min = float(eval_cfg.get("a_tier_min", 68.0)) + penalty
+            b_min = float(eval_cfg.get("b_tier_min", 50.0))
+
+            qual_reason = ""
+            if composite >= s_min:
+                tier = "S_TIER"     # Gotowe do natychmiastowej publikacji
+                worthy = True
+                qual_reason = f"Wynik {composite} przekracza dynamiczny próg S-Tier ({s_min})"
+            elif composite >= a_min:
+                tier = "A_TIER"     # Bardzo dobra akcja (publikowalna)
+                worthy = True
+                qual_reason = f"Kwalifikacja do publikacji A-Tier ({composite} >= {a_min})"
+            elif composite >= b_min:
+                tier = "B_TIER"     # Średnia akcja (wymaga decyzji lub kolejkowania)
+                worthy = False
+                qual_reason = f"Za niski wynik ({composite} < {a_min}) do auto-publikacji"
+            else:
+                tier = "REJECT"     # Nudna akcja / stomp / niska konwersja
+                worthy = False
+                qual_reason = f"Odrzucono — niski composite score ({composite})"
+
+            if is_demoted and not worthy:
+                qual_reason += f" [Filtr formatu: {inferred_act.upper()} podlega wyższemu progowi +{int(penalty)} pkt za historycznie niski CTR na kanale]"
 
     result = {
         "video_path": video_path,
@@ -271,12 +369,17 @@ def evaluate_clip_quality(video_path: str, fast_mode: bool = False) -> dict:
         "score": composite,
         "tier": tier,
         "worthy": worthy,
+        "action_type": inferred_act if not player_died else "died",
         "highest_kill": highest_kill,
         "kills_count": len(detected_kills),
         "kills": detected_kills,
         "pacing_delta_s": round(pacing_delta, 1),
         "is_clutch": is_clutch,
         "lowest_hp_ratio": round(lowest_hp_ratio, 2),
+        "action_weight_used": act_multiplier if not player_died else 1.0,
+        "base_kill_weight_used": round(kill_weight_score, 1),
+        "is_demoted_format": is_demoted if not player_died else False,
+        "qualification_reason": qual_reason if not player_died else "Player died without 3+ multi-kills",
         "sub_scores": {
             "kill_weight": round(kill_weight_score, 1),
             "pacing": round(pacing_score, 1),

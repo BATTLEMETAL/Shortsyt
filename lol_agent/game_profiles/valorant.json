@@ -1,0 +1,89 @@
+{
+  "game_id": "valorant",
+  "game_name": "Valorant",
+  "hud_type": "center_kills",
+  "kill_banner_roi": [
+    0.4,
+    0.6,
+    0.3,
+    0.7
+  ],
+  "kill_feed_roi": [
+    0.02,
+    0.35,
+    0.7,
+    0.98
+  ],
+  "hp_bar_roi": [
+    0.92,
+    0.97,
+    0.2,
+    0.8
+  ],
+  "vignette_roi": [
+    0.01,
+    0.1,
+    0.2,
+    0.8
+  ],
+  "ocr_patterns": {
+    "player_death": [
+      "eliminated"
+    ],
+    "enemy_kill": [],
+    "ally_multikill": [],
+    "ally_kill": [],
+    "pentakill": [
+      "ace"
+    ],
+    "quadrakill": [
+      "4k",
+      "four kills"
+    ],
+    "triple": [
+      "3k",
+      "three kills",
+      "triple"
+    ],
+    "double": [
+      "2k",
+      "double"
+    ],
+    "outplay": [
+      "clutch",
+      "1v2",
+      "1v3",
+      "1v4",
+      "1v5"
+    ],
+    "kill": [
+      "+kill",
+      "killed"
+    ]
+  },
+  "event_tiers": {
+    "pentakill": 5,
+    "quadrakill": 4,
+    "triple": 3,
+    "double": 2,
+    "outplay": 3,
+    "kill": 1
+  },
+  "action_labels": {
+    "pentakill": "ACE! ??",
+    "quadrakill": "4K ?",
+    "triple": "3K ??",
+    "double": "2K",
+    "outplay": "CLUTCH ??",
+    "kill": "KILL ??"
+  },
+  "yt_base_tags": [
+    "valorant",
+    "valorant clips",
+    "valorant highlights",
+    "valorant shorts",
+    "gaming shorts"
+  ],
+  "yt_category_id": "20",
+  "channel_context": "Valorant gaming highlights channel"
+}

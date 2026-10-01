@@ -1,0 +1,35 @@
+{
+  "game_id": "product_ad",
+  "game_name": "Product Advertisement",
+  "hud_type": "none",
+  "kill_banner_roi": null,
+  "kill_feed_roi": null,
+  "hp_bar_roi": null,
+  "vignette_roi": null,
+  "ocr_patterns": {},
+  "event_tiers": {},
+  "action_labels": {
+    "reveal": "MUST SEE ??",
+    "demo": "WAIT FOR IT...",
+    "cta": "LINK IN BIO ??"
+  },
+  "motion_detection": {
+    "enabled": true,
+    "min_motion_pixels": 2000,
+    "peak_threshold": 0.6
+  },
+  "face_detection": {
+    "enabled": true,
+    "hook_on_face_entry": true
+  },
+  "yt_base_tags": [
+    "shorts",
+    "viral",
+    "review",
+    "unboxing",
+    "product review",
+    "must have"
+  ],
+  "yt_category_id": "22",
+  "channel_context": "Product advertisement and review channel"
+}

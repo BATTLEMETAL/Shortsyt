@@ -1,0 +1,91 @@
+{
+  "game_id": "cs2",
+  "game_name": "CS2",
+  "hud_type": "top_right_kills",
+  "kill_banner_roi": [
+    0.02,
+    0.2,
+    0.65,
+    0.98
+  ],
+  "kill_feed_roi": [
+    0.02,
+    0.25,
+    0.65,
+    0.98
+  ],
+  "hp_bar_roi": [
+    0.9,
+    0.97,
+    0.03,
+    0.25
+  ],
+  "vignette_roi": [
+    0.01,
+    0.1,
+    0.2,
+    0.8
+  ],
+  "ocr_patterns": {
+    "player_death": [
+      "you died",
+      "killed by"
+    ],
+    "enemy_kill": [],
+    "ally_multikill": [],
+    "ally_kill": [],
+    "pentakill": [
+      "ace"
+    ],
+    "quadrakill": [
+      "4 kills",
+      "4k"
+    ],
+    "triple": [
+      "3 kills",
+      "3k",
+      "triple"
+    ],
+    "double": [
+      "2 kills",
+      "2k",
+      "double"
+    ],
+    "outplay": [
+      "clutch",
+      "1v2",
+      "1v3",
+      "1v4",
+      "1v5"
+    ],
+    "kill": [
+      "kill",
+      "+300"
+    ]
+  },
+  "event_tiers": {
+    "pentakill": 5,
+    "quadrakill": 4,
+    "triple": 3,
+    "double": 2,
+    "outplay": 3,
+    "kill": 1
+  },
+  "action_labels": {
+    "pentakill": "ACE! ??",
+    "quadrakill": "4K ?",
+    "triple": "3K ??",
+    "double": "2K",
+    "outplay": "CLUTCH ??",
+    "kill": "FRAG ??"
+  },
+  "yt_base_tags": [
+    "cs2",
+    "counter strike 2",
+    "cs2 clips",
+    "cs2 highlights",
+    "gaming shorts"
+  ],
+  "yt_category_id": "20",
+  "channel_context": "CS2 gaming highlights channel"
+}

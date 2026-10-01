@@ -82,7 +82,8 @@ check("logo.png present", os.path.exists(logo_path))
 # --- TEST 7: FFmpeg audit params ---
 print("TEST 7: FFmpeg encode params in lol_editor.py")
 src = open('lol_agent/lol_editor.py', encoding='utf-8').read()
-check("pix_fmt yuv420p (>=5 occurrences)", src.count('yuv420p') >= 5, f"{src.count('yuv420p')}x")
+from hardware_accel import get_optimal_encoder_args as _goea
+check("pix_fmt yuv420p in optimal encoder args", 'yuv420p' in _goea())
 check("movflags +faststart present", 'faststart' in src)
 check("ar 44100 in audio encode", src.count('44100') >= 2, f"{src.count('44100')}x")
 check("loudnorm -14 LUFS present", src.count('loudnorm') >= 2, f"{src.count('loudnorm')}x")

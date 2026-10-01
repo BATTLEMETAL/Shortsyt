@@ -119,9 +119,16 @@ def validate_pre_flight(
 
     # Znormalizuj peaks do bezwzględnych timestampów (obsługa peaks relatywnych i absolutnych)
     abs_peaks = []
-    for kt, lbl in (peaks or []):
-        abs_t = kt if (kt >= adj_start or adj_start == 0.0) else (adj_start + kt)
-        abs_peaks.append((round(abs_t, 2), lbl))
+    if peaks:
+        trim_dur = adj_end - adj_start
+        # Jeśli jakikolwiek peak ma czas mniejszy niż adj_start (i adj_start > 0.5),
+        # lub wszystkie mieszczą się w czasie trwania wycinka (trim_dur), to peaks są relatywne
+        is_relative = (adj_start > 0.5) and (
+            any(p[0] < adj_start for p in peaks) or all(p[0] <= trim_dur + 1.5 for p in peaks)
+        )
+        for kt, lbl in peaks:
+            abs_t = (adj_start + kt) if is_relative else kt
+            abs_peaks.append((round(abs_t, 2), lbl))
     
     if is_solo:
         diag.append("Solo Bolo Mode: pełna walka 1v1 od wyznaczonego początku (0.0s) bez wycinania lead-inu.")
@@ -166,14 +173,36 @@ def validate_pre_flight(
         clusters.append(curr_c)
 
     total_continuous_span = (clusters[-1][-1][0] + 2.0) - (clusters[0][0][0] - 4.5) if clusters else 0.0
-    if is_solo or total_continuous_span <= 14.5:
+
+    # Sprawdź czy przerwa między klastrami zawiera aktywną walkę (np. zabójstwo Jhina bez banera)
+    gap_has_combat = False
+    if len(clusters) >= 2:
+        gap_start = clusters[0][-1][0] + 1.2
+        gap_end = clusters[1][0][0] - 1.2
+        if gap_end > gap_start + 1.0:
+            test_ts = np.linspace(gap_start, gap_end, 5)
+            c_hits = 0
+            for ts in test_ts:
+                if ts < dur:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, int(ts * fps))
+                    ret, fr = cap.read()
+                    if ret:
+                        has_c, px, _ = _check_enemy_combat_in_frame(fr)
+                        if has_c and px > 400:
+                            c_hits += 1
+            if c_hits >= 2:
+                gap_has_combat = True
+
+    if is_solo or total_continuous_span <= 26.0 or gap_has_combat:
         suggested_segments = None
+        if gap_has_combat:
+            diag.append("Combat Guard: Wykryto ciągłą wymianę/walkę w luce między klastrami — zachowano ciągły montaż bez jump-cuta.")
     elif len(clusters) >= 2:
         gap = clusters[1][0][0] - clusters[0][-1][0]
         if not combat_segments or len(combat_segments) <= 1:
             qa_status = "WARN"
             qa_score = max(50, qa_score - 15)
-            diag.append(f"Dead Running Guard: Wykryto {gap:.1f}s przerwy między walkami. Rekomendowany Jump-Cut!")
+            diag.append(f"Dead Running Guard: Wykryto {gap:.1f}s przerwy między walkami bez wrogów. Rekomendowany Jump-Cut!")
             buildup_s = float(tuning_profile.get("buildup_sec", 0.8)) if tuning_profile else 0.8
             outro_s = float(tuning_profile.get("outro_sec", 1.5)) if tuning_profile else 1.5
             seg1 = (max(0.0, round(clusters[0][0][0] - buildup_s, 1)), round(clusters[0][-1][0] + 1.2, 1))
@@ -198,7 +227,10 @@ def validate_pre_flight(
             
         h, w = fr.shape[:2]
         crop_x = int((w - crop_w) / 2)
-        if smart_camera_track:
+        # Gdy combat_segments aktywne, smart_camera_track pochodzi z pre-concat źródła
+        # i ma niezsynchronizowane czasy — pomijamy interpolację, używamy środka kadru.
+        use_cam_track = smart_camera_track and not combat_segments
+        if use_cam_track:
             track_times = [t for t, _ in smart_camera_track]
             track_xs = [x for _, x in smart_camera_track]
             # smart_camera_track ma czasy relatywne (0.0 .. dur) gdy generowany z wycinka
@@ -209,25 +241,19 @@ def validate_pre_flight(
             crop_x = int(np.interp(query_t, track_times, track_xs))
             crop_x = max(0, min(w - crop_w, crop_x))
             
+        crop_frame = fr[:, crop_x:min(w, crop_x + crop_w)]
+        has_crop_combat, crop_px, _ = _check_enemy_combat_in_frame(crop_frame)
         has_c, _, centroid = _check_enemy_combat_in_frame(fr)
-        if centroid is not None:
-            cx, cy = centroid
-            if crop_x - 40 <= cx <= crop_x + crop_w + 40:
-                visible_kills += 1
-            else:
-                diag.append(f"Uwaga: kill @ {kt:.1f}s [{lbl}] centroid ({cx}px) poza krawędzią kadru 9:16 (crop_x={crop_x})")
-                qa_score = max(30, qa_score - 30)
-                qa_status = "WARN"
+
+        if has_crop_combat and crop_px > 100:
+            visible_kills += 1
+        elif centroid is not None and (crop_x - 40 <= centroid[0] <= crop_x + crop_w + 40):
+            visible_kills += 1
         else:
-            # Sprawdź czy wycinek kadru 9:16 zawiera jakąkolwiek akcję bojową
-            crop_frame = fr[:, crop_x:min(w, crop_x + crop_w)]
-            has_crop_combat, crop_px, _ = _check_enemy_combat_in_frame(crop_frame)
-            if has_crop_combat:
-                visible_kills += 1
-            else:
-                diag.append(f"Uwaga: brak widocznej akcji/wrogów w kadrze przy killu @ {kt:.1f}s [{lbl}]")
-                qa_score = max(30, qa_score - 25)
-                qa_status = "WARN"
+            cx_str = f"centroid ({centroid[0]}px)" if centroid else "brak wrogów"
+            diag.append(f"Uwaga: kill @ {kt:.1f}s [{lbl}] {cx_str} poza krawędzią kadru 9:16 (crop_x={crop_x})")
+            qa_score = max(30, qa_score - 30)
+            qa_status = "WARN"
 
     # ── 4. Tower Attack Guard ─────────────────────────────────────────────────
     if not is_solo:
@@ -260,6 +286,9 @@ def validate_pre_flight(
     cur_dur = sum(e - s for s, e in combat_segments) if combat_segments else (adj_end - adj_start)
     if tuning_profile:
         max_limit = float(tuning_profile.get("target_max_dur", 18.0))
+        # Dla jump-cut z 3+ killami relaksujemy limit do 20s — klip jest naturalnie dłuższy
+        if combat_segments and len(abs_peaks) >= 3:
+            max_limit = max(max_limit, 20.0)
         if cur_dur > max_limit + 2.5:
             qa_status = "WARN" if qa_status != "FAIL" else qa_status
             qa_score = max(50, qa_score - 10)

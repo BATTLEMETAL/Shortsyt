@@ -1,1 +1,1 @@
-﻿"""Autonomous background watcher package."""
+"""Autonomous background watcher package."""

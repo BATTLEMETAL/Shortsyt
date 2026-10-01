@@ -1,0 +1,70 @@
+{
+  "game_id": "fortnite",
+  "game_name": "Fortnite",
+  "hud_type": "top_right_kills",
+  "kill_banner_roi": [
+    0.02,
+    0.15,
+    0.6,
+    0.98
+  ],
+  "kill_feed_roi": [
+    0.02,
+    0.2,
+    0.6,
+    0.98
+  ],
+  "hp_bar_roi": [
+    0.88,
+    0.95,
+    0.35,
+    0.65
+  ],
+  "vignette_roi": [
+    0.01,
+    0.1,
+    0.2,
+    0.8
+  ],
+  "ocr_patterns": {
+    "player_death": [
+      "eliminated",
+      "you were eliminated"
+    ],
+    "enemy_kill": [],
+    "ally_multikill": [],
+    "ally_kill": [],
+    "pentakill": [
+      "victory royale"
+    ],
+    "quadrakill": [],
+    "triple": [],
+    "double": [],
+    "outplay": [
+      "eliminated"
+    ],
+    "kill": [
+      "eliminated",
+      "+elim"
+    ]
+  },
+  "event_tiers": {
+    "pentakill": 5,
+    "outplay": 2,
+    "kill": 1
+  },
+  "action_labels": {
+    "pentakill": "VICTORY ROYALE! ??",
+    "outplay": "OUTPLAY ??",
+    "kill": "ELIM ??"
+  },
+  "yt_base_tags": [
+    "fortnite",
+    "fortnite clips",
+    "fortnite highlights",
+    "fortnite shorts",
+    "gaming shorts"
+  ],
+  "yt_category_id": "20",
+  "channel_context": "Fortnite gaming highlights channel"
+}

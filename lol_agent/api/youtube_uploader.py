@@ -656,15 +656,12 @@ def upload_video(
     else:
         status_body["privacyStatus"] = privacy
 
-    # Gwarancja obecności wyłącznie #Shorts w tytule (pozostałe hashtagi idą do opisu)
-    if "#shorts" not in title.lower():
-        if len(title) + len("#Shorts") + 1 <= 98:
-            title = f"{title.rstrip()} #Shorts"
-
-    # Wytnij ewentualne #LeagueOfLegends i #LoL z tytułu, by nie zabierały miejsca hookowi na smartfonach
-    import re
-    title = re.sub(r'\s*#LeagueOfLegends\b', '', title, flags=re.IGNORECASE).strip()
-    title = re.sub(r'\s*#LoL\b', '', title, flags=re.IGNORECASE).strip()
+    # Gwarancja viralowych hashtagów w tytule: #Shorts #LeagueOfLegends #LoL
+    try:
+        from lol_agent.lol_metadata_generator import _format_final_title
+    except ImportError:
+        from lol_metadata_generator import _format_final_title
+    title = _format_final_title(title)
 
     # Gwarancja obecności bogatych hashtagów w opisie YouTube Shorts
     if "#leagueoflegends" not in description.lower() or description.count("#") < 3:

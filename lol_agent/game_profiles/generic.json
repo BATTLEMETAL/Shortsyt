@@ -1,0 +1,29 @@
+{
+  "game_id": "generic",
+  "game_name": "Generic Gaming",
+  "hud_type": "motion_only",
+  "kill_banner_roi": null,
+  "kill_feed_roi": null,
+  "hp_bar_roi": null,
+  "vignette_roi": null,
+  "ocr_patterns": {},
+  "event_tiers": {},
+  "action_labels": {
+    "outplay": "INSANE PLAY ??",
+    "kill": "HIGHLIGHT ??"
+  },
+  "motion_detection": {
+    "enabled": true,
+    "min_motion_pixels": 5000,
+    "peak_threshold": 0.75
+  },
+  "yt_base_tags": [
+    "gaming",
+    "gaming highlights",
+    "gaming clips",
+    "gaming shorts",
+    "best plays"
+  ],
+  "yt_category_id": "20",
+  "channel_context": "Gaming highlights channel"
+}

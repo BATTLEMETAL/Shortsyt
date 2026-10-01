@@ -240,21 +240,22 @@ def find_solo_bolo_window(
     prev_gray = None
     motion_history = []
 
-    for t in np.arange(search_start, search_end, 0.25):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
-        ret, frame = cap.read()
-        if not ret or frame is None:
-            break
-        h, w = frame.shape[:2]
-        play_area = frame[int(h * 0.15):int(h * 0.80), int(w * 0.20):int(w * 0.80)]
-        gray = cv2.cvtColor(cv2.resize(play_area, (320, 180)), cv2.COLOR_BGR2GRAY)
-        m_score = 0.0
-        if prev_gray is not None:
-            m_score = float(np.mean(cv2.absdiff(gray, prev_gray)))
-        prev_gray = gray
-        motion_history.append((t, m_score))
-
-    cap.release()
+    try:
+        for t in np.arange(search_start, search_end, 0.25):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                break
+            h, w = frame.shape[:2]
+            play_area = frame[int(h * 0.15):int(h * 0.80), int(w * 0.20):int(w * 0.80)]
+            gray = cv2.cvtColor(cv2.resize(play_area, (320, 180)), cv2.COLOR_BGR2GRAY)
+            m_score = 0.0
+            if prev_gray is not None:
+                m_score = float(np.mean(cv2.absdiff(gray, prev_gray)))
+            prev_gray = gray
+            motion_history.append((t, m_score))
+    finally:
+        cap.release()
 
     engage_t = None
     for t, m in motion_history:
@@ -440,14 +441,16 @@ def compute_optimal_clip_window(
             cap = cv2.VideoCapture(frag_res.video_path)
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             combat_ts = []
-            for t in np.arange(0.0, total_dur, 0.75):
-                cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
-                ret, fr = cap.read()
-                if not ret: break
-                has_c, px, _ = _check_enemy_combat_in_frame(fr)
-                if has_c and px >= 3500:
-                    combat_ts.append(t)
-            cap.release()
+            try:
+                for t in np.arange(0.0, total_dur, 0.75):
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
+                    ret, fr = cap.read()
+                    if not ret: break
+                    has_c, px, _ = _check_enemy_combat_in_frame(fr)
+                    if has_c and px >= 350:
+                        combat_ts.append(t)
+            finally:
+                cap.release()
 
             if combat_ts:
                 start = max(0.0, round(combat_ts[0] - 1.5, 1))
@@ -530,7 +533,8 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     duration = total_frames / fps if fps > 0 else 0.0
 
-    interval = 1.0 / max(1.0, sample_fps)
+    effective_sample_fps = max(sample_fps, 1.5) if (sample_fps <= 1.0 and 0.0 < duration <= 50.0) else sample_fps
+    interval = 1.0 / max(1.0, effective_sample_fps)
     timestamps = np.arange(0.0, max(0.1, duration), interval)
 
     hp_readings = []

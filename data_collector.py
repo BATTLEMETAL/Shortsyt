@@ -37,8 +37,8 @@ def get_authenticated_service(profile_name="kanal_1"):
         print(f"❌ BLOKADA: Nie znaleziono tokenu dla '{profile_name}'. Użyj wpierw: 'python authorize_channel.py --konto {profile_name}'")
         return None
         
-    if os.path.exists(token_file):
-        with open(token_file, 'rb') as token: credentials = pickle.load(token)
+    with open(token_file, 'rb') as token:
+        credentials = pickle.load(token)
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             credentials.refresh(Request())

@@ -1,9 +1,9 @@
 {
-  "pacing": "aggressive",
-  "zoomAggression": 1.3,
-  "slowmoDuration": 0.9,
-  "musicBalance": 0.6,
+  "pacing": "balanced",
+  "zoomAggression": 1.2,
+  "slowmoDuration": 1.4,
+  "musicBalance": 0.55,
   "gameSoundBalance": 0.85,
-  "titleTone": "hype",
-  "userNotes": "Auto-AI Closed Pacing Loop: Ekstremalnie Szybkie (10-13s) — najwyższa retencja kanału. Natychmiastowy hook 0.8s, zoom-punch 1.30x i dynamiczne zwolnienie 0.9s."
+  "titleTone": "narrative",
+  "userNotes": "Balanced (14-17s): optymalny buildup 1.8s, zoom 1.20x, zwolnienie 1.4s."
 }

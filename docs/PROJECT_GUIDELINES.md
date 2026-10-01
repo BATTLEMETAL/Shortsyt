@@ -1,4 +1,4 @@
-﻿# Shortsyt — Podstawowe Wytyczne Operacyjne i Standardy Architektury (GUIDELINES)
+# Shortsyt — Podstawowe Wytyczne Operacyjne i Standardy Architektury (GUIDELINES)
 
 > **Zasada nadrzędna**: Ten dokument zawiera fundamenty techniczne, parametry oraz reguły biznesowe wypracowane w procesie testów produkcyjnych. Wszelkie przyszłe modyfikacje agentów, skryptów i pipeline'u MUSZĄ być zgodne z poniższymi wytycznymi, aby uniknąć regresji.
 
@@ -25,26 +25,27 @@ Przed generowaniem trajektorii moduł próbuje próbkę klatek (co 16 klatkę). 
 
 ### B. Maska Wykluczeń (HUD & In-Game Overlays)
 Elementy statyczne na ekranie nie mogą wpływać na pozycję gracza:
-- Górny scoreboard / KDA: `y < 140`
+- Górny scoreboard / KDA (precyzyjny): `excl[:95, 680:1240] = False` (nigdy `y < 140` na całej szerokości, by nie maskować walk w rzece/krzakach!)
 - Dolny pasek umiejętności: `y > 864`
-- Minimapa i sklep: `y > 626 oraz x > 1459`
-- Portret i czat: `y > 670 oraz x < 345`
-- Lewy margines ekranu: `x < 140`
-- **Prawy overlay ze statystykami (Porofessor / Blitz / Mobalytics / Outplayed)**: `x > 1550`
+- Minimapa i panel przedmiotów: `y > 626 oraz x > 1459`
+- Portret gracza i czat: `y > 670 oraz x < 345`
+- Portrety sojuszników HUD (prawe skrzydło): `excl[:450, 1540:] = False`
+- Marginesy boczne: `x < 45` oraz `x > 1740` (watermarki Outplayed/statystyki)
 
 ### C. Scalanie Segmentów 1000 HP (Notch Merging)
 W LoL paski zdrowia dzielone są pionowymi czarnymi kreskami co 1000 HP. Pasek gracza na klatce składa się z 2 lub więcej prostokątów:
 - Warunek scalenia: `abs(cy1 - cy2) <= 4` oraz odległość pozioma krawędzi `<= 15px`.
 - Wynik scalenia: `center_x = (cx1 + cx2) / 2`, `area = area1 + area2`.
-- Geometria paska: `20 <= cw <= 130`, `4 <= ch <= 16`, `2.2 <= asp <= 20.0`, `area >= 50`.
+- Geometria paska bohatera: `18 <= cw <= 150`, `5 <= ch <= 18`, `2.0 <= asp <= 12.0`, `area >= 45` (cw > 180px odrzuca paski wież).
 
-### D. Kinowa Stabilizacja Kamery (Parametry Płynności)
-Aby wyeliminować drgania i niepotrzebne ruchy lewo-prawo:
-- **`DEADBAND_PX = 35.0`**: Martwa strefa. Jeśli zmiana pozycji gracza jest mniejsza niż 35px, kamera w ogóle się nie rusza (stabilność statywu).
-- **`LERP_ALPHA = 0.20`**: Spokojne, kinowe doganianie gracza.
-- **`MAX_PAN_PX = 25`**: Maksymalny dozwolony przesuw kadru na pojedynczą klatkę próbkowania (blokada gwałtownych szarpnięć).
+### D. Kinowa Stabilizacja Kamery (Parametry Płynności v37 — ZWERYFIKOWANE)
+Aby wyeliminować drgania i zapewnić responsywne śledzenie akcji:
+- **`DEADBAND_PX = 30.0`**: Martwa strefa. Jeśli zmiana pozycji gracza jest mniejsza niż 30px, kamera w ogóle się nie rusza (stabilność statywu).
+- **`LERP_ALPHA = 0.45`**: Responsywne, kinowe doganianie gracza podczas walki i doskoków.
+- **`MAX_PAN_PX = 80`**: Maksymalny dozwolony przesuw kadru na pojedynczą klatkę próbkowania (brak spóźnień kamery).
 - **`SNAP_DELTA = 280`**: Próg natychmiastowego doskoku (dla Flash, Shunpo Katariny, teleportu).
-- **`SMOOTH_WIN = 7`**: Średnia krocząca trajektorii. Zapewnia brak opóźnień (lagu) za akcją.
+- **`SMOOTH_WIN = 5`**: Segmentowana średnia krocząca trajektorii. Zapewnia natychmiastową reakcję (<0.4s).
+- **`MOMENTUM_FRAMES = 3` + `MOMENTUM_DECAY = 0.6`**: Krótka kontynuacja wektora przy chwilowej niewidoczności gracza, po czym twardy freeze (zakaz dryfowania na wieże).
 - **`end_freeze_sec = 0.6`**: Zamrożenie pozycji w outro klipu (ostatnie 0.6s). Nigdy nie ustawiać więcej niż 0.8s, aby nie zamrozić kadru przed zadaniem fraga!
 
 ---

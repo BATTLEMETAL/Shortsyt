@@ -4,6 +4,7 @@ Styl: czysty gameplay, tekst hook na peak, muzyka dobrana do energii akcji,
       efekt zoom-punch na peak moment + dynamiczne śledzenie kamery.
 """
 import os
+import time
 import random
 import subprocess
 import glob
@@ -138,6 +139,18 @@ MUSIC_DROP_MAP = {
 
 def ensure_temp_dir():
     os.makedirs(LOL_TEMP_DIR, exist_ok=True)
+    try:
+        now = time.time()
+        for f in glob.glob(os.path.join(LOL_TEMP_DIR, "*.meta.json")):
+            if now - os.path.getmtime(f) > 7 * 86400:
+                try: os.remove(f)
+                except OSError: pass
+        for f in glob.glob(os.path.join(LOL_TEMP_DIR, "seg_*.mp4")):
+            if now - os.path.getmtime(f) > 86400:
+                try: os.remove(f)
+                except OSError: pass
+    except Exception:
+        pass
 
 
 def pick_music_for_action(action_type: str = "outplay", preferred_track: Optional[str] = None) -> str:
@@ -245,18 +258,51 @@ def get_video_duration(path: str) -> float:
 
 
 def cut_clip(input_path: str, start: float, end: float, output_path: str) -> str:
-    """Wycina fragment klipu."""
-    duration = end - start
+    """
+    Wycina fragment klipu z zachowaniem dokładności klatkowej (Frame-Accurate Cut).
+    Używa szybkiego enkodera NVENC / ultrafast CPU aby wyeliminować desynchronizację I-frame.
+    """
+    duration = max(0.1, end - start)
+    encoder_draft = get_optimal_encoder_args("draft")
+
+    # Próba 1: Dokładne cięcie z enkoderem sprzętowym (NVENC trwa < 0.5s)
     cmd = [
         "ffmpeg", "-y",
-        "-ss", str(start), "-i", input_path,
-        "-t", str(duration),
-        "-c", "copy", output_path
+        "-ss", f"{start:.3f}", "-i", input_path,
+        "-t", f"{duration:.3f}",
+        *encoder_draft,
+        "-vf", "setpts=PTS-STARTPTS",   # zeruje PTS — eliminuje offset AV po cięciu NVENC
+        "-c:a", "aac", "-b:a", "192k",
+        "-avoid_negative_ts", "make_zero",
+        output_path
     ]
-    print(f"✂️  Tnę: {start:.1f}s → {end:.1f}s ({duration:.1f}s)")
-    r = _run_ffmpeg(cmd, timeout=60.0, desc="cut_clip")
+    print(f"✂️  Tnę (frame-accurate): {start:.1f}s → {end:.1f}s ({duration:.1f}s)")
+    r = _run_ffmpeg(cmd, timeout=60.0, desc="cut_clip frame-accurate")
     if r.returncode != 0:
-        raise RuntimeError(f"FFmpeg cut error: {r.stderr.decode('utf-8', errors='replace')[:400]}")
+        # Fallback 1: CPU ultrafast
+        cmd_cpu = [
+            "ffmpeg", "-y",
+            "-ss", f"{start:.3f}", "-i", input_path,
+            "-t", f"{duration:.3f}",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
+            "-avoid_negative_ts", "make_zero",
+            output_path
+        ]
+        r_cpu = _run_ffmpeg(cmd_cpu, timeout=60.0, desc="cut_clip CPU")
+        if r_cpu.returncode != 0:
+            # Fallback 2: Stream copy (ostatnia deska ratunku)
+            cmd_copy = [
+                "ffmpeg", "-y",
+                "-ss", f"{start:.3f}", "-i", input_path,
+                "-t", f"{duration:.3f}",
+                "-c", "copy",
+                "-avoid_negative_ts", "make_zero",
+                output_path
+            ]
+            r_copy = _run_ffmpeg(cmd_copy, timeout=60.0, desc="cut_clip copy fallback")
+            if r_copy.returncode != 0:
+                raise RuntimeError(f"FFmpeg cut error: {r_copy.stderr.decode('utf-8', errors='replace')[:400]}")
     return output_path
 
 
@@ -611,6 +657,11 @@ def add_dynamic_captions(
         "GODLIKE":       {"size": 120, "color": "0xFFD700",  "duration": 2.5},
         "SOLO BOLO":     {"size": 115, "color": "0xFF3333",  "duration": 2.2},
         "OUTPLAY":       {"size": 105, "color": "0xFFD700",  "duration": 2.0},
+        "KILL":          {"size": 85,  "color": "white",     "duration": 1.8},
+        "SHUTDOWN":      {"size": 105, "color": "0xFFD700",  "duration": 2.0},
+        "CLUTCH":        {"size": 115, "color": "0xFF1744",  "duration": 2.2},
+        "1% HP CLUTCH":  {"size": 115, "color": "0xFF1744",  "duration": 2.2},
+        "ONESHOT":       {"size": 110, "color": "0xFF9100",  "duration": 2.0},
     }
 
     # Przelicz czas z oryginalnego klipu na czas w zmontowanym wideo
@@ -700,7 +751,7 @@ def add_dynamic_captions(
             if t_in_clip < 0 or t_in_clip > video_duration:
                 continue
 
-            style = KILL_STYLES.get(label, {"size": 90, "color": "white", "duration": 2.0})
+            style = KILL_STYLES.get(str(label).upper().strip(), {"size": 90, "color": "white", "duration": 2.0})
             # Offset antycypacji 0.6s: synchronizacja z momentem animacji ciosu/zgonu w grze
             t_start = max(0.0, t_in_clip - 0.6)
             t_end   = min(video_duration, t_start + style["duration"])
@@ -1575,7 +1626,14 @@ def render_short(
     # ── KROK 8: Freeze-frame hook na klatce 0.0s (P2 — Hook Frame Zero) ─────────
     # Wstawia 0.6s freeze pierwszej klatki z hookiem żeby zatrzymać scrollera.
     # Nie dotyczy solo_bolo (tam walka zaczyna się natychmiast — freeze by zepsuła dynamikę).
-    _do_freeze = bool(_hook) and action_type.lower() not in ("solo_bolo", "solo", "1v1")
+    # Guard: jeśli pierwszy kill jest w pierwszych 3s klipu → pomijamy freeze (pierwsza akcja by zniknęła).
+    _first_kill_t = min((t_k for (t_k, _) in (peaks or [])), default=999.0)
+    _action_starts_immediately = _first_kill_t <= 3.0
+    _do_freeze = (bool(_hook)
+                  and not _action_starts_immediately
+                  and action_type.lower() not in ("solo_bolo", "solo", "1v1"))
+    if _action_starts_immediately and bool(_hook):
+        print(f"\n[8/8] Freeze-frame hook: POMINIĘTY — pierwszy kill za {_first_kill_t:.1f}s (akcja natychmiastowa)")
     if _do_freeze:
         step5_freeze = t("08_freeze_hook.mp4")
         print(f"\n[8/8] Freeze-frame hook: '{_hook[:30]}' (0.6s freeze na starcie)...")
@@ -1600,37 +1658,10 @@ def render_short(
     # ─────────────────────────────────────────────────────────────────────────
 
     # ── POST-RENDER 15s SNAP ─────────────────────────────────────────────────
-    # Stosuj TYLKO dla pojedynczych wymian/akcji (15.5-18.0s), NIGDY nie niszcz multi-killów ani nie ucinaj pierwszego fraga!
-    # Guard: jeśli freeze hook został dodany (+0.6s), odejmujemy go z progu żeby SNAP nie ciął właśnie freeze segmentu
-    _freeze_offset = 0.6 if _do_freeze and os.path.exists(step5) and os.path.getsize(step5) > 10_000 else 0.0
-    _snap_duration_base = final_duration - _freeze_offset  # rzeczywista długość bez freeze
-    is_multikill = action_type in ("pentakill", "quadrakill") or (peaks and len(peaks) >= 3)
-    is_solo_fight = action_type.lower() in ("solo_bolo", "solo", "1v1")
-    if 15.5 <= _snap_duration_base <= 18.0 and not is_multikill and not is_solo_fight:
-        trim_from_start = final_duration - 15.0
-        first_peak_rel = min((t_k for (t_k, _) in (peaks or [])), default=999.0)
-        # Przytnij tylko jeśli pierwszy kill jest bezpiecznie po punkcie cięcia
-        # Dodatkowy guard: nie tnij jeśli trim_from_start <= freeze_offset (wycięlibyśmy freeze)
-        if first_peak_rel > trim_from_start + 1.0 and trim_from_start > _freeze_offset + 0.05:
-            step5_15s = step5.replace(".mp4", "_15s.mp4")
-            cmd_15s = [
-                "ffmpeg", "-y",
-                "-i", step5,
-                "-ss", f"{trim_from_start:.3f}",
-                "-t", "15.0",
-                "-c", "copy",
-                step5_15s
-            ]
-            r15 = _run_ffmpeg(cmd_15s, timeout=60.0, desc="15s snap trim")
-            if r15.returncode == 0:
-                import shutil as _sh15
-                _sh15.move(step5_15s, step5)
-                final_duration = 15.0
-                print(f"   ⚡ 15s SNAP zastosowany: przycięto -{trim_from_start:.2f}s od początku → 15.0s")
-            else:
-                print(f"   ⚠️  15s SNAP błąd (pomijam): {r15.stderr.decode('utf-8', errors='replace')[:200]}")
-        elif trim_from_start <= _freeze_offset + 0.05:
-            print(f"   ℹ️  15s SNAP pominięty — trim ({trim_from_start:.2f}s) wciął by freeze hook ({_freeze_offset:.1f}s)")
+    # ZABEZPIECZENIE: Nigdy nie tnij początku wyrenderowanego klipu przez -c copy!
+    # -c copy bez re-enkodowania niszczy GOP/PTS (powoduje 2s freeze obrazu)
+    # oraz wycina pierwszy frag (np. doskok do sztyletu i zabójstwo Kai'sy w pierwszych 1.5s).
+    # Całkowity czas akcji jest już kontrolowany na etapie compute_optimal_clip_window (14.5s).
     # ─────────────────────────────────────────────────────────────────────────
 
 

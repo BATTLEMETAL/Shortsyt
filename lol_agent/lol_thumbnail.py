@@ -78,6 +78,10 @@ def _extract_frame(video_path: str, t: float, out: str) -> bool:
     return False
 
 
+# Compatibility alias
+extract_peak_frame = _extract_frame
+
+
 def _find_best_crop_x(img_rgb: np.ndarray, crop_w_px: int, source_w: int = 1920) -> int:
     """Wyszukuje centrum akcji/walki w klatce."""
     from PIL import Image as PilImage
@@ -214,9 +218,9 @@ def generate_thumbnail(
     src_label = "oryginalny" if clip_for_frame == source_clip_path else "short"
     print(f"[THUMB] Hero-frame source: {src_label} ({os.path.basename(clip_for_frame)}) @ {t_for_frame:.1f}s (peak={base_t:.1f}s)")
 
-    success = _extract_frame(clip_for_frame, t_for_frame, frame_path)
+    success = extract_peak_frame(clip_for_frame, t_for_frame, frame_path)
     if not success:
-        success = _extract_frame(clip_for_frame, max(0.5, base_t), frame_path)
+        success = extract_peak_frame(clip_for_frame, max(0.5, base_t), frame_path)
     if not success or not os.path.exists(frame_path):
         print("[THUMB] Frame extraction failed -- skip")
         return None

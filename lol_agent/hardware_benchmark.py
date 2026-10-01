@@ -1,4 +1,4 @@
-﻿"""
+"""
 Shortsyt — Skaner Systemu i Benchmark Sprzętowy
 Automatycznie bada podzespoły komputera (CPU, GPU, VRAM, RAM, enkodery FFmpeg)
 i generuje zoptymalizowany profil wydajnościowy dla renderera oraz silnika AI/OCR.

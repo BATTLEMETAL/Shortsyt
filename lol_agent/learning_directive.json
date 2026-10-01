@@ -1,0 +1,847 @@
+{
+  "timestamp": "2026-10-01T13:38:57.891056+00:00",
+  "schema_version": "2.0",
+  "total_videos_analyzed": 48,
+  "total_videos_valid": 47,
+  "zero_views_filtered": 1,
+  "channel_avg_views": 2178.9,
+  "channel_median_views": 1982,
+  "channel_trimmed_mean_views": 1948.3,
+  "channel_avg_engagement_rate": 0.53,
+  "top_action_type": "outplay",
+  "action_weights": {
+    "pentakill": 0.76,
+    "solo_bolo": 1.23,
+    "clutch": 1.2,
+    "triple": 0.98,
+    "quadrakill": 1.0,
+    "double": 0.69,
+    "outplay": 1.31,
+    "multikill": 1.0
+  },
+  "action_stats": {
+    "solo_bolo": {
+      "count": 7,
+      "count_valid": 7,
+      "avg_views": 2567.1,
+      "median_views": 2173,
+      "trimmed_mean_views": 2440.4,
+      "performance_ratio_mean": 1.1,
+      "performance_ratio_median": 1.1,
+      "avg_engagement_rate": 0.46,
+      "weight": 1.23,
+      "weight_source": "computed_n7"
+    },
+    "triple": {
+      "count": 17,
+      "count_valid": 17,
+      "avg_views": 1949.4,
+      "median_views": 1979,
+      "trimmed_mean_views": 1922.6,
+      "performance_ratio_mean": 1.0,
+      "performance_ratio_median": 1.0,
+      "avg_engagement_rate": 0.49,
+      "weight": 0.98,
+      "weight_source": "computed_n17"
+    },
+    "double": {
+      "count": 8,
+      "count_valid": 8,
+      "avg_views": 1351.2,
+      "median_views": 1417.0,
+      "trimmed_mean_views": 1319.2,
+      "performance_ratio_mean": 0.71,
+      "performance_ratio_median": 0.71,
+      "avg_engagement_rate": 0.6,
+      "weight": 0.69,
+      "weight_source": "computed_n8"
+    },
+    "outplay": {
+      "count": 8,
+      "count_valid": 8,
+      "avg_views": 3728.8,
+      "median_views": 2436.5,
+      "trimmed_mean_views": 2553.8,
+      "performance_ratio_mean": 1.23,
+      "performance_ratio_median": 1.23,
+      "avg_engagement_rate": 0.51,
+      "weight": 1.31,
+      "weight_source": "computed_n8"
+    },
+    "pentakill": {
+      "count": 7,
+      "count_valid": 7,
+      "avg_views": 1522.4,
+      "median_views": 1314,
+      "trimmed_mean_views": 1439.8,
+      "performance_ratio_mean": 0.66,
+      "performance_ratio_median": 0.66,
+      "avg_engagement_rate": 0.61,
+      "weight": 0.76,
+      "weight_source": "computed_n7"
+    }
+  },
+  "duration_analysis": {
+    "best_bucket": "balanced_14_17s",
+    "viral_avg_duration_s": 16.0,
+    "viral_count": 11,
+    "recommended_pacing": "balanced",
+    "zoom_aggression": 1.2,
+    "slowmo_duration": 1.4,
+    "music_balance": 0.55,
+    "game_sound_balance": 0.85,
+    "title_tone": "narrative",
+    "user_notes": "Balanced (14-17s): optymalny buildup 1.8s, zoom 1.20x, zwolnienie 1.4s.",
+    "bucket_stats": {
+      "short_10_13s": {
+        "count": 2,
+        "median_views": 7833.0,
+        "avg_engagement_rate": 0.0,
+        "avg_duration_s": 13.0,
+        "composite_score": 0.0,
+        "reliable": false
+      },
+      "balanced_14_17s": {
+        "count": 5,
+        "median_views": 3097,
+        "avg_engagement_rate": 0.41,
+        "avg_duration_s": 15.6,
+        "composite_score": 1.63,
+        "reliable": true
+      },
+      "cinematic_18_25s": {
+        "count": 4,
+        "median_views": 2591.5,
+        "avg_engagement_rate": 0.59,
+        "avg_duration_s": 21.8,
+        "composite_score": 1.39,
+        "reliable": true
+      }
+    }
+  },
+  "retention_analysis": {
+    "status": "success",
+    "total_curves_analyzed": 12,
+    "channel_avg_swiped_away_pct": 15.4,
+    "channel_avg_hook_retention_pct": 84.6,
+    "channel_avg_view_pct": 101.7,
+    "videos": [
+      {
+        "video_id": "YDICWP5Mqfc",
+        "title": "They Tried to Run in Seconds 💀 #Shorts",
+        "action_type": "outplay",
+        "duration_s": 15.0,
+        "views": 1371,
+        "swiped_away_pct": 9.9,
+        "hook_retention_pct": 90.1,
+        "avg_view_pct": 87.0,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 90.1% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "top_drop_offs": [
+          {
+            "time_s": 13.7,
+            "elapsed_pct": 91,
+            "drop_pct": 2.3,
+            "watch_pct_after": 44.1,
+            "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+          },
+          {
+            "time_s": 12.8,
+            "elapsed_pct": 85,
+            "drop_pct": 2.2,
+            "watch_pct_after": 54.0,
+            "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
+          },
+          {
+            "time_s": 12.4,
+            "elapsed_pct": 83,
+            "drop_pct": 2.1,
+            "watch_pct_after": 59.5,
+            "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
+          },
+          {
+            "time_s": 12.6,
+            "elapsed_pct": 84,
+            "drop_pct": 2.0,
+            "watch_pct_after": 56.9,
+            "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
+          }
+        ]
+      },
+      {
+        "video_id": "Mum6yDHPENo",
+        "title": "Top Lane Double Kill DOMINATION 💀 #Shorts",
+        "action_type": "double",
+        "duration_s": 12.0,
+        "views": 1403,
+        "swiped_away_pct": 21.1,
+        "hook_retention_pct": 78.9,
+        "avg_view_pct": 120.3,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 78.9% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "top_drop_offs": [
+          {
+            "time_s": 1.0,
+            "elapsed_pct": 8,
+            "drop_pct": 2.7,
+            "watch_pct_after": 167.9,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 1.1,
+            "elapsed_pct": 9,
+            "drop_pct": 2.5,
+            "watch_pct_after": 163.2,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.8,
+            "elapsed_pct": 7,
+            "drop_pct": 2.2,
+            "watch_pct_after": 173.0,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.7,
+            "elapsed_pct": 6,
+            "drop_pct": 2.0,
+            "watch_pct_after": 177.2,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          }
+        ]
+      },
+      {
+        "video_id": "R-U59XaLp-o",
+        "title": "They Tried to Run 💀 #Shorts",
+        "action_type": "outplay",
+        "duration_s": 28.0,
+        "views": 2595,
+        "swiped_away_pct": 5.0,
+        "hook_retention_pct": 95.0,
+        "avg_view_pct": 56.3,
+        "diagnosis": "🎯 Stabilna retencja (56.3% AVD). Utrzymanie widza w normie kanału.",
+        "top_drop_offs": [
+          {
+            "time_s": 5.0,
+            "elapsed_pct": 18,
+            "drop_pct": 3.4,
+            "watch_pct_after": 98.5,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 4.8,
+            "elapsed_pct": 17,
+            "drop_pct": 3.3,
+            "watch_pct_after": 102.4,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 6.4,
+            "elapsed_pct": 23,
+            "drop_pct": 3.3,
+            "watch_pct_after": 84.1,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 7.3,
+            "elapsed_pct": 26,
+            "drop_pct": 2.9,
+            "watch_pct_after": 75.2,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          }
+        ]
+      },
+      {
+        "video_id": "65Ed1gjifzE",
+        "title": "Master Tier Ego Check 💀 SOLO BOLO #Shorts",
+        "action_type": "solo_bolo",
+        "duration_s": 15.0,
+        "views": 4034,
+        "swiped_away_pct": 15.6,
+        "hook_retention_pct": 84.4,
+        "avg_view_pct": 113.2,
+        "diagnosis": "🔥 Perfekcyjna Retencja! Niski Swiped Away (15.6%) oraz średni czas 113.2% (widzowie zapętlają film). Parametry montażu idealne.",
+        "top_drop_offs": [
+          {
+            "time_s": 13.1,
+            "elapsed_pct": 87,
+            "drop_pct": 3.9,
+            "watch_pct_after": 91.7,
+            "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+          },
+          {
+            "time_s": 13.3,
+            "elapsed_pct": 89,
+            "drop_pct": 3.7,
+            "watch_pct_after": 80.9,
+            "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+          },
+          {
+            "time_s": 13.2,
+            "elapsed_pct": 88,
+            "drop_pct": 3.3,
+            "watch_pct_after": 86.6,
+            "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+          },
+          {
+            "time_s": 12.9,
+            "elapsed_pct": 86,
+            "drop_pct": 2.9,
+            "watch_pct_after": 97.6,
+            "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
+          }
+        ]
+      },
+      {
+        "video_id": "yiv5CNe1ubo",
+        "title": "They Tried to Run 💀 Double Kill #Shorts",
+        "action_type": "double",
+        "duration_s": 19.0,
+        "views": 1120,
+        "swiped_away_pct": 10.0,
+        "hook_retention_pct": 90.0,
+        "avg_view_pct": 89.4,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 90.0% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "top_drop_offs": [
+          {
+            "time_s": 5.1,
+            "elapsed_pct": 27,
+            "drop_pct": 3.3,
+            "watch_pct_after": 117.6,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 5.7,
+            "elapsed_pct": 30,
+            "drop_pct": 2.9,
+            "watch_pct_after": 105.3,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 5.3,
+            "elapsed_pct": 28,
+            "drop_pct": 2.8,
+            "watch_pct_after": 113.5,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 5.5,
+            "elapsed_pct": 28,
+            "drop_pct": 2.7,
+            "watch_pct_after": 109.6,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          }
+        ]
+      },
+      {
+        "video_id": "mLOUviZv_BQ",
+        "title": "Master Tier SOLO BOLO DOMINATION 👑 #Shorts",
+        "action_type": "solo_bolo",
+        "duration_s": 17.0,
+        "views": 2173,
+        "swiped_away_pct": 22.0,
+        "hook_retention_pct": 78.0,
+        "avg_view_pct": 138.9,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 78.0% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "top_drop_offs": [
+          {
+            "time_s": 1.0,
+            "elapsed_pct": 6,
+            "drop_pct": 3.8,
+            "watch_pct_after": 180.7,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.7,
+            "elapsed_pct": 4,
+            "drop_pct": 3.6,
+            "watch_pct_after": 195.3,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.9,
+            "elapsed_pct": 5,
+            "drop_pct": 3.2,
+            "watch_pct_after": 188.6,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.5,
+            "elapsed_pct": 3,
+            "drop_pct": 2.3,
+            "watch_pct_after": 202.8,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          }
+        ]
+      },
+      {
+        "video_id": "vKlqt7XGPJ4",
+        "title": "Ego Checked 💀 Master Tier SOLO BOLO #Shorts",
+        "action_type": "solo_bolo",
+        "duration_s": 16.0,
+        "views": 2071,
+        "swiped_away_pct": 19.2,
+        "hook_retention_pct": 80.8,
+        "avg_view_pct": 94.3,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 80.8% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "top_drop_offs": [
+          {
+            "time_s": 0.8,
+            "elapsed_pct": 5,
+            "drop_pct": 4.2,
+            "watch_pct_after": 135.6,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.6,
+            "elapsed_pct": 4,
+            "drop_pct": 2.5,
+            "watch_pct_after": 141.9,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 1.0,
+            "elapsed_pct": 6,
+            "drop_pct": 2.5,
+            "watch_pct_after": 132.0,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 1.1,
+            "elapsed_pct": 7,
+            "drop_pct": 2.2,
+            "watch_pct_after": 128.7,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          }
+        ]
+      },
+      {
+        "video_id": "qLkEtiTfs4o",
+        "title": "They Tried to Run 💀 Katarina Double Kill #Shorts",
+        "action_type": "double",
+        "duration_s": 12.0,
+        "views": 2065,
+        "swiped_away_pct": 21.0,
+        "hook_retention_pct": 79.0,
+        "avg_view_pct": 100.1,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 79.0% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "top_drop_offs": [
+          {
+            "time_s": 0.8,
+            "elapsed_pct": 7,
+            "drop_pct": 3.6,
+            "watch_pct_after": 132.9,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.6,
+            "elapsed_pct": 5,
+            "drop_pct": 2.5,
+            "watch_pct_after": 141.6,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.5,
+            "elapsed_pct": 4,
+            "drop_pct": 2.1,
+            "watch_pct_after": 145.4,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.7,
+            "elapsed_pct": 6,
+            "drop_pct": 2.1,
+            "watch_pct_after": 138.4,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          }
+        ]
+      },
+      {
+        "video_id": "dai3Q2RnFPw",
+        "title": "No Escape From This ENEMY Hunt 💀 Rate 1-10 #Shorts #LeagueOfLegends #LoL",
+        "action_type": "outplay",
+        "duration_s": 18.0,
+        "views": 1348,
+        "swiped_away_pct": 17.9,
+        "hook_retention_pct": 82.1,
+        "avg_view_pct": 90.5,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 82.1% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "top_drop_offs": [
+          {
+            "time_s": 0.9,
+            "elapsed_pct": 5,
+            "drop_pct": 3.9,
+            "watch_pct_after": 134.6,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.7,
+            "elapsed_pct": 4,
+            "drop_pct": 3.6,
+            "watch_pct_after": 140.4,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 5.6,
+            "elapsed_pct": 31,
+            "drop_pct": 3.5,
+            "watch_pct_after": 103.5,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 1.1,
+            "elapsed_pct": 6,
+            "drop_pct": 3.0,
+            "watch_pct_after": 130.1,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          }
+        ]
+      },
+      {
+        "video_id": "cXICJanTVFQ",
+        "title": "Clean or Luck? 💀 #Shorts #LeagueOfLegends #LoL",
+        "action_type": "outplay",
+        "duration_s": 12.0,
+        "views": 259,
+        "swiped_away_pct": 9.8,
+        "hook_retention_pct": 90.2,
+        "avg_view_pct": 136.0,
+        "diagnosis": "🔥 Perfekcyjna Retencja! Niski Swiped Away (9.8%) oraz średni czas 136.0% (widzowie zapętlają film). Parametry montażu idealne.",
+        "top_drop_offs": [
+          {
+            "time_s": 4.9,
+            "elapsed_pct": 41,
+            "drop_pct": 3.7,
+            "watch_pct_after": 159.5,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 1.0,
+            "elapsed_pct": 8,
+            "drop_pct": 2.4,
+            "watch_pct_after": 183.3,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 4.8,
+            "elapsed_pct": 40,
+            "drop_pct": 2.4,
+            "watch_pct_after": 166.7,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 5.3,
+            "elapsed_pct": 44,
+            "drop_pct": 2.4,
+            "watch_pct_after": 152.4,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          }
+        ]
+      },
+      {
+        "video_id": "e3vbyjtI4ik",
+        "title": "Clean Triple Kill or Pure Luck? 💀 #Shorts #LeagueOfLegends #LoL",
+        "action_type": "triple",
+        "duration_s": 22.0,
+        "views": 1668,
+        "swiped_away_pct": 14.8,
+        "hook_retention_pct": 85.2,
+        "avg_view_pct": 75.3,
+        "diagnosis": "🎯 Stabilna retencja (75.3% AVD). Utrzymanie widza w normie kanału.",
+        "top_drop_offs": [
+          {
+            "time_s": 0.9,
+            "elapsed_pct": 4,
+            "drop_pct": 3.6,
+            "watch_pct_after": 124.3,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 1.1,
+            "elapsed_pct": 5,
+            "drop_pct": 2.5,
+            "watch_pct_after": 121.0,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 4.6,
+            "elapsed_pct": 21,
+            "drop_pct": 2.4,
+            "watch_pct_after": 106.8,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 21.1,
+            "elapsed_pct": 96,
+            "drop_pct": 1.7,
+            "watch_pct_after": 39.4,
+            "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+          }
+        ]
+      },
+      {
+        "video_id": "uqOJGXSN5H4",
+        "title": "Clean Triple Kill or Pure Luck? 💀 #Shorts #LeagueOfLegends #LoL",
+        "action_type": "triple",
+        "duration_s": 12.0,
+        "views": 1358,
+        "swiped_away_pct": 18.5,
+        "hook_retention_pct": 81.5,
+        "avg_view_pct": 118.9,
+        "diagnosis": "🔥 Perfekcyjna Retencja! Niski Swiped Away (18.5%) oraz średni czas 118.9% (widzowie zapętlają film). Parametry montażu idealne.",
+        "top_drop_offs": [
+          {
+            "time_s": 0.7,
+            "elapsed_pct": 6,
+            "drop_pct": 2.6,
+            "watch_pct_after": 169.2,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.6,
+            "elapsed_pct": 5,
+            "drop_pct": 2.2,
+            "watch_pct_after": 173.9,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 0.8,
+            "elapsed_pct": 7,
+            "drop_pct": 1.9,
+            "watch_pct_after": 165.8,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 6.1,
+            "elapsed_pct": 51,
+            "drop_pct": 1.9,
+            "watch_pct_after": 124.0,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          }
+        ]
+      }
+    ],
+    "insights": [
+      "Analiza YouTube Analytics API objęła 12 filmów z pełną krzywą retencji.",
+      "Średni wskaźnik Swiped Away na kanale: 15.4% (utrzymanie hooka: 84.6%).",
+      "Średnia retencja odtworzeń (AVD): 101.7%.",
+      "Filmy z czasem 10-13s wykazują o ~14% niższy Swiped Away niż filmy >18s."
+    ]
+  },
+  "retention_by_action": {
+    "status": "ok",
+    "by_action": {
+      "double": {
+        "count": 4,
+        "avg_swiped_away_pct": 15.5,
+        "avg_hook_retention_pct": 84.5
+      },
+      "triple": {
+        "count": 5,
+        "avg_swiped_away_pct": 13.2,
+        "avg_hook_retention_pct": 86.8
+      },
+      "solo_bolo": {
+        "count": 3,
+        "avg_swiped_away_pct": 18.9,
+        "avg_hook_retention_pct": 81.1
+      }
+    }
+  },
+  "publication_cadence": {
+    "status": "good",
+    "avg_gap_days": 1.21,
+    "median_gap_days": 0.72,
+    "max_gap_days": 4.04,
+    "gap_warning": false,
+    "unique_weekdays_active": 7,
+    "recommendation": "Rytm co 1.2d — dobry. Publikuj regularnie, unikaj przerw > 3 dni."
+  },
+  "title_fatigue": {
+    "repeated_phrases": [
+      {
+        "phrase": "master tier solo",
+        "count": 2,
+        "avg_views": 3024
+      },
+      {
+        "phrase": "they tried to",
+        "count": 4,
+        "avg_views": 1788
+      },
+      {
+        "phrase": "clean or luck",
+        "count": 3,
+        "avg_views": 1661
+      },
+      {
+        "phrase": "clean triple kill",
+        "count": 2,
+        "avg_views": 1661
+      }
+    ],
+    "unique_repeated_count": 4,
+    "fatigue_warning": true,
+    "recommendation": "UWAGA: Wykryto powtarzające się frazy w ostatnich tytułach. Algorytm YouTube penalizuje powtarzalność!"
+  },
+  "best_pub_hour_analysis": {
+    "best_hour_utc": 8,
+    "best_weekday": "Wt",
+    "hour_stats": {
+      "16": {
+        "count": 13,
+        "median_views": 1734
+      },
+      "7": {
+        "count": 3,
+        "median_views": 2300
+      },
+      "11": {
+        "count": 3,
+        "median_views": 1371
+      },
+      "10": {
+        "count": 4,
+        "median_views": 1707
+      },
+      "8": {
+        "count": 2,
+        "median_views": 3052
+      },
+      "9": {
+        "count": 2,
+        "median_views": 2161
+      },
+      "6": {
+        "count": 12,
+        "median_views": 2326
+      },
+      "17": {
+        "count": 2,
+        "median_views": 970
+      },
+      "20": {
+        "count": 2,
+        "median_views": 1658
+      }
+    },
+    "weekday_stats": {
+      "Wt": {
+        "count": 6,
+        "median_views": 2354
+      },
+      "Pt": {
+        "count": 9,
+        "median_views": 1595
+      },
+      "Pon": {
+        "count": 8,
+        "median_views": 1521
+      },
+      "Nd": {
+        "count": 7,
+        "median_views": 2300
+      },
+      "Sob": {
+        "count": 5,
+        "median_views": 1982
+      },
+      "Śr": {
+        "count": 7,
+        "median_views": 2296
+      },
+      "Czw": {
+        "count": 5,
+        "median_views": 1979
+      }
+    },
+    "note": "Mediana wyświetleń per godzina/dzień publikacji. Min 2 próbki na slot."
+  },
+  "top_title_structure": "DISRESPECT_1V1",
+  "title_structure_stats": {
+    "DISRESPECT_1V1": {
+      "count": 7,
+      "avg_ratio": 1.28,
+      "median_ratio": 1.1
+    },
+    "CLEAN_OUTPLAY": {
+      "count": 15,
+      "avg_ratio": 0.91,
+      "median_ratio": 1.0
+    },
+    "EGO_CHECK": {
+      "count": 10,
+      "avg_ratio": 1.57,
+      "median_ratio": 1.02
+    },
+    "RAMPAGE": {
+      "count": 12,
+      "avg_ratio": 0.88,
+      "median_ratio": 0.86
+    },
+    "QUESTION": {
+      "count": 3,
+      "avg_ratio": 0.9,
+      "median_ratio": 0.84
+    }
+  },
+  "winning_keywords": [
+    "WRONG",
+    "CHECK"
+  ],
+  "avoid_keywords": [
+    "FIVE",
+    "ONE",
+    "ESCAPE",
+    "INSTANT",
+    "DOUBLE",
+    "PENTAKILL",
+    "PURE"
+  ],
+  "top_viral_titles": [
+    "Enemy Tried to Dive Me 💀 It Went Wrong 😏#katarina #leagueoflegends #riotgames #lol #outplay #gaming",
+    "Master Tier Ego Check 💀 SOLO BOLO #Shorts",
+    "Master Tier SOLO BOLO Ego Check 💀 #Shorts",
+    "They Thought It Was Easy Pickings 💀 #Shorts #LeagueOfLegends #LoL",
+    "They cornered her. Bad idea. Triple Kill! 💥 #Shorts #LeagueOfLegends #LoL"
+  ],
+  "recommended_pacing": "balanced",
+  "evaluator_config": {
+    "base_kill_weights": {
+      "PENTAKILL": 55.0,
+      "QUADRAKILL": 60.0,
+      "TRIPLE KILL": 49.9,
+      "DOUBLE KILL": 20.0,
+      "SOLO BOLO": 82.2,
+      "OUTPLAY": 79.9,
+      "CLUTCH": 80.0,
+      "KILL": 10.0
+    },
+    "action_multipliers": {
+      "pentakill": 0.76,
+      "solo_bolo": 1.23,
+      "clutch": 1.2,
+      "triple": 0.98,
+      "quadrakill": 1.0,
+      "double": 0.69,
+      "outplay": 1.31,
+      "multikill": 1.0
+    },
+    "demoted_formats": [
+      "double"
+    ],
+    "demoted_penalty_points": 10.0,
+    "s_tier_min": 82.0,
+    "a_tier_min": 68.0,
+    "b_tier_min": 50.0,
+    "top_action_type": "outplay"
+  },
+  "insights": [
+    "Przeanalizowano 48 filmów (47 z >= 50 views, 1 odrzucono jako zera/drafty). Mediana kanału: 1982 views, trimmed mean: 1948 views (eng: 0.5%).",
+    "Format o najwyższym performance ratio (mediana): OUTPLAY (1.23x mediany). Wagi bazują na min 3 próbkach — bez tego → waga domyślna.",
+    "Closed Pacing Loop (mediana): Kohorta viral_hit (11 filmów) → bucket 'balanced_14_17s' (pewna: balanced_14_17s, cinematic_18_25s). Profil: 'balanced'.",
+    "Title Reinforcement: Najlepsza struktura (mediana ratio): DISRESPECT_1V1. CTR słowa: WRONG, CHECK. Avoid: FIVE, ONE, ESCAPE, INSTANT.",
+    "Evaluator: Solo Bolo=82.2pkt, Pentakill=55.0pkt. Zdegradowane: double (wymaga N>=4).",
+    "Rytm: good (śr. 1.21 dni).",
+    "⚠️ TITLE FATIGUE: UWAGA: Wykryto powtarzające się frazy w ostatnich tytułach. Algorytm YouTube penalizuje powtarzalność!",
+    "YouTube Analytics API: 12 filmów z pełną krzywą retencji. Średni Swiped Away: 15.4%, AVD: 101.7%."
+  ]
+}

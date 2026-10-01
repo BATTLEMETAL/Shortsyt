@@ -480,6 +480,15 @@ Return ONLY valid JSON (no markdown, no comments):
                 print(f"⚠️  Polish detected in output ({detected_polish}) — trying next model / fallback")
                 continue
 
+            # Wymuś pełne tagi viralowe w tytule: #Shorts #LeagueOfLegends #LoL
+            try:
+                from lol_agent.lol_metadata_generator import _format_final_title
+            except ImportError:
+                from lol_metadata_generator import _format_final_title
+
+            if "title" in data and data["title"]:
+                data["title"] = _format_final_title(data["title"])
+
             data["champion"] = champion_name
             data["rank"] = rank
             data["action_type"] = action_type

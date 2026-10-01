@@ -4,6 +4,7 @@ Publikuje gotowego Shorta na kanał Dwannellenga (LoL)
 """
 import os
 import sys
+import time
 import pickle
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -225,10 +226,12 @@ def upload_lol_short(
 
     youtube = get_lol_youtube_service()
 
-    # Upewnij się że #Shorts jest w tytule — reszta tagów (#LeagueOfLegends #LoL) idzie do opisu
-    if "#shorts" not in title.lower():
-        if len(title) + 7 <= 98:
-            title = f"{title} #Shorts"
+    # Gwarantuj pełny zestaw viralowych tagów w tytule przed wysłaniem do YouTube API
+    try:
+        from lol_agent.lol_metadata_generator import _format_final_title
+    except ImportError:
+        from lol_metadata_generator import _format_final_title
+    title = _format_final_title(title)
 
     status_dict = {
         "selfDeclaredMadeForKids": False,
@@ -269,33 +272,39 @@ def upload_lol_short(
     response = None
     print("   ⏳ Uploading", end="", flush=True)
 
-    try:
-        while response is None:
+    retry_count = 0
+    max_retries = 3
+    while response is None:
+        try:
             status, response = request.next_chunk()
             if status:
                 pct = int(status.progress() * 100)
                 print(f"\r   ⏳ Uploading: {pct}%", end="", flush=True)
-    except Exception as exc:
-        # Wyciagnij kod HTTP jesli to HttpError
-        http_code = getattr(exc, "resp", None)
-        if http_code is not None:
-            code = getattr(http_code, "status", "?")
-        else:
-            code = "?"
+            retry_count = 0
+        except Exception as exc:
+            http_code = getattr(exc, "resp", None)
+            code = getattr(http_code, "status", None) if http_code is not None else None
+            # Retry on 5xx or connection error
+            if (code is None or str(code) in ("500", "502", "503", "504")) and retry_count < max_retries:
+                retry_count += 1
+                wait_sec = 2 ** retry_count
+                print(f"\n   ⚠️ Błąd przejściowy uploadu ({code or exc}), ponawiam za {wait_sec}s (próba {retry_count}/{max_retries})...")
+                time.sleep(wait_sec)
+                continue
 
-        if str(code) == "409":
-            raise RuntimeError(
-                "YouTube odrzucił upload (409 alreadyExists) — "
-                "ten klip był już uploadowany zbyt wiele razy z tego samego pliku. "
-                "Użyj nowego klipu lub odczekaj 24h."
-            ) from exc
-        elif str(code) == "403":
-            raise RuntimeError(
-                f"YouTube odrzucił upload (403 Forbidden) — "
-                f"sprawdź uprawnienia konta / OAuth scope. Szczegóły: {exc}"
-            ) from exc
-        else:
-            raise RuntimeError(f"Upload error ({code}): {exc}") from exc
+            if str(code) == "409":
+                raise RuntimeError(
+                    "YouTube odrzucił upload (409 alreadyExists) — "
+                    "ten klip był już uploadowany zbyt wiele razy z tego samego pliku. "
+                    "Użyj nowego klipu lub odczekaj 24h."
+                ) from exc
+            elif str(code) == "403":
+                raise RuntimeError(
+                    f"YouTube odrzucił upload (403 Forbidden) — "
+                    f"sprawdź uprawnienia konta / OAuth scope. Szczegóły: {exc}"
+                ) from exc
+            else:
+                raise RuntimeError(f"Upload error ({code}): {exc}") from exc
 
     print()
     video_id = response.get("id", "")

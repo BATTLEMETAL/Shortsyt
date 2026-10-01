@@ -76,15 +76,15 @@ MUSIC_LIBRARY = {
         "ncs_url":      "https://ncs.io/royalty",
         "attribution":  "Royalty by Egzod & Maestro Chives ft Neoni\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/royalty",
     },
-    "ncs_elektronomia_immortality.mp3": {
-        "title":        "Immortality",
-        "artist":       "Elektronomia & RUD",
+    "ncs_elektronomia_memory.mp3": {
+        "title":        "Memory",
+        "artist":       "Elektronomia",
         "energy":       "high",
         "action_types": ["pentakill", "quadrakill"],
-        "drop_approx":  32.0,
-        "search_query": "NoCopyrightSounds Elektronomia RUD Immortality",
-        "ncs_url":      "https://ncs.io/Immortality",
-        "attribution":  "Immortality by Elektronomia & RUD\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/Immortality",
+        "drop_approx":  130.0,
+        "search_query": "NoCopyrightSounds Elektronomia Memory",
+        "ncs_url":      "https://ncs.io/Memory",
+        "attribution":  "Memory by Elektronomia\nMusic provided by NoCopyrightSounds. Free Download/Stream: https://ncs.io/Memory",
     },
 
     # ══ MEDIUM ENERGY — Triple Kill, Outplay, Clutch, Oneshot ═══════════════════
@@ -468,7 +468,7 @@ if __name__ == "__main__":
                "--extract-audio", "--audio-format", "mp3", "--audio-quality", "192K",
                "--output", output.replace(".mp3", ".%(ext)s"),
                "--no-playlist", "--progress", args.url]
-        subprocess.run(cmd)
+        subprocess.run(cmd, timeout=300)
         print(f"\n  Saved as: {safe_name}")
         print(f"  Add to MUSIC_ENERGY_MAP in lol_editor.py with energy: high/medium/low")
 

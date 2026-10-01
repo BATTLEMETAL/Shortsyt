@@ -65,18 +65,45 @@ def _build_hashtags(champion: str = "Katarina", action_type: str = "outplay") ->
 
 
 def _ensure_shorts_tag(text: str, champion: str = "Katarina", action_type: str = "outplay") -> str:
-    """Zapewnia obecność viralowych hashtagów (#Shorts #LeagueOfLegends #LoL) w tytule."""
+    """Zapewnia obecność tagu #Shorts w opisie (do użytku w opisach i komentarzach)."""
     if not text:
-        return "#Shorts #LeagueOfLegends #LoL"
+        return "#Shorts"
 
     t = text.strip()
-    target_tags = ["#Shorts", "#LeagueOfLegends", "#LoL"]
-    for tag in target_tags:
-        if tag.lower() not in t.lower():
-            if len(t) + len(tag) + 1 <= 96:
-                t = f"{t} {tag}"
+    if "#shorts" not in t.lower():
+        if len(t) + len(" #Shorts") <= 96:
+            t = f"{t} #Shorts"
+        else:
+            t = t[:96 - len(" #Shorts")].rstrip() + " #Shorts"
 
     return t
+
+
+def _format_final_title(raw_title: str) -> str:
+    """
+    Wymusza końcowy format viralowego tytułu YouTube Shorts:
+    <hook> #Shorts #LeagueOfLegends #LoL
+    
+    Usuwa duplikaty tagów, normalizuje kolejność i pilnuje limitu 96 znaków.
+    Zawsze gwarantuje obecność WSZYSTKICH trzech tagów — bez nich Short
+    traci zasięg organiczny w wyszukiwarce YouTube i algorytmie Shorts.
+    """
+    if not raw_title:
+        return "#Shorts #LeagueOfLegends #LoL"
+
+    t = raw_title.strip()
+    # Usuń wszystkie hashtagi z końca i środka — dodamy je na nowo w prawidłowej kolejności
+    t = re.sub(r'\s*#Shorts\b', '', t, flags=re.IGNORECASE).strip()
+    t = re.sub(r'\s*#LeagueOfLegends\b', '', t, flags=re.IGNORECASE).strip()
+    t = re.sub(r'\s*#LoL\b', '', t, flags=re.IGNORECASE).strip()
+    t = t.rstrip(" ,.")
+
+    suffix = " #Shorts #LeagueOfLegends #LoL"
+    max_hook = 96 - len(suffix)
+    if len(t) > max_hook:
+        t = t[:max_hook].rstrip()
+
+    return f"{t}{suffix}"
 
 
 def generate_channel_title(action_type: str = "outplay", champion: str = "Katarina", rank: str = "", map_zone_label: str = "") -> str:
@@ -263,11 +290,14 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
     _JUNK_SCORE_KW = {"DIVE", "SHORTS", "LEAGUEOFLEGENDS", "LOL", "RIOTGAMES", "GAMING"}
     winning_kw = []
     avoid_kw = []
+    fatigued_fps = []
     try:
         from lol_agent.learning_engine import get_learning_directive
         directive = get_learning_directive()
         winning_kw = [k.upper() for k in directive.get("winning_keywords", []) if k.upper() not in _JUNK_SCORE_KW]
         avoid_kw = [k.upper() for k in directive.get("avoid_keywords", []) if k.upper() not in _JUNK_SCORE_KW]
+        fatigue_items = directive.get("title_fatigue", {}).get("repeated_phrases", [])
+        fatigued_fps = [it["phrase"].upper() for it in fatigue_items if it.get("count", 0) >= 2]
     except Exception:
         pass
 
@@ -310,6 +340,12 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
         for akw in avoid_kw:
             if akw in t_upper:
                 score = max(0.05, score - 1.2)
+        # Penalizuj szablony dotknięte zmęczeniem materiałowym (title fatigue z YouTube)
+        for ffp in fatigued_fps:
+            ffp_words = ffp.split()
+            if len(ffp_words) >= 3 and all(w in t_clean for w in ffp_words[:3]):
+                score = max(0.01, score * 0.05)
+                break
         # Penalizuj szablony których frazy kluczowe były niedawno użyte
         for fp in _used_fingerprints:
             fp_words = fp.split()
@@ -317,7 +353,7 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
                 score = max(0.05, score * 0.15)  # -85% wagi przy trafieniu odcisku
                 break
         weights.append(score)
-    return random.choices(templates, weights=weights, k=1)[0]
+    return _format_final_title(random.choices(templates, weights=weights, k=1)[0])
 
 
 def build_channel_description(title: str, champion: str = "Katarina", action_type: str = "outplay", map_zone_label: str = "") -> str:
@@ -453,6 +489,10 @@ def generate_metadata(
                     pass
     except Exception:
         pass
+    fatigue_info = directive.get("title_fatigue", {})
+    repeated_items = fatigue_info.get("repeated_phrases", [])
+    fatigued_phrases = [item["phrase"].upper() for item in repeated_items if item.get("count", 0) >= 2]
+
     _recent_titles_block = ""
     if _recent_titles:
         fp_block = "\n".join(f'- "{fp}"' for fp in _recent_fingerprints[-15:]) if _recent_fingerprints else ""
@@ -463,6 +503,10 @@ def generate_metadata(
             + "\nFull recent titles (do NOT repeat or closely paraphrase):\n"
             + "\n".join(f'- "{t}"' for t in _recent_titles[-15:])
         )
+    if fatigued_phrases:
+        fatigue_lines = "\n".join(f'- "{p}"' for p in fatigued_phrases)
+        _fatigue_block = f"\n\nTITLE FATIGUE WARNING (STRICTLY FORBIDDEN OPENING PHRASES — OVERUSED ON CHANNEL):\n{fatigue_lines}"
+        _recent_titles_block = (_recent_titles_block + _fatigue_block) if _recent_titles_block else _fatigue_block
 
     viral_examples_str = "\n".join([f"- {t}" for t in viral_titles[:4]]) if viral_titles else "- Katarina’s Dragon Pit Rampage – Triple Kill! 💥\n- No Escape From Katarina 💀 Clean Triple Kill!"
 
@@ -550,7 +594,7 @@ CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
 3. STRICTLY FORBIDDEN / LOW-CTR WORDS (DO NOT USE): {', '.join(avoid_kw[:6])}
 4. CHANNEL BENCHMARK VIRAL TITLES (Model your style after these top hits):
 {viral_examples_str}
-5. FORMATTING: Hook phrase first (max 45 visible chars before hashtags), then ONLY #Shorts at end of title. Put #LeagueOfLegends #LoL in DESCRIPTION, NOT in title. 1-2 emojis max.
+5. FORMATTING: Hook phrase first (max 45 visible chars before hashtags), then MUST end with viral hashtags: #Shorts #LeagueOfLegends #LoL. 1-2 emojis max.
 6. TITLE ARCHETYPE ROTATION — choose ONE archetype that fits this clip best, DO NOT default to questions:
    - DISRESPECT / EGO: "They Grouped For Free 💀", "All-In On Katarina? Instant Regret 💀"
    - STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "One Reset. Five Graves. 🩸"
@@ -564,7 +608,7 @@ CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
 
 GENERATE JSON ONLY (no markdown fences, raw json):
 {{
-  "title": "Strong punchy hook (max 45 chars) + #Shorts ONLY at end. No #LeagueOfLegends in title.",
+  "title": "Strong punchy hook (max 45 chars) + #Shorts #LeagueOfLegends #LoL at end.",
   "hook_text": "3-4 words punchy overlay in ALL CAPS (e.g. CLEAN OUTPLAY)",
   "description": "Engaging 2-3 sentence description encouraging likes and comments with hashtags #LeagueOfLegends #LoL #{champ.replace(' ', '')} #Shorts",
   "pinned_comment": "Direct question that triggers comments + like trigger",
@@ -582,16 +626,22 @@ GENERATE JSON ONLY (no markdown fences, raw json):
                         raw_text = raw_text.split("```")[1].split("```")[0].strip()
 
                     data = json.loads(raw_text)
-                    # Tytuł: tylko #Shorts na końcu. #LeagueOfLegends #LoL → opis.
                     _raw_title = data.get("title", "").strip()
                     if not _raw_title:
-                        _raw_title = f"{action_type.upper()} {champ} #Shorts"
-                    if "#shorts" not in _raw_title.lower():
-                        _raw_title = f"{_raw_title} #Shorts"
-                    # Usuń #LeagueOfLegends i #LoL z tytułu jeśli tam wpadły
-                    _raw_title = re.sub(r'\s*#LeagueOfLegends\b', '', _raw_title, flags=re.IGNORECASE).strip()
-                    _raw_title = re.sub(r'\s*#LoL\b', '', _raw_title, flags=re.IGNORECASE).strip()
-                    gen_title = _raw_title
+                        _raw_title = f"{action_type.upper()} {champ}"
+                    # Wymuś pełny zestaw viralowych tagów: #Shorts #LeagueOfLegends #LoL
+                    gen_title = _format_final_title(_raw_title)
+
+                    # Sprawdź czy wygenerowany tytuł nie wpada w wykryte zmęczenie materiałowe (title fatigue)
+                    _t_clean = re.sub(r'#\S+', '', gen_title.upper())
+                    _t_clean = re.sub(r'[^\w\s]', '', _t_clean).strip()
+                    _t_words = _t_clean.split()
+                    if len(_t_words) >= 3 and fatigued_phrases:
+                        _gen_fp = " ".join(_t_words[:3])
+                        if any(_gen_fp == fp or _gen_fp.startswith(fp) for fp in fatigued_phrases):
+                            print(f"   [Gemini AI] ⚠️ Tytuł '{gen_title}' narusza title fatigue (fraza '{_gen_fp}') — odrzucam i ponawiam...")
+                            continue
+
                     hashtags = _build_hashtags(champ, action_type)
                     raw_desc = (data.get("description") or "").strip()
                     if raw_desc:

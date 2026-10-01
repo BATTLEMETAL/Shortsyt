@@ -207,7 +207,7 @@ def merge_split_clips(video_path: str) -> str:
         "-c", "copy",
         merged_output
     ]
-    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
 
     # 2. Fallback na re-encode jeśli -c copy się nie powiedzie
     if res.returncode != 0 or not os.path.exists(merged_output) or os.path.getsize(merged_output) == 0:
@@ -221,7 +221,7 @@ def merge_split_clips(video_path: str) -> str:
             "-c:a", "aac",
             merged_output
         ]
-        res = subprocess.run(cmd_reencode, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        res = subprocess.run(cmd_reencode, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
 
     if res.returncode == 0 and os.path.exists(merged_output) and os.path.getsize(merged_output) > 0:
         log(f"   ✅ Pomyślnie scalono klipy w: {os.path.basename(merged_output)}")
@@ -438,6 +438,8 @@ def run_pipeline(
         "quadrakill": "QUADRAKILL!",
         "triple":     "TRIPLE KILL!",
         "double":     "DOUBLE KILL!",
+        "solo_bolo":  "SOLO BOLO!",
+        "outplay":    "OUTPLAY!",
         "oneshot":    "ONE SHOT!",
         "baron":      "BARON STEAL!",
         "dragon":     "DRAGON STEAL!",
@@ -920,23 +922,36 @@ def check_duplicate_clip(source_path: str, original_path: str = None) -> tuple:
 
     return False, "", {}
 
-
 def _compute_action_fingerprint(peaks: list, champion: str, action_type: str) -> dict:
     """
     Computes a semantic game action fingerprint based on relative kill timings and labels.
     Invariant to clip start/end trimming.
+    Only includes milestone-level labels to avoid noise from generic KILL/SHUTDOWN OCR entries.
     """
-    if not peaks:
+    # FIX: Filtrujemy peaks do kluczowych milestone'ów — OCR zwraca też generic KILL/SHUTDOWN
+    # co powodowało len-mismatch z bazą zawierającą tylko TRIPLE/QUADRA/PENTA.
+    _MILESTONE_LABELS = {"DOUBLE", "DOUBLE KILL", "TRIPLE", "TRIPLE KILL", "QUADRA",
+                         "QUADRAKILL", "PENTAKILL", "ACE", "SOLO", "LEGENDARY",
+                         "KILLING SPREE", "RAMPAGE", "UNSTOPPABLE", "DOMINATING",
+                         "GODLIKE", "LEGENDARY"}
+
+    def _is_milestone(label: str) -> bool:
+        l = str(label).upper()
+        return any(m in l for m in _MILESTONE_LABELS)
+
+    milestone_peaks = [(t, lbl) for t, lbl in peaks if _is_milestone(lbl)]
+
+    if not milestone_peaks:
         return {
             "champion": champion.lower() if champion else "",
             "action_type": action_type.lower() if action_type else "",
             "kills": []
         }
 
-    first_t = float(peaks[0][0])
+    first_t = float(milestone_peaks[0][0])
     kills = [
         {"label": str(label).upper(), "rel_t": round(float(t) - first_t, 1)}
-        for t, label in peaks
+        for t, label in milestone_peaks
     ]
     return {
         "champion": champion.lower() if champion else "",
@@ -949,6 +964,7 @@ def _is_duplicate_action(current_fp: dict, processed_data: dict, tolerance: floa
     """
     Checks if current game action matches any previously processed/uploaded action.
     Returns (is_duplicate: bool, matched_entry: dict).
+    Uses subsequence matching so different clip boundaries don't break deduplication.
     """
     cur_kills = current_fp.get("kills", [])
     if not cur_kills or len(cur_kills) < 2:
@@ -963,20 +979,34 @@ def _is_duplicate_action(current_fp: dict, processed_data: dict, tolerance: floa
             continue
 
         ent_kills = entry_fp.get("kills", [])
-        if len(ent_kills) != len(cur_kills):
-            continue
 
         ent_champ = entry_fp.get("champion", "").lower()
         if cur_champ and ent_champ and cur_champ != ent_champ:
             continue
 
-        matched = True
-        for (k_cur, k_ent) in zip(cur_kills, ent_kills):
-            if k_cur["label"] != k_ent["label"]:
-                matched = False
-                break
-            if abs(k_cur["rel_t"] - k_ent["rel_t"]) > tolerance:
-                matched = False
+        # FIX: Zamiast wymagać len(ent_kills) == len(cur_kills) (co zawsze failowało
+        # bo OCR zwracał 12 wpisów a baza miała 3 milestones), używamy subsequence
+        # matching: sprawdź czy SHORTER jest podciągiem LONGER z tolerancją czasową.
+        if not ent_kills or not cur_kills:
+            continue
+
+        longer  = cur_kills  if len(cur_kills)  >= len(ent_kills) else ent_kills
+        shorter = ent_kills  if len(cur_kills)  >= len(ent_kills) else cur_kills
+
+        # Szukaj shorter jako podciąg w longer (sliding window)
+        matched = False
+        for start in range(len(longer) - len(shorter) + 1):
+            window = longer[start:start + len(shorter)]
+            all_match = True
+            for (k_s, k_l) in zip(shorter, window):
+                if k_s["label"] != k_l["label"]:
+                    all_match = False
+                    break
+                if abs(k_s["rel_t"] - k_l["rel_t"]) > tolerance:
+                    all_match = False
+                    break
+            if all_match:
+                matched = True
                 break
 
         if matched:

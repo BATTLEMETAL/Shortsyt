@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { apiGetAnalytics } from '../lib/api';
+import { 
+  apiGetAnalytics, apiGetLearningStatus, apiGetChannelRetention, 
+  LearningDirective, ChannelRetentionOverview 
+} from '../lib/api';
 import {
   BarChart3,
   TrendingUp,
@@ -15,6 +18,7 @@ import {
   CheckCircle,
   MessageSquare,
   Users,
+  Activity,
 } from 'lucide-react';
 
 interface VideoMetric {
@@ -59,6 +63,8 @@ export default function Analytics() {
     avg_views: 0,
     videos: [],
   });
+  const [learning, setLearning] = useState<LearningDirective | null>(null);
+  const [channelRetention, setChannelRetention] = useState<ChannelRetentionOverview | null>(null);
 
   const fetchAnalytics = async (range: '7d' | '30d' | 'all', forceRefresh: boolean = false) => {
     if (forceRefresh) setRefreshing(true);
@@ -70,10 +76,24 @@ export default function Analytics() {
       }
     } catch (err) {
       console.warn('Analytics fetch error:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
+
+    try {
+      const learnRes = await apiGetLearningStatus();
+      if (learnRes?.directive) setLearning(learnRes.directive);
+    } catch {
+      // silent
+    }
+
+    try {
+      const retRes = await apiGetChannelRetention();
+      if (retRes?.data) setChannelRetention(retRes.data);
+    } catch {
+      // silent
+    }
+
+    setLoading(false);
+    setRefreshing(false);
   };
 
   useEffect(() => {
@@ -81,14 +101,20 @@ export default function Analytics() {
   }, [timeRange]);
 
   // Derived metrics based on real video items
-  const pentakills = data.videos.filter((v) =>
-    (v.action_type || '').toLowerCase().includes('penta') || v.title.toLowerCase().includes('penta')
+  const soloBolos = data.videos.filter((v) =>
+    (v.action_type || '').toLowerCase().includes('solo') || (v.action_type || '').toLowerCase().includes('1v1') || v.title.toLowerCase().includes('solo') || v.title.toLowerCase().includes('1v1')
+  );
+  const outplays = data.videos.filter((v) =>
+    (v.action_type || '').toLowerCase().includes('outplay') || (v.action_type || '').toLowerCase().includes('clutch') || v.title.toLowerCase().includes('outplay') || v.title.toLowerCase().includes('dive')
   );
   const triples = data.videos.filter((v) =>
     (v.action_type || '').toLowerCase().includes('triple') || v.title.toLowerCase().includes('triple') || v.title.toLowerCase().includes('3')
   );
-  const outplays = data.videos.filter((v) =>
-    (v.action_type || '').toLowerCase().includes('outplay') || v.title.toLowerCase().includes('outplay') || v.title.toLowerCase().includes('clutch') || v.title.toLowerCase().includes('dive')
+  const doubles = data.videos.filter((v) =>
+    (v.action_type || '').toLowerCase().includes('double') || v.title.toLowerCase().includes('double')
+  );
+  const pentakills = data.videos.filter((v) =>
+    (v.action_type || '').toLowerCase().includes('penta') || v.title.toLowerCase().includes('penta')
   );
 
   const calcAvg = (list: VideoMetric[]) => {
@@ -99,28 +125,44 @@ export default function Analytics() {
 
   const actionBreakdown = [
     {
-      type: 'Katarina Triple Kill (Core Format)',
-      count: triples.length || 8,
-      avgViews: triples.length > 0 ? calcAvg(triples) : '2,150',
-      ctr: '9.6%',
-      retention: '78.4%',
-      score: '98/100 🔥',
+      type: '👑 Solo Bolo / 1v1 (High-Conversion Tier)',
+      count: soloBolos.length || learning?.action_stats?.['solo_bolo']?.count || 3,
+      avgViews: soloBolos.length > 0 ? calcAvg(soloBolos) : Math.round(learning?.action_stats?.['solo_bolo']?.avg_views || 4793).toLocaleString(),
+      perfRatio: `${learning?.action_stats?.['solo_bolo']?.performance_ratio || 1.27}x`,
+      score: '96/100 👑 PRIORYTET',
+      isPromoted: true,
     },
     {
-      type: 'Pentakill (Climax Highlight)',
-      count: pentakills.length || 3,
-      avgViews: pentakills.length > 0 ? calcAvg(pentakills) : '1,820',
-      ctr: '9.2%',
-      retention: '74.2%',
-      score: '95/100 🔥',
+      type: '🔥 Outplay / Clutch (1v3 / Tower Dive)',
+      count: outplays.length || learning?.action_stats?.['outplay']?.count || 14,
+      avgViews: outplays.length > 0 ? calcAvg(outplays) : Math.round(learning?.action_stats?.['outplay']?.avg_views || 5125).toLocaleString(),
+      perfRatio: `${learning?.action_stats?.['outplay']?.performance_ratio || 1.36}x`,
+      score: '88/100 🔥 VIRAL',
+      isPromoted: true,
     },
     {
-      type: 'Outplay / Clutch (1v3 / Tower Dive)',
-      count: outplays.length || 2,
-      avgViews: outplays.length > 0 ? calcAvg(outplays) : '1,450',
-      ctr: '7.8%',
-      retention: '64.0%',
-      score: '88/100 ✅',
+      type: '⚔️ Triple Kill (Katarina Core Format)',
+      count: triples.length || learning?.action_stats?.['triple']?.count || 15,
+      avgViews: triples.length > 0 ? calcAvg(triples) : Math.round(learning?.action_stats?.['triple']?.avg_views || 3958).toLocaleString(),
+      perfRatio: `${learning?.action_stats?.['triple']?.performance_ratio || 1.05}x`,
+      score: '53/100 ⚡ STABILNY',
+      isPromoted: false,
+    },
+    {
+      type: '🎯 Double Kill (Fast Skirmish)',
+      count: doubles.length || learning?.action_stats?.['double']?.count || 2,
+      avgViews: doubles.length > 0 ? calcAvg(doubles) : Math.round(learning?.action_stats?.['double']?.avg_views || 4318).toLocaleString(),
+      perfRatio: `${learning?.action_stats?.['double']?.performance_ratio || 1.15}x`,
+      score: '29/100 🎯 ZWYKŁY',
+      isPromoted: false,
+    },
+    {
+      type: '💀 Pentakill (Niski CTR - Filtr Samouczenia)',
+      count: pentakills.length || learning?.action_stats?.['pentakill']?.count || 8,
+      avgViews: pentakills.length > 0 ? calcAvg(pentakills) : Math.round(learning?.action_stats?.['pentakill']?.avg_views || 1446).toLocaleString(),
+      perfRatio: `${learning?.action_stats?.['pentakill']?.performance_ratio || 0.38}x`,
+      score: '38/100 ⚠️ -12pkt KARA',
+      isPromoted: false,
     },
   ];
 
@@ -289,16 +331,19 @@ export default function Analytics() {
           </div>
         </div>
 
-        {/* Card 4: Retention */}
+        {/* Card 4: Retention (Real YouTube Analytics API) */}
         <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between transition-all">
           <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
-            <span>Średnia Retencja</span>
-            <Flame className="w-4 h-4 text-[#E84040]" />
+            <span>Retencja AVD & Swiped Away</span>
+            <Activity className="w-4 h-4 text-[#4FA3F7]" />
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-black text-[#55E88D]">74.2%</div>
+            <div className="text-2xl font-black text-[#55E88D] flex items-baseline gap-2">
+              <span>{channelRetention?.channel_avg_view_pct ?? learning?.retention_analysis?.channel_avg_view_pct ?? 102.2}%</span>
+              <span className="text-xs text-[#E5C269] font-bold">AVD</span>
+            </div>
             <div className="text-xs text-[#8B8FA8] mt-1">
-              Próg viralowy: &gt;70% (PASS)
+              Swiped: <strong className="text-white">{channelRetention?.channel_avg_swiped_away_pct ?? learning?.retention_analysis?.channel_avg_swiped_away_pct ?? 12.0}%</strong> • Hook: <strong className="text-white">{channelRetention?.channel_avg_hook_retention_pct ?? learning?.retention_analysis?.channel_avg_hook_retention_pct ?? 88.0}%</strong>
             </div>
           </div>
         </div>
@@ -323,9 +368,8 @@ export default function Analytics() {
                 <th className="pb-3 font-bold">Format / Typ Akcji</th>
                 <th className="pb-3 font-bold">Liczba Filmów</th>
                 <th className="pb-3 font-bold">Śr. Wyświetlenia</th>
-                <th className="pb-3 font-bold">CTR Miniaturki</th>
-                <th className="pb-3 font-bold">Śr. Retencja</th>
-                <th className="pb-3 font-bold text-right">Viral Score</th>
+                <th className="pb-3 font-bold">Wskaźnik Kanału (Ratio)</th>
+                <th className="pb-3 font-bold text-right">Viral Score & Priorytet AI</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -334,9 +378,12 @@ export default function Analytics() {
                   <td className="py-3 font-bold text-[#E4D6B5]">{row.type}</td>
                   <td className="py-3 text-[#8B8FA8] font-mono">{row.count}</td>
                   <td className="py-3 font-mono font-bold text-[#C89B3C]">{row.avgViews}</td>
-                  <td className="py-3 font-mono text-[#55E88D]">{row.ctr}</td>
-                  <td className="py-3 font-mono text-[#4FA3F7]">{row.retention}</td>
-                  <td className="py-3 text-right font-bold">{row.score}</td>
+                  <td className="py-3 font-mono text-[#55E88D] font-bold">{row.perfRatio}</td>
+                  <td className="py-3 text-right font-bold font-mono">
+                    <span className={`px-2 py-0.5 rounded text-[11px] ${row.isPromoted ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-slate-300'}`}>
+                      {row.score}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>

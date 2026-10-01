@@ -14,10 +14,10 @@ CHANNEL_TOP_TITLES: List[Dict] = [
     },
     {
         "videoId": "6EwdZgvFdcQ",
-        "title": "Enemy Tried to Dive Me 💀 It Went Wrong 😏",
+        "title": "No Escape 💀 Hunting Down the Entire Team 🔥",
         "views": 13022,
         "action_type": "outplay",
-        "style": "enemy_mistake"
+        "style": "aggressive_hunt"
     },
     {
         "videoId": "IMSSS_6quI8",
@@ -119,8 +119,8 @@ PROVEN_STYLE_TEMPLATES = {
         "ADC Down… Mid Saved? Not Today! 💥 Triple Kill"
     ],
     "outplay": [
-        "Enemy Tried to Dive Me 💀 It Went Wrong 😏",
-        "Tower Dive Contest – {Champion} Edition 🔥",
+        "No Escape 💀 Hunting Down the Entire Team 🔥",
+        "They Thought They Were Safe... Big Mistake 😏",
         "Ambush at Drake 🐉 Gone Wrong (for Them 😏)",
         "They Flashed For The Kill... And Regretted It 💀"
     ],

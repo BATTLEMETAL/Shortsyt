@@ -7,7 +7,7 @@ Tests for FastAPI backend endpoints (/health, root) in lol_agent/api/main.py.
 import sys
 import os
 import pytest
-from starlette.testclient import TestClient
+from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lol_agent"))

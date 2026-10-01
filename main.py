@@ -19,7 +19,7 @@ def main():
 
     # Wczytanie klucza API z pliku .env dla bezpieczeństwa
     load_dotenv()
-    gemini_api_key = os.getenv("haslo")
+    gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("haslo")
     if not gemini_api_key:
         print("❌ Błąd: Klucz GEMINI_API_KEY nie został znaleziony. Upewnij się, że masz plik .env.")
         return
@@ -39,7 +39,7 @@ def main():
 
     if not os.path.exists(MODEL_PATH):
         print(f"❌ Błąd: Nie znaleziono wytrenowanego modelu: {MODEL_PATH}")
-        print("   > Uruchom najpierw skrypt 'train_model.py', aby go stworzyć.")
+        print("   > Uruchom najpierw skrypt 'model_trainer.py', aby go stworzyć.")
         return
 
     # 2. Wczytanie wytrenowanego modelu AI
@@ -55,7 +55,7 @@ def main():
     zmontuj_shorta_z_ai(input_video_path, model, output_short_path)
 
     if not os.path.exists(output_short_path):
-        print("🔴 Montaż nie powiódł się. Prerywam działanie.")
+        print("🔴 Montaż nie powiódł się. Przerywam działanie.")
         return
 
     # 4. Generowanie metadanych (tytuł, opis, tagi)

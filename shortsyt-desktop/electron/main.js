@@ -3,6 +3,23 @@ const path = require('path');
 const http = require('http');
 const fs = require('fs');
 const { spawn } = require('child_process');
+
+// File logger to diagnose startup
+const logPath = path.join(path.resolve(__dirname, '../..'), 'electron_debug.log');
+function logDebug(msg) {
+  try {
+    fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch (_) {}
+}
+logDebug('--- Electron main process starting ---');
+
+process.on('uncaughtException', (err) => {
+  logDebug('CRITICAL uncaughtException: ' + (err.stack || err));
+});
+process.on('unhandledRejection', (reason) => {
+  logDebug('CRITICAL unhandledRejection: ' + ((reason && reason.stack) || reason));
+});
+
 const Store = require('electron-store');
 
 // Initialize electron store
@@ -14,6 +31,7 @@ const store = new Store({
 });
 
 let mainWindow = null;
+
 let backendProcess = null;
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -32,11 +50,11 @@ function isViteRunning(port = 5173) {
 
 function isBackendRunning(port = 8765) {
   return new Promise((resolve) => {
-    const req = http.get(`http://localhost:${port}/health`, (res) => {
+    const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
       resolve(res.statusCode === 200);
     });
     req.on('error', () => resolve(false));
-    req.setTimeout(800, () => {
+    req.setTimeout(1500, () => {
       req.destroy();
       resolve(false);
     });
@@ -50,15 +68,29 @@ async function ensureBackendRunning() {
     return;
   }
 
-  // Find python in venv or system
-  const rootDir = path.resolve(__dirname, '../..');
-  const venvPython = path.join(rootDir, 'venv313', 'Scripts', 'python.exe');
-  const pythonCmd = fs.existsSync(venvPython) ? venvPython : 'python';
+  // Find python in venv across common dev and packaged locations
+  const candidateVenvs = [
+    path.join(process.cwd(), 'venv313', 'Scripts', 'python.exe'),
+    path.resolve(__dirname, '../../venv313/Scripts/python.exe'),
+    path.resolve(__dirname, '../../../venv313/Scripts/python.exe'),
+    path.resolve(__dirname, '../../../../venv313/Scripts/python.exe'),
+    path.join(process.env.USERPROFILE || '', 'PycharmProjects', 'shortsyt', 'venv313', 'Scripts', 'python.exe'),
+  ];
 
-  console.log('🚀 Starting Shortsyt Backend API via:', pythonCmd);
+  let pythonCmd = 'python';
+  let projectRoot = path.resolve(__dirname, '../..');
+  for (const candidate of candidateVenvs) {
+    if (fs.existsSync(candidate)) {
+      pythonCmd = candidate;
+      projectRoot = path.dirname(path.dirname(path.dirname(candidate)));
+      break;
+    }
+  }
+
+  console.log('🚀 Starting Shortsyt Backend API via:', pythonCmd, 'in cwd:', projectRoot);
   try {
     backendProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'lol_agent.api.main:app', '--host', '127.0.0.1', '--port', '8765'], {
-      cwd: rootDir,
+      cwd: projectRoot,
       stdio: 'ignore',
       detached: false,
       windowsHide: true,
@@ -67,13 +99,24 @@ async function ensureBackendRunning() {
     backendProcess.on('error', (err) => {
       console.warn('Backend process spawn error:', err);
     });
+
+    // Wait briefly for backend to initialize
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setTimeout(r, 600));
+      if (await isBackendRunning(8765)) {
+        console.log('✅ Backend API started successfully');
+        break;
+      }
+    }
   } catch (err) {
     console.warn('Could not auto-start backend:', err);
   }
 }
 
 async function createWindow() {
+  logDebug('createWindow() called');
   await ensureBackendRunning();
+  logDebug('ensureBackendRunning finished');
 
   mainWindow = new BrowserWindow({
     width: 1320,
@@ -96,19 +139,30 @@ async function createWindow() {
     Menu.setApplicationMenu(null);
   }
 
-  // Graceful show
+  // Graceful show + safety timeout fallback
   mainWindow.once('ready-to-show', () => {
+    logDebug('mainWindow ready-to-show event fired');
     mainWindow.show();
   });
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      logDebug('Safety timeout: forcing mainWindow.show()');
+      mainWindow.show();
+    }
+  }, 1200);
 
   const viteUp = await isViteRunning(5173);
+  logDebug(`isViteRunning: ${viteUp}, isDev: ${isDev}`);
 
   if (isDev && viteUp) {
+    logDebug('Loading http://localhost:5173');
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     const indexPath = path.join(__dirname, '../dist/index.html');
+    logDebug(`Loading local file: ${indexPath}, exists: ${fs.existsSync(indexPath)}`);
     mainWindow.loadFile(indexPath).catch((err) => {
+      logDebug('Fallback loading error: ' + (err.stack || err));
       console.warn('Fallback loading error:', err);
     });
   }

@@ -69,10 +69,7 @@ shortsyt-desktop/dist-app/
 shortsyt-desktop/dist-electron/
 shortsyt-desktop/dist-installer/
 shortsyt-desktop/release/
-shortsyt-app/node_modules/
-shortsyt-app/.expo/
-shortsyt-app/android/
-shortsyt-app/ios/
+shortsyt-app/
 
 # ============================================
 # GENERATED MEDIA & CACHE (Too large / ephemeral)

@@ -118,10 +118,23 @@ def process_new_clip(file_path: str, auto_publish: bool = False):
         return
 
     # 2. Sprawdzenie deduplikacji meczu (Semantic Fingerprint)
+    hk = str(eval_res.get("highest_kill", "")).upper()
+    inferred_action = "outplay"
+    if "SOLO" in hk or "1V1" in hk:
+        inferred_action = "solo_bolo"
+    elif "PENTA" in hk:
+        inferred_action = "pentakill"
+    elif "QUADRA" in hk:
+        inferred_action = "quadrakill"
+    elif "TRIPLE" in hk:
+        inferred_action = "triple"
+    elif "DOUBLE" in hk:
+        inferred_action = "double"
+
     action_fp = _compute_action_fingerprint(
         peaks=eval_res.get("kills", []),
         champion="katarina",  # default or auto
-        action_type=eval_res.get("highest_kill", "outplay").lower()
+        action_type=inferred_action
     )
     
     processed_path = os.path.join(_lol_agent_dir, "processed_hashes.json")
@@ -139,15 +152,22 @@ def process_new_clip(file_path: str, auto_publish: bool = False):
         return
 
     # 3. Kwalifikacja do montażu!
-    log(f"   🔥 AKCJA ZAKWALIFIKOWANA! ({tier} - {score:.1f} pkt) -> Uruchamiam montaż...")
+    log(f"   🔥 AKCJA ZAKWALIFIKOWANA! ({tier} - {score:.1f} pkt | {inferred_action.upper()}) -> Uruchamiam montaż...")
     
     # Uruchomienie z priorytetem BELOW_NORMAL w tle
     dry_run_mode = not auto_publish
     log(f"   🎬 Tryb: {'PUBLIKACJA NA YT' if auto_publish else 'DRY-RUN (gotowy do podglądu)'}")
     
     try:
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)
+        except Exception:
+            pass
+
         run_pipeline(
             video_path=file_path,
+            action=inferred_action,
             dry_run=dry_run_mode,
             force=False
         )
