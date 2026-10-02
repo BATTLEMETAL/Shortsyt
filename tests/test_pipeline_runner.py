@@ -3,12 +3,15 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 from lol_agent.api import pipeline_runner
 
+
 def test_pipeline_state_initial():
     state = pipeline_runner.get_state()
     assert isinstance(state, dict)
     assert 'status' in state
     assert 'progress' in state
     assert 'current_step' in state
+    assert 'queue_length' in state
+
 
 def test_cancellation_flow():
     with pipeline_runner._lock:
@@ -21,6 +24,42 @@ def test_cancellation_flow():
     with pipeline_runner._lock:
         pipeline_runner._state.status = pipeline_runner.PipelineStatus.IDLE
 
+
+def test_job_queue_mechanism():
+    pipeline_runner.clear_job_queue()
+    with pipeline_runner._lock:
+        pipeline_runner._state.status = pipeline_runner.PipelineStatus.RUNNING
+
+    # Without queue_if_busy, should reject
+    started = pipeline_runner.start_pipeline(
+        source_path="clip1.mp4",
+        clip_start=0.0,
+        clip_end=15.0,
+        queue_if_busy=False,
+    )
+    assert started is False
+    assert pipeline_runner.get_state()['queue_length'] == 0
+
+    # With queue_if_busy, should accept and queue
+    queued = pipeline_runner.start_pipeline(
+        source_path="clip2.mp4",
+        clip_start=0.0,
+        clip_end=15.0,
+        output_filename="clip2_output.mp4",
+        queue_if_busy=True,
+    )
+    assert queued is True
+    assert pipeline_runner.get_state()['queue_length'] == 1
+    queue = pipeline_runner.get_job_queue()
+    assert len(queue) == 1
+    assert queue[0]['output_filename'] == "clip2_output.mp4"
+
+    pipeline_runner.stop_pipeline(clear_queue=True)
+    assert pipeline_runner.get_state()['queue_length'] == 0
+    with pipeline_runner._lock:
+        pipeline_runner._state.status = pipeline_runner.PipelineStatus.IDLE
+
+
 def test_run_pipeline_no_name_errors(tmp_path):
     dummy_video = tmp_path / 'dummy.mp4'
     dummy_video.write_bytes(b'dummy video content')
@@ -29,7 +68,7 @@ def test_run_pipeline_no_name_errors(tmp_path):
          patch('lol_agent.lol_thumbnail.generate_thumbnail') as mock_thumb, \
          patch('lol_agent.smart_camera.detect_kill_events') as mock_kills, \
          patch('lol_agent.lol_metadata_generator.generate_metadata_universal') as mock_meta:
-        
+
         mock_render.return_value = str(tmp_path / 'lol_short_final.mp4')
         mock_thumb.return_value = str(tmp_path / 'lol_short_final_thumb.jpg')
         mock_kills.return_value = [(2.0, 'KILL')]

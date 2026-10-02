@@ -52,12 +52,25 @@ class PipelineState:
     logs: List[str] = field(default_factory=list)
 
 
-# Globalny stan pipeline — singleton
+# Globalny stan pipeline — singleton i kolejka zadań
 _state = PipelineState()
 _lock = threading.Lock()
 _thread: Optional[threading.Thread] = None
 _cancel_event = threading.Event()
 _active_proc = None
+_job_queue: List[dict] = []
+
+
+def get_job_queue() -> List[dict]:
+    """Zwraca kopię listy zadań oczekujących w kolejce renderera."""
+    with _lock:
+        return list(_job_queue)
+
+
+def clear_job_queue() -> None:
+    """Czyści kolejkę oczekujących zadań renderowania."""
+    with _lock:
+        _job_queue.clear()
 
 
 def set_active_subprocess(proc):
@@ -108,6 +121,7 @@ def get_state() -> dict:
             "started_at": _state.started_at,
             "finished_at": _state.finished_at,
             "logs": list(_state.logs[-50:]),  # ostatnie 50 linii
+            "queue_length": len(_job_queue),
         }
 
 
@@ -649,6 +663,19 @@ def _run_pipeline(
 
         if notify_token:
             _send_push(notify_token, "❌ Błąd renderowania", str(e))
+    finally:
+        clear_active_subprocess()
+        next_job = None
+        with _lock:
+            if _job_queue and not _cancel_event.is_set():
+                next_job = _job_queue.pop(0)
+        if next_job is not None:
+            _update(
+                f"Kolejne zadanie z kolejki ({len(_job_queue)} w oczekiwaniu)",
+                0,
+                f"Rozpoczynam z kolejki: {next_job.get('output_filename')}"
+            )
+            start_pipeline(**next_job)
 
 
 def _send_push(expo_token: str, title: str, body: str):
@@ -685,45 +712,53 @@ def start_pipeline(
     notify_token: Optional[str] = None,
     combat_segments: Optional[List[Tuple[float, float]]] = None,
     game_type: str = "lol",
+    queue_if_busy: bool = False,
 ) -> bool:
-    """Uruchom pipeline w osobnym wątku. Zwraca False jeśli już działa."""
+    """Uruchom pipeline w osobnym wątku. Gdy queue_if_busy=True, dodaje do kolejki jeśli render już trwa."""
     global _thread
+
+    job_kwargs = dict(
+        source_path=source_path,
+        clip_start=clip_start,
+        clip_end=clip_end,
+        action_type=action_type,
+        champion_name=champion_name,
+        rank=rank,
+        peak_moment=peak_moment,
+        hook_text=hook_text,
+        output_filename=output_filename,
+        use_speed_ramp=use_speed_ramp,
+        use_zoom_punch=use_zoom_punch,
+        use_smart_camera=use_smart_camera,
+        notify_token=notify_token,
+        combat_segments=combat_segments,
+        game_type=game_type,
+    )
 
     with _lock:
         if _state.status == PipelineStatus.RUNNING:
+            if queue_if_busy:
+                _job_queue.append(job_kwargs)
+                _state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] 📋 Zakolejkowano render: {output_filename} (pozycja {len(_job_queue)})")
+                return True
             return False
         _cancel_event.clear()
 
     _thread = threading.Thread(
         target=_run_pipeline,
-        kwargs=dict(
-            source_path=source_path,
-            clip_start=clip_start,
-            clip_end=clip_end,
-            action_type=action_type,
-            champion_name=champion_name,
-            rank=rank,
-            peak_moment=peak_moment,
-            hook_text=hook_text,
-            output_filename=output_filename,
-            use_speed_ramp=use_speed_ramp,
-            use_zoom_punch=use_zoom_punch,
-            use_smart_camera=use_smart_camera,
-            notify_token=notify_token,
-            combat_segments=combat_segments,
-            game_type=game_type,
-        ),
+        kwargs=job_kwargs,
         daemon=True,
     )
     _thread.start()
     return True
 
 
-
-def stop_pipeline():
+def stop_pipeline(clear_queue: bool = True):
     """Zatrzymaj pipeline natychmiastowo: flaga anulowania + ubicie aktywnego procesu FFmpeg."""
     global _active_proc
     with _lock:
+        if clear_queue:
+            _job_queue.clear()
         if _state.status == PipelineStatus.RUNNING:
             _cancel_event.set()
             _state.status = PipelineStatus.ERROR
