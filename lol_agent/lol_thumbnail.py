@@ -29,10 +29,14 @@ _HERE = os.path.dirname(__file__)
 _ROOT = os.path.dirname(_HERE)
 
 FONT_CANDIDATES = [
+    os.path.join(_ROOT, "assets", "fonts", "impact.ttf"),
+    os.path.join(_HERE, "..", "assets", "fonts", "impact.ttf"),
     os.path.join(_HERE, "impact.ttf"),
     os.path.join(_ROOT, "impact.ttf"),
     r"C:\Windows\Fonts\impact.ttf",
     r"C:\Windows\Fonts\Impact.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
 ]
 
 LOGO_CANDIDATES = [

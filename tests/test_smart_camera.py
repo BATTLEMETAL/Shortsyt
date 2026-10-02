@@ -20,6 +20,7 @@ from smart_camera import (
     _detect_fight_center_x,
     filter_temporal_vfx_particles,
     is_tab_overlay_active,
+    simplify_trajectory,
 )
 
 
@@ -47,6 +48,35 @@ class TestGenerateFfmpegPanExpression:
         expr = generate_ffmpeg_pan_expression(points)
         assert "if(lt(t,1.50)" in expr
         assert "if(lt(t,3.00)" in expr
+
+    def test_simplify_trajectory_reduces_collinear_points(self):
+        """Collinear and stationary points must be simplified to reduce filtergraph complexity."""
+        # 20 stationary points + 10 ramp points
+        pts = [(i * 0.1, 500) for i in range(20)] + [(2.0 + i * 0.1, 500 + i * 10) for i in range(10)]
+        simplified = simplify_trajectory(pts, epsilon=1.5)
+        assert len(simplified) <= 5
+        assert simplified[0] == (0.0, 500)
+        assert simplified[-1] == pts[-1]
+
+    def test_generate_pan_expression_binary_tree_depth_safety(self):
+        """
+        Verify that 80 points generates a balanced binary tree expression with O(log N) depth
+        instead of an 80-level deeply nested linear if-chain (Technical Debt #7).
+        """
+        pts80 = [(i * 0.2, 500 + (i % 5) * 20) for i in range(80)]
+        expr = generate_ffmpeg_pan_expression(pts80, simplify=False)
+        assert len(expr) > 500
+        # Calculate maximum nesting depth of parentheses
+        current_depth = 0
+        max_depth = 0
+        for char in expr:
+            if char == '(':
+                current_depth += 1
+                max_depth = max(max_depth, current_depth)
+            elif char == ')':
+                current_depth -= 1
+        # Balanced binary tree for 80 points has max depth <= 10 (vs 79 in old linear chain)
+        assert max_depth <= 10
 
 
 class TestComputeMotionMap:
