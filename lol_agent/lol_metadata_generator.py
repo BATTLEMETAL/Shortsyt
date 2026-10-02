@@ -672,6 +672,9 @@ GENERATE JSON ONLY (no markdown fences, raw json):
                     hashtags = _build_hashtags(champ, action_type)
                     raw_desc = (data.get("description") or "").strip()
                     if raw_desc:
+                        # Jeśli strefa mapy została zweryfikowana a opis o niej nie wspomina — dodaj znacznik lokalizacji
+                        if valid_zone and valid_zone.lower() not in raw_desc.lower():
+                            raw_desc = f"{raw_desc}\n\n📍 Location: {valid_zone}"
                         if "#leagueoflegends" not in raw_desc.lower() or raw_desc.count("#") < 3:
                             gen_desc = f"{raw_desc}\n\n{hashtags}"
                         else:

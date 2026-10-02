@@ -557,6 +557,17 @@ async def auto_detect_clip(req: AutoDetectRequest, payload: dict = Depends(verif
         }
         hook_text = HOOK_MAP.get(detected_action, f"{detected_action.upper().replace('_', ' ')}!")
 
+    # Wykrywanie strefy mapy na minimapie w klatce akcji
+    map_zone_info = {"zone": "unknown", "zone_label": "", "confidence": 0.0}
+    try:
+        try:
+            from lol_agent.lol_minimap_analyzer import detect_map_zone
+        except ImportError:
+            from lol_minimap_analyzer import detect_map_zone
+        abs_peak = float(clip_start + peak_moment)
+        map_zone_info = detect_map_zone(source_path, abs_peak, clip_start)
+    except Exception as me:
+        pass
 
     return {
         "clip_start": clip_start,
@@ -569,6 +580,7 @@ async def auto_detect_clip(req: AutoDetectRequest, payload: dict = Depends(verif
         "confidence": confidence,
         "combat_segments": combat_segs,
         "has_jump_cut": bool(combat_segs and len(combat_segs) > 1),
+        "map_zone": map_zone_info,
     }
 
 
