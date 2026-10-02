@@ -261,37 +261,21 @@ def _run_pipeline(
             except Exception as auto_ex:
                 print(f"[pipeline_runner] Auto-centering warning: {auto_ex}")
 
-        # Import tutaj żeby uniknąć circular import
+        # Importy komponentów wykonawczych renderera
         try:
             from lol_agent.smart_camera import detect_kill_events
-        except ImportError:
-            from smart_camera import detect_kill_events
-        try:
             from lol_agent.lol_editor import render_short
-        except ImportError:
-            from lol_editor import render_short
-        try:
             from lol_agent.lol_metadata_generator import generate_metadata
-        except ImportError:
-            from lol_metadata_generator import generate_metadata
-        try:
             from lol_agent.lol_thumbnail import generate_thumbnail
-        except ImportError:
-            from lol_thumbnail import generate_thumbnail
-        try:
             from lol_agent.tuning_manager import get_pacing_parameters
-        except ImportError:
-            try:
-                from tuning_manager import get_pacing_parameters
-            except ImportError:
-                get_pacing_parameters = lambda: {}
-        try:
             from lol_agent.lol_quality_validator import validate_pre_flight
         except ImportError:
-            try:
-                from lol_quality_validator import validate_pre_flight
-            except ImportError:
-                validate_pre_flight = None
+            from smart_camera import detect_kill_events
+            from lol_editor import render_short
+            from lol_metadata_generator import generate_metadata
+            from lol_thumbnail import generate_thumbnail
+            from tuning_manager import get_pacing_parameters
+            from lol_quality_validator import validate_pre_flight
 
         tuning_prof = get_pacing_parameters()
 

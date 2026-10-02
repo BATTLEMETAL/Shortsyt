@@ -521,16 +521,30 @@ def apply_editor_effects(input_path: str, output_path: str,
     return output_duration
 
 
-# ─── Czcionka Impact Windows ─────────────────────────────────────────────────
+# ─── Czcionka Impact (Bundled + System Fallbacks) ─────────────────────────────
+BUNDLED_FONT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "fonts", "impact.ttf")
 FONT_PATH = r"C:\Windows\Fonts\impact.ttf"
 FONT_FALLBACK = r"C:\Windows\Fonts\arialbd.ttf"
 
 
 def _get_font_path() -> str:
+    # 1. Sprawdź zbundle'owany font w repozytorium (cross-platform Linux/Docker/Windows)
+    if os.path.exists(BUNDLED_FONT):
+        return BUNDLED_FONT
+    # 2. Windows standardowe ścieżki
     if os.path.exists(FONT_PATH):
         return FONT_PATH
     if os.path.exists(FONT_FALLBACK):
         return FONT_FALLBACK
+    # 3. Linux / Docker standardowe czcionki
+    linux_fonts = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    ]
+    for lf in linux_fonts:
+        if os.path.exists(lf):
+            return lf
     return ""
 
 
