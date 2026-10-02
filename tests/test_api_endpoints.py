@@ -1,6 +1,7 @@
 """
 Integration tests for FastAPI endpoints in lol_agent/api/main.py.
-Verifies authentication, pipeline status, hardware profiling, and tuning configurations.
+Verifies authentication, pipeline status, hardware profiling, tuning configurations,
+clips listing, outputs, thumbnails, calendar, and learning status across APIRouters.
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -32,6 +33,14 @@ def test_login_success(client):
 def test_login_invalid_password(client):
     res = client.post("/auth/login", json={"password": "wrong_password_12345"})
     assert res.status_code == 401
+
+
+def test_auth_me_endpoint(client, auth_headers):
+    res = client.get("/auth/me", headers=auth_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("status") == "ok"
+    assert data.get("user") == "user"
 
 
 def test_status_requires_auth(client):
@@ -67,3 +76,51 @@ def test_tuning_config_endpoint(client, auth_headers):
     assert res.status_code == 200
     data = res.json()
     assert "pacing" in data
+
+
+def test_clips_list_endpoint(client, auth_headers):
+    res = client.get("/clips", headers=auth_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert "clips" in data
+    assert isinstance(data["clips"], list)
+
+
+def test_outputs_list_endpoint(client, auth_headers):
+    res = client.get("/outputs", headers=auth_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert "outputs" in data
+    assert isinstance(data["outputs"], list)
+
+
+def test_thumbnails_list_endpoint(client, auth_headers):
+    res = client.get("/thumbnails", headers=auth_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert "thumbnails" in data
+    assert isinstance(data["thumbnails"], list)
+
+
+def test_youtube_token_status_endpoint(client, auth_headers):
+    res = client.get("/youtube/token-status", headers=auth_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert "has_token" in data
+    assert "is_valid" in data
+
+
+def test_calendar_slots_endpoint(client, auth_headers):
+    res = client.get("/calendar/slots?days=3", headers=auth_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert "slots" in data
+    assert isinstance(data["slots"], list)
+
+
+def test_learning_status_endpoint(client, auth_headers):
+    res = client.get("/learning/status", headers=auth_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("ok") is True
+    assert "directive" in data
