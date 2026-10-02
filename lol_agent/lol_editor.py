@@ -261,13 +261,20 @@ def get_video_duration(path: str) -> float:
         return 0.0
 
 
-def cut_clip(input_path: str, start: float, end: float, output_path: str) -> str:
+def cut_clip(input_path: str, start: float, end: float, output_path: str, smooth_seams: bool = False) -> str:
     """
     Wycina fragment klipu z zachowaniem dokładności klatkowej (Frame-Accurate Cut).
     Używa szybkiego enkodera NVENC / ultrafast CPU aby wyeliminować desynchronizację I-frame.
+    smooth_seams: stosuje mikro-fade audio (30ms) na brzegach cięcia, eliminując trzaski przy łączeniu segmentów jump-cut.
     """
     duration = max(0.1, end - start)
     encoder_draft = get_optimal_encoder_args("draft")
+
+    af_args = []
+    if smooth_seams and duration >= 0.15:
+        fade_d = 0.03
+        out_start = max(0.0, duration - fade_d)
+        af_args = ["-af", f"afade=t=in:ss=0:d={fade_d:.3f},afade=t=out:st={out_start:.3f}:d={fade_d:.3f}"]
 
     # Próba 1: Dokładne cięcie z enkoderem sprzętowym (NVENC trwa < 0.5s)
     cmd = [
@@ -277,6 +284,7 @@ def cut_clip(input_path: str, start: float, end: float, output_path: str) -> str
         *encoder_draft,
         "-vf", "setpts=PTS-STARTPTS",   # zeruje PTS — eliminuje offset AV po cięciu NVENC
         "-c:a", "aac", "-b:a", "192k",
+        *af_args,
         "-avoid_negative_ts", "make_zero",
         output_path
     ]
@@ -289,7 +297,9 @@ def cut_clip(input_path: str, start: float, end: float, output_path: str) -> str
             "-ss", f"{start:.3f}", "-i", input_path,
             "-t", f"{duration:.3f}",
             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+            "-vf", "setpts=PTS-STARTPTS",
             "-c:a", "aac", "-b:a", "192k",
+            *af_args,
             "-avoid_negative_ts", "make_zero",
             output_path
         ]
@@ -1526,7 +1536,7 @@ def render_short(
 
         for i, (seg_s, seg_e) in enumerate(combat_segments):
             seg_path = t(f"seg_{i:02d}.mp4")
-            cut_clip(source_path, seg_s, seg_e, seg_path)
+            cut_clip(source_path, seg_s, seg_e, seg_path, smooth_seams=True)
             seg_files.append((seg_path, seg_s, seg_e))
 
         # Zbuduj listę FFmpeg concat demuxer

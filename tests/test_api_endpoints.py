@@ -124,3 +124,40 @@ def test_learning_status_endpoint(client, auth_headers):
     data = res.json()
     assert data.get("ok") is True
     assert "directive" in data
+
+
+def test_login_sets_httponly_cookie(client):
+    """Verify that POST /auth/login sets jwt_token cookie."""
+    res = client.post("/auth/login", json={"password": API_PASSWORD})
+    assert res.status_code == 200
+    assert "jwt_token" in res.cookies
+    cookie_val = res.cookies["jwt_token"]
+    assert len(cookie_val) > 20
+
+
+def test_flexible_auth_via_cookie(client):
+    """
+    Task F3: Verify endpoints with verify_token_flexible accept authentication
+    via HttpOnly cookie without requiring token query parameters or Authorization headers.
+    """
+    login_res = client.post("/auth/login", json={"password": API_PASSWORD})
+    assert login_res.status_code == 200
+
+    # Call endpoint with cookie only (no Authorization header, no query param)
+    client.cookies.set("jwt_token", login_res.cookies["jwt_token"])
+    res = client.get("/system/hardware-info")
+    assert res.status_code == 200
+    data = res.json()
+    assert "hardware" in data
+
+
+def test_flexible_auth_via_query_fallback(client):
+    """Verify legacy query parameter ?token= fallback works when neither header nor cookie is present."""
+    client.cookies.clear()
+    login_res = client.post("/auth/login", json={"password": API_PASSWORD})
+    token = login_res.json()["access_token"]
+
+    res = client.get(f"/system/hardware-info?token={token}")
+    assert res.status_code == 200
+    assert "hardware" in res.json()
+

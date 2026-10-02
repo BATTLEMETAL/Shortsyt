@@ -13,6 +13,7 @@ from lol_agent.lol_editor import (
     _get_font_path,
     get_performance_insights,
     apply_editor_effects,
+    cut_clip,
     ACTION_ENERGY,
     MUSIC_ENERGY_MAP,
 )
@@ -199,3 +200,35 @@ def test_apply_overlays_unified_single_ffmpeg_invocation(tmp_path, monkeypatch):
     assert "TRIPLE KILL" in vf_arg
     assert "CAN HE SURVIVE THIS?" in vf_arg
     assert "RATE 1-10" in vf_arg
+
+
+def test_cut_clip_smooth_seams_adds_audio_fade(tmp_path, monkeypatch):
+    """
+    Task B6: Verify cut_clip with smooth_seams=True injects audio micro-fade (-af afade)
+    to eliminate popping/clicks at jump-cut segment transitions.
+    """
+    dummy_in = tmp_path / "in.mp4"
+    dummy_in.write_text("dummy")
+    dummy_out = tmp_path / "out.mp4"
+
+    ffmpeg_cmds = []
+
+    def mock_run_ffmpeg(cmd, timeout=60.0, desc=""):
+        ffmpeg_cmds.append(cmd)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr("lol_agent.lol_editor._run_ffmpeg", mock_run_ffmpeg)
+
+    res = cut_clip(str(dummy_in), 2.0, 7.0, str(dummy_out), smooth_seams=True)
+    assert res == str(dummy_out)
+    assert len(ffmpeg_cmds) >= 1
+    first_cmd = ffmpeg_cmds[0]
+    assert "-af" in first_cmd
+    af_idx = first_cmd.index("-af")
+    af_val = first_cmd[af_idx + 1]
+    assert "afade=t=in:ss=0" in af_val
+    assert "afade=t=out" in af_val
+    assert "-vf" in first_cmd
+    vf_idx = first_cmd.index("-vf")
+    assert "setpts=PTS-STARTPTS" in first_cmd[vf_idx + 1]
+

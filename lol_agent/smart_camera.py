@@ -638,6 +638,98 @@ def _detect_cursor_x(frame_rgb: np.ndarray,
     return None
 
 
+# ─── Detekcja nakładek i filtracja czasowa (Task A4 + A5) ────────────────────
+
+def is_tab_overlay_active(frame_rgb: np.ndarray, sw: float = 1.0, sh: float = 1.0) -> bool:
+    """
+    Task A5: Tab / Scoreboard Overlay Detector.
+    Wykrywa czy w danej klatce gracz przytrzymuje klawisz Tab (otwarta centralna tabela wyników).
+    Tabela Tab w LoL tworzy ciemny prostokątny panel (y: 100-360px, x: 460-1460px)
+    z siatką portretów i przedmiotów.
+    """
+    h, w = frame_rgb.shape[:2]
+    y1 = int(100 * sh)
+    y2 = int(360 * sh)
+    x1 = int(460 * sw)
+    x2 = int(1460 * sw)
+
+    if y2 <= y1 or x2 <= x1 or y2 > h or x2 > w:
+        return False
+
+    roi = frame_rgb[y1:y2, x1:x2]
+    r = roi[:, :, 0]
+    g = roi[:, :, 1]
+    b = roi[:, :, 2]
+
+    # Ciemny panel tła tablicy wyników (charakterystyczny ciemnogranatowy / grafitowy slate)
+    dark_mask = (r < 65) & (g < 72) & (b < 80)
+    dark_ratio = float(dark_mask.mean())
+
+    return dark_ratio > 0.45
+
+
+def filter_temporal_vfx_particles(
+    frames_data: list,
+    max_drift: float = 140.0,
+    window: int = 2
+) -> list:
+    """
+    Task A4: Temporal Consistency Filter for VFX Particles (Death Lotus).
+    Eliminuje pojedyncze rozbłyski cząsteczek VFX (wirujące złote sztylety Katariny,
+    rozbłyski Lux/Smite), które pojawiają się na pojedynczą klatkę w oderwaniu od trajektorii.
+    
+    Zasada:
+      - Jeśli klatka zawiera wielu kandydatów, a dany kandydat nie ma żadnego
+        sąsiada w klatkach [i-window .. i+window] w promieniu max_drift px,
+        podczas gdy inny kandydat w tej samej klatce posiada ciągłość — kandydat VFX
+        zostaje odrzucony jako fałszywy artefakt.
+      - Prawdziwy gracz lub wrogowie mają ciągłość trajektorii (nawet przy doskoku
+        docelowa pozycja jest kontynuowana w kolejnych klatkach).
+    """
+    if not frames_data or len(frames_data) < 3:
+        return frames_data
+
+    filtered_frames = []
+    n = len(frames_data)
+
+    for i in range(n):
+        candidates = frames_data[i]
+        if len(candidates) <= 1:
+            filtered_frames.append(candidates)
+            continue
+
+        # Sprawdź spójność czasową dla każdego kandydata w oknie [i-window .. i+window]
+        supported = []
+        for cand in candidates:
+            cand_x = cand[5]
+            cand_y = cand[6]
+            has_temporal_support = False
+
+            neighbor_indices = [
+                j for j in range(max(0, i - window), min(n, i + window + 1))
+                if j != i
+            ]
+            for j in neighbor_indices:
+                for other in frames_data[j]:
+                    dist = math.hypot(cand_x - other[5], cand_y - other[6])
+                    if dist <= max_drift:
+                        has_temporal_support = True
+                        break
+                if has_temporal_support:
+                    break
+
+            if has_temporal_support:
+                supported.append(cand)
+
+        # Jeśli filtr zachował co najmniej 1 wiarygodnego kandydata, użyj supported
+        if supported:
+            filtered_frames.append(supported)
+        else:
+            filtered_frames.append(candidates)
+
+    return filtered_frames
+
+
 # ─── Glowne funkcje ───────────────────────────────────────────────────────────
 
 def find_action_crop_x(video_path: str, clip_start: float, clip_end: float,
@@ -707,6 +799,9 @@ def simulate_player_trajectory(
     default_x = (source_w - crop_w) // 2
     if not frames_data:
         return [(0.0, default_x), (duration, default_x)]
+
+    # KROK 1.5: Temporal Consistency Filter (Task A4: eliminacja artefaktów Death Lotus / VFX spikes)
+    frames_data = filter_temporal_vfx_particles(frames_data)
 
     analysis_scale = source_w / max(analysis_w, 1)
     crop_w_a = max(1, int(round(crop_w / analysis_scale)))
@@ -864,7 +959,7 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
         sw = analysis_w / 1920.0   # skala szerokości względem 1920px referencji
         sh = analysis_h / 1080.0   # skala wysokości względem 1080px referencji
         excl = np.ones((analysis_h, analysis_w), dtype=bool)
-        excl[:int(95*sh), int(680*sw):int(1240*sw)] = False     # Centralna tablica KDA / czas
+        excl[:int(115*sh), int(640*sw):int(1280*sw)] = False    # Centralna tablica KDA / czas / nagłówek
         excl[int(815*sh):, :] = False                           # Blokuj dolny HUD (skille, cooldowny, level up 815-1080px)
         excl[int(626*sh):, int(1459*sw):] = False               # Minimapa i panel przedmiotów
         excl[int(670*sh):, :int(345*sw)] = False                # Chat i portret
@@ -878,10 +973,15 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
             f = frames[i].astype(np.int16)
             r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
 
+            # Task A5: Dynamiczny exclusion mask na wypadek przytrzymania Tab (scoreboard overlay)
+            frame_excl = excl.copy()
+            if is_tab_overlay_active(frames[i], sw, sh):
+                frame_excl[:int(380*sh), int(440*sw):int(1480*sw)] = False
+
             # 1. Złoty pasek gracza (Colorblind mode)
-            gold_mask = ((r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)) & excl
+            gold_mask = ((r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)) & frame_excl
             # 2. Zielony pasek gracza (Standardowy tryb LoL - najczęstszy)
-            green_mask = ((g > 130) & (r < 125) & (b < 120) & ((g - r) > 20) & ((g - b) > 25)) & excl
+            green_mask = ((g > 130) & (r < 125) & (b < 120) & ((g - r) > 20) & ((g - b) > 25)) & frame_excl
 
             player_mask = (gold_mask | green_mask).astype(np.uint8)
             num_p, _, stats_p, centroids_p = cv2.connectedComponentsWithStats(player_mask)

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Cookie, Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .config import API_PASSWORD, JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_HOURS
@@ -50,22 +50,25 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
 
 def verify_token_flexible(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
-    token: Optional[str] = Query(None, description="JWT token (wymagane przez expo-av zamiast Bearer header)"),
+    cookie_token: Optional[str] = Cookie(None, alias="jwt_token"),
+    token: Optional[str] = Query(None, description="JWT token (fallback gdy brak Bearer header lub ciasteczka)"),
 ) -> dict:
-    """Zweryfikuj JWT z nagłówka Bearer LUB query param ?token=.
-
-    expo-av nie obsługuje nagłówka Authorization przy streamowaniu video —
-    używa query param: /outputs/file.mp4?token=<jwt>
+    """Zweryfikuj JWT z:
+    1. Nagłówka Authorization: Bearer <token> (priorytet)
+    2. Ciasteczka HttpOnly jwt_token (dla HTML5 <video> tagów i streamingu)
+    3. Query param ?token= (fallback legacy)
     """
     raw_token = None
     if credentials:
         raw_token = credentials.credentials
+    elif cookie_token:
+        raw_token = cookie_token
     elif token:
         raw_token = token
 
     if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token wymagany (Bearer header lub ?token= query param)",
+            detail="Token wymagany (Bearer header, jwt_token cookie lub ?token= query param)",
         )
     return _decode_token(raw_token)

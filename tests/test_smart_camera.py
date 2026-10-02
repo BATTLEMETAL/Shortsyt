@@ -18,6 +18,8 @@ from smart_camera import (
     generate_ffmpeg_pan_expression,
     compute_motion_map,
     _detect_fight_center_x,
+    filter_temporal_vfx_particles,
+    is_tab_overlay_active,
 )
 
 
@@ -259,3 +261,122 @@ class TestPlayerTrajectoryTracking:
         last_crop = pts[-1][1]
         second_last_crop = pts[-2][1]
         assert last_crop == second_last_crop
+
+
+class TestDeathLotusVfxFilter:
+    """
+    Task A4: Temporal Consistency Filter tests for Death Lotus and transient VFX particles.
+    """
+
+    def _hp(self, cen_x: float, cen_y: float = 540.0, score: float = 500.0):
+        return (int(cen_x - 30), int(cen_y - 10), 60, 20, score, float(cen_x), float(cen_y))
+
+    def test_transient_particle_pruned_when_true_hp_persists(self):
+        """
+        Death Lotus particle appears on frame 5 at x=980 with high score, but disappears on frame 6.
+        True Katarina HP bar is at x=800 across frames 4, 5, 6.
+        The filter must discard the transient particle from frame 5.
+        """
+        frames_data = [
+            [self._hp(cen_x=800.0, cen_y=540.0)],
+            [self._hp(cen_x=802.0, cen_y=540.0)],
+            [self._hp(cen_x=801.0, cen_y=541.0)],
+            [self._hp(cen_x=799.0, cen_y=539.0)],
+            [self._hp(cen_x=800.0, cen_y=540.0)],  # frame 4
+            [
+                self._hp(cen_x=800.0, cen_y=540.0, score=400.0),  # Katarina
+                self._hp(cen_x=980.0, cen_y=410.0, score=900.0),  # Death Lotus particle spike
+            ],  # frame 5
+            [self._hp(cen_x=801.0, cen_y=540.0)],  # frame 6
+            [self._hp(cen_x=803.0, cen_y=542.0)],
+            [self._hp(cen_x=802.0, cen_y=541.0)],
+        ]
+        filtered = filter_temporal_vfx_particles(frames_data, max_drift=140.0, window=2)
+
+        # Frame 5 must now contain only Katarina
+        assert len(filtered[5]) == 1
+        assert filtered[5][0][5] == 800.0
+
+    def test_dash_landing_preserved_via_forward_temporal_support(self):
+        """
+        Katarina casts Shunpo at frame 3 from x=700 to x=950.
+        She remains at x=952 in frame 4 and x=955 in frame 5.
+        Even with multiple candidates in frame 3, her landing position must be preserved.
+        """
+        frames_data = [
+            [self._hp(cen_x=700.0)],
+            [self._hp(cen_x=702.0)],
+            [self._hp(cen_x=705.0)],  # frame 2
+            [
+                self._hp(cen_x=650.0),  # Enemy minion / ally
+                self._hp(cen_x=950.0),  # Katarina Shunpo landing
+            ],  # frame 3
+            [self._hp(cen_x=952.0)],  # frame 4
+            [self._hp(cen_x=955.0)],  # frame 5
+        ]
+        filtered = filter_temporal_vfx_particles(frames_data, max_drift=140.0, window=2)
+        # Both minion (supported by frame 2) and Katarina (supported by frame 4) preserved
+        assert len(filtered[3]) == 2
+        xs = [c[5] for c in filtered[3]]
+        assert 950.0 in xs
+
+    def test_single_candidate_frames_always_retained(self):
+        """Frames with single candidate must never be pruned by the filter."""
+        frames_data = [
+            [self._hp(cen_x=500.0)],
+            [self._hp(cen_x=510.0)],
+            [self._hp(cen_x=520.0)],
+        ]
+        filtered = filter_temporal_vfx_particles(frames_data)
+        assert len(filtered) == 3
+        for f in filtered:
+            assert len(f) == 1
+
+    def test_simulate_trajectory_ignores_death_lotus_spike(self):
+        """
+        End-to-end: simulate_player_trajectory with a Death Lotus spike on frame 5
+        must produce smooth panning without any snap to x=980.
+        """
+        from lol_agent.smart_camera import simulate_player_trajectory
+        frames = []
+        for _ in range(5):
+            frames.append([self._hp(cen_x=800.0, cen_y=540.0)])
+        # Frame 5: Death Lotus particle with higher score
+        frames.append([
+            self._hp(cen_x=800.0, cen_y=540.0, score=300.0),
+            self._hp(cen_x=980.0, cen_y=410.0, score=999.0),
+        ])
+        for _ in range(5):
+            frames.append([self._hp(cen_x=800.0, cen_y=540.0)])
+
+        pts = simulate_player_trajectory(frames, duration=5.0, source_w=1920, crop_w=608)
+        # Center crop around 800px is: 800 - 304 = 496. All points must stay near 496!
+        crops = [p[1] for p in pts]
+        assert all(480 <= c <= 515 for c in crops)
+
+
+class TestTabOverlayScoreboard:
+    """
+    Task A5: Tab / Scoreboard overlay detection and exclusion mask tests.
+    """
+
+    def test_is_tab_overlay_active_detects_dark_scoreboard_panel(self):
+        """Frame with dark scoreboard panel in top-center region must return True."""
+        # 1080p frame
+        frame = np.ones((1080, 1920, 3), dtype=np.uint8) * 120  # bright gameplay terrain
+        # Fill Tab scoreboard region (y: 100-360, x: 460-1460) with dark slate (RGB: 30, 35, 40)
+        frame[100:360, 460:1460] = np.array([30, 35, 40], dtype=np.uint8)
+
+        active = is_tab_overlay_active(frame, sw=1.0, sh=1.0)
+        assert active is True
+
+    def test_is_tab_overlay_active_returns_false_for_normal_gameplay(self):
+        """Normal gameplay frame with grass/river colors must return False."""
+        frame = np.ones((1080, 1920, 3), dtype=np.uint8)
+        frame[:, :, 0] = 90   # R
+        frame[:, :, 1] = 130  # G (green Summoner Rift terrain)
+        frame[:, :, 2] = 85   # B
+
+        active = is_tab_overlay_active(frame, sw=1.0, sh=1.0)
+        assert active is False
+
