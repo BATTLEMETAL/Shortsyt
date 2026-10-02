@@ -83,6 +83,7 @@ export async function setJwtToken(token: string): Promise<void> {
 
 export async function clearJwtToken(): Promise<void> {
   await deleteStoreValue(JWT_TOKEN_KEY);
+  await deleteStoreValue('api_password');
 }
 
 // ── Axios instance factory ───────────────────────────────────────────────────
@@ -91,10 +92,12 @@ export async function createClient(): Promise<AxiosInstance> {
   const baseURL = await getServerUrl();
   let token = await getJwtToken();
 
-  // If no token exists, attempt auto-login with default API password
+  // If no token exists, attempt auto-login with stored or default API password
   if (!token) {
     try {
-      const res = await axios.post(`${baseURL}/auth/login`, { password: 'shortsyt2026' }, { timeout: 4000 });
+      const storedPwd = await getStoreValue<string>('api_password');
+      const password = storedPwd || 'shortsyt2026';
+      const res = await axios.post(`${baseURL}/auth/login`, { password }, { timeout: 4000 });
       if (res.data?.access_token) {
         token = res.data.access_token;
         if (token) {
@@ -131,6 +134,7 @@ export async function apiLogin(password: string): Promise<string> {
   const res = await axios.post(`${url}/auth/login`, { password }, { timeout: 10000 });
   const token = res.data.access_token;
   await setJwtToken(token);
+  await setStoreValue('api_password', password);
   return token;
 }
 

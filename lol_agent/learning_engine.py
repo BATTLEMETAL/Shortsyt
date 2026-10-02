@@ -433,6 +433,56 @@ def _analyze_retention_by_action(retention_summary: Dict[str, Any], all_videos: 
     return {"status": "ok", "by_action": by_action}
 
 
+def analyze_ab_title_experiments(all_videos: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Task C4: A/B Title Testing & CTR Performance Analyzer.
+    Analizuje opublikowane filmy pod kątem wariantów tytułów (A vs B) oraz porównuje
+    średnie wyświetlenia i retencję między różnymi strukturami tytułów (EGO_CHECK, QUESTION, CLUTCH_1HP itp.).
+    """
+    experiments = []
+    structure_performance: Dict[str, List[int]] = defaultdict(list)
+
+    for v in all_videos:
+        views = int(v.get("views", 0) or 0)
+        if views < ZERO_VIEWS_THRESHOLD:
+            continue
+        title = v.get("title", "")
+        struct = classify_title_structure(title)
+        structure_performance[struct].append(views)
+
+        variant_b = v.get("title_variant_b")
+        active_variant = v.get("active_variant", "A")
+        if variant_b:
+            experiments.append({
+                "video_id": v.get("video_id"),
+                "active_variant": active_variant,
+                "title_a": title if active_variant == "A" else v.get("title_variant_a", title),
+                "title_b": variant_b,
+                "views": views,
+                "structure": struct,
+            })
+
+    struct_stats = {}
+    for struct, views_list in structure_performance.items():
+        if len(views_list) >= 2:
+            struct_stats[struct] = {
+                "count": len(views_list),
+                "median_views": round(statistics.median(views_list)),
+                "avg_views": round(statistics.mean(views_list)),
+            }
+
+    best_struct = max(struct_stats.items(), key=lambda x: x[1]["median_views"])[0] if struct_stats else "CLEAN_OUTPLAY"
+
+    return {
+        "status": "active" if experiments else "structure_benchmark_ready",
+        "tracked_ab_experiments": len(experiments),
+        "experiments": experiments[-10:],
+        "title_structure_benchmark": struct_stats,
+        "winning_title_structure": best_struct,
+        "recommendation": f"Najwyższy medianowy CTR osiąga struktura '{best_struct}'. Używaj jej jako wariantu A.",
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 # POPRAWIONE ALGORYTMY WAG (MEDIANA + OUTLIER FILTER + RECENCY WEIGHTING)
 # ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -909,6 +959,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
     cadence_analysis = _detect_publication_cadence(all_analyzed)
     title_fatigue = _detect_title_fatigue(valid_videos)
     pub_hour_analysis = _analyze_best_pub_hour(valid_videos)
+    ab_title_analysis = analyze_ab_title_experiments(valid_videos)
 
     # ── KROK 8: Retencja przez YouTube Analytics API ─────────────────────────────
     retention_summary = {}
@@ -957,6 +1008,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         f"Closed Pacing Loop (mediana): Kohorta viral_hit ({pacing_analysis['viral_count']} filmów) → bucket '{pacing_analysis['best_bucket']}' (pewna: {bucket_stats_reliable(pacing_analysis['bucket_stats'])}). Profil: '{rec_pacing}'.",
         f"Title Reinforcement: Najlepsza struktura (mediana ratio): {top_structure}. CTR słowa: {', '.join(winning_keywords[:4])}. Avoid: {', '.join(avoid_keywords[:4])}.",
         f"Evaluator: Solo Bolo={base_kill_weights.get('SOLO BOLO')}pkt, Pentakill={base_kill_weights.get('PENTAKILL')}pkt. Zdegradowane: {', '.join(demoted_formats) or 'brak'} (wymaga N>={MIN_SAMPLE_FOR_DEMOTION}).",
+        f"A/B Title Testing: {ab_title_analysis['tracked_ab_experiments']} testów w toku. Winning structure: '{ab_title_analysis['winning_title_structure']}'.",
         cadence_flag,
         fatigue_flag,
         ret_insight,
@@ -981,6 +1033,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         "publication_cadence": cadence_analysis,
         "title_fatigue": title_fatigue,
         "best_pub_hour_analysis": pub_hour_analysis,
+        "ab_title_testing": ab_title_analysis,
         "top_title_structure": top_structure,
         "title_structure_stats": title_structure_stats,
         "winning_keywords": winning_keywords,

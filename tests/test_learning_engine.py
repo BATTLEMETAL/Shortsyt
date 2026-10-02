@@ -117,3 +117,33 @@ def test_analyze_best_pub_hour():
     assert res["best_hour_utc"] == 8
     assert 8 in res["hour_stats"]
     assert res["hour_stats"][8]["median_views"] == 3750
+
+
+def test_analyze_ab_title_experiments():
+    from lol_agent.learning_engine import analyze_ab_title_experiments
+    videos = [
+        {
+            "video_id": "vid_1",
+            "title": "They Thought 4v1 Was Safe #Shorts #LeagueOfLegends #LoL",
+            "title_variant_b": "Can You Survive This? #Shorts #LeagueOfLegends #LoL",
+            "active_variant": "A",
+            "views": 2500
+        },
+        {
+            "video_id": "vid_2",
+            "title": "Clean 1v1 Solo Bolo #Shorts #LeagueOfLegends #LoL",
+            "title_variant_b": "Did Enemy FF After This? #Shorts #LeagueOfLegends #LoL",
+            "active_variant": "A",
+            "views": 4200
+        },
+        {
+            "video_id": "vid_3",
+            "title": "Can You Believe This Outplay? #Shorts #LeagueOfLegends #LoL",
+            "views": 1800
+        }
+    ]
+    res = analyze_ab_title_experiments(videos)
+    assert res["status"] == "active"
+    assert res["tracked_ab_experiments"] == 2
+    assert "winning_title_structure" in res
+    assert "title_structure_benchmark" in res

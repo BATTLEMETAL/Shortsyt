@@ -106,10 +106,18 @@ def _format_final_title(raw_title: str) -> str:
     return f"{t}{suffix}"
 
 
-def generate_channel_title(action_type: str = "outplay", champion: str = "Katarina", rank: str = "", map_zone_label: str = "") -> str:
+def generate_channel_title(
+    action_type: str = "outplay",
+    champion: str = "Katarina",
+    rank: str = "",
+    map_zone_label: str = "",
+    variant: str = "A",
+    exclude_title: str = "",
+) -> str:
     """
     Zwraca sprawdzony, wiralowy tytuł YouTube Shorts dopasowany do standardu kanału Dwannellenga
     oraz aktywnego tonu AI (Hype & High Energy / Storytelling & Clutch / Meme & Casual Gaming).
+    Obsługuje A/B testing tytułów (variant='A' vs variant='B').
     """
     champ = champion or "Katarina"
     act = action_type.lower()
@@ -352,6 +360,18 @@ def generate_channel_title(action_type: str = "outplay", champion: str = "Katari
             if len(fp_words) >= 3 and all(w in t_clean for w in fp_words[:3]):
                 score = max(0.05, score * 0.15)  # -85% wagi przy trafieniu odcisku
                 break
+
+        # A/B Testing: wyklucz identyczny tytuł jeśli podano exclude_title
+        if exclude_title:
+            clean_excl = exclude_title.split("#")[0].strip().upper()
+            if t.split("#")[0].strip().upper() == clean_excl:
+                score = 0.0001
+
+        # A/B Testing: Wariant B promuje alternatywne kąty (pytania, prowokacje, narracje)
+        if str(variant).upper() == "B":
+            if any(q in t for q in ["?", "They Thought", "Tried", "Safe", "Wrong", "Surviving", "Calculation", "Miracle", "Cleanest"]):
+                score *= 3.0
+
         weights.append(score)
     return _format_final_title(random.choices(templates, weights=weights, k=1)[0])
 
@@ -686,9 +706,13 @@ GENERATE JSON ONLY (no markdown fences, raw json):
                     raw_tags = [t.lstrip("#").strip() for t in data.get("tags", []) if t.strip()]
                     all_tags = list(dict.fromkeys(raw_tags + YT_BASE_TAGS))[:30]
 
+                    gen_title_b = generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone, variant="B", exclude_title=gen_title)
                     print(f"   [Gemini AI] Wygenerowano wzmocniony tytuł ({model_name}): {gen_title}")
+                    print(f"   [A/B Testing] Wariant B: {gen_title_b}")
                     return {
                         "title": gen_title,
+                        "title_variant_b": gen_title_b,
+                        "title_variants": [gen_title, gen_title_b],
                         "description": gen_desc,
                         "pinned_comment": gen_pin,
                         "tags": all_tags,
@@ -706,7 +730,8 @@ GENERATE JSON ONLY (no markdown fences, raw json):
 
     # Fallback na szablony z wagami CTR kanału
     print(f"   [Fallback] Użyto szablonu kanału z wagami słów kluczowych CTR")
-    title = generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone)
+    title = generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone, variant="A")
+    title_b = generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone, variant="B", exclude_title=title)
     description = build_channel_description(title, champ, action_type, map_zone_label=valid_zone)
     pinned_comment = build_pinned_comment(champ, action_type)
     
@@ -721,6 +746,8 @@ GENERATE JSON ONLY (no markdown fences, raw json):
 
     return {
         "title": title,
+        "title_variant_b": title_b,
+        "title_variants": [title, title_b],
         "description": description,
         "pinned_comment": pinned_comment,
         "tags": all_tags,

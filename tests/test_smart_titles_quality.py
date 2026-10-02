@@ -31,3 +31,32 @@ def test_metadata_chase_context():
     title = meta.get("title", "")
     assert len(title) > 10
     assert "dive" not in title.lower()
+
+
+def test_generate_channel_title_ab_variants_differ_and_enforce_hashtags():
+    """Verify that Variant A and Variant B generate different titles and both enforce hashtags."""
+    title_a = generate_channel_title(action_type="solo_bolo", champion="Zed", variant="A")
+    title_b = generate_channel_title(action_type="solo_bolo", champion="Zed", variant="B", exclude_title=title_a)
+    assert title_a != title_b
+    assert "#Shorts" in title_a
+    assert "#LeagueOfLegends" in title_a
+    assert "#LoL" in title_a
+    assert "#Shorts" in title_b
+    assert "#LeagueOfLegends" in title_b
+    assert "#LoL" in title_b
+
+
+def test_generate_metadata_includes_title_variants():
+    """Verify generate_metadata outputs both primary title and title_variant_b."""
+    meta = generate_metadata(
+        action_type="outplay",
+        champion_name="Akali",
+        rank="Master"
+    )
+    assert "title" in meta
+    assert "title_variant_b" in meta
+    assert "title_variants" in meta
+    assert len(meta["title_variants"]) == 2
+    assert meta["title"] == meta["title_variants"][0]
+    assert meta["title_variant_b"] == meta["title_variants"][1]
+    assert "#Shorts" in meta["title_variant_b"]
