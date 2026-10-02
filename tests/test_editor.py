@@ -1,13 +1,18 @@
 """
 Unit tests for lol_agent/lol_editor.py.
-Verifies music selection, font resolution, performance insight loading, and editor parameter sanity.
+Verifies music selection, thread safety, font resolution, performance insight loading,
+and speed ramp filtergraph generation with easing.
 """
 import os
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 import pytest
+
 from lol_agent.lol_editor import (
     pick_music_for_action,
     _get_font_path,
     get_performance_insights,
+    apply_editor_effects,
     ACTION_ENERGY,
     MUSIC_ENERGY_MAP,
 )
@@ -61,3 +66,51 @@ def test_pick_music_rotates_and_records_history(mock_music_dir):
         t = pick_music_for_action("outplay")
         tracks.add(os.path.basename(t))
     assert len(tracks) >= 1
+
+
+def test_pick_music_thread_safety(mock_music_dir):
+    """Test concurrent thread safety of music selection and .last_track file locking."""
+    def worker():
+        return pick_music_for_action("outplay")
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(worker) for _ in range(16)]
+        results = [f.result() for f in futures]
+
+    assert len(results) == 16
+    for r in results:
+        assert os.path.exists(r)
+
+
+def test_apply_editor_effects_script_generation(tmp_path, monkeypatch):
+    """Verifies that speed ramp with easing creates valid filter complex script."""
+    dummy_input = tmp_path / "dummy_in.mp4"
+    dummy_input.write_text("dummy video")
+    dummy_output = tmp_path / "dummy_out.mp4"
+    captured_scripts = []
+
+    def mock_run_ffmpeg(cmd, timeout=180.0, desc=""):
+        # fc_script exists during _run_ffmpeg call before finally cleanup
+        script_file = str(dummy_output).replace(".mp4", "_filter.txt")
+        if os.path.exists(script_file):
+            with open(script_file, "r", encoding="utf-8") as f:
+                captured_scripts.append(f.read())
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr("lol_agent.lol_editor._run_ffmpeg", mock_run_ffmpeg)
+
+    dur = apply_editor_effects(
+        input_path=str(dummy_input),
+        output_path=str(dummy_output),
+        clip_duration=15.0,
+        crop_x="656",
+        peak_moment=10.0,
+        slowmo_speed=0.6,
+        slowmo_duration=1.5,
+        use_easing=True
+    )
+    assert dur > 15.0  # Slowmo extends duration
+    assert len(captured_scripts) >= 1
+    script_content = captured_scripts[0]
+    assert "setpts" in script_content
+    assert "concat=n=" in script_content

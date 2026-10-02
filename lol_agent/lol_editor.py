@@ -9,8 +9,11 @@ import random
 import subprocess
 import glob
 import shutil
+import threading
 import numpy as np
 from typing import Optional
+
+_music_lock = threading.Lock()
 try:
     from lol_agent.lol_config import (
         LOL_MUSIC_DIR, LOL_TEMP_DIR,
@@ -179,36 +182,37 @@ def pick_music_for_action(action_type: str = "outplay", preferred_track: Optiona
         if matched:
             music_files = matched
 
-    # Dedup: wykluczaj ostatnio używane utwory (historia ostatnich utworów)
+    # Dedup: wykluczaj ostatnio używane utwory (historia ostatnich utworów) chronione lockiem wątkowym
     last_track_file = os.path.join(LOL_MUSIC_DIR, ".last_track")
     recent_tracks = []
-    if os.path.exists(last_track_file):
+    with _music_lock:
+        if os.path.exists(last_track_file):
+            try:
+                with open(last_track_file, "r", encoding="utf-8") as f:
+                    recent_tracks = [line.strip() for line in f if line.strip()]
+            except Exception:
+                pass
+
+        # Wyklucz ostatnie utwory z puli
+        candidates = [f for f in music_files if os.path.basename(f) not in recent_tracks]
+        if not candidates and len(music_files) > 1:
+            # Jeśli wszystkie z puli były w historii, wyklucz przynajmniej ostatni
+            candidates = [f for f in music_files if os.path.basename(f) != recent_tracks[-1]]
+        if candidates:
+            music_files = candidates
+            if recent_tracks:
+                print(f"🎵 Dedup: aktywna rotacja muzyki (wykluczono ostatnie: {', '.join(recent_tracks[-3:])})")
+
+        chosen = random.choice(music_files)
+        chosen_name = os.path.basename(chosen)
+
+        # Zapisz historię (max 7 ostatnich utworów — większy pool = lepsza rotacja)
         try:
-            with open(last_track_file, "r", encoding="utf-8") as f:
-                recent_tracks = [line.strip() for line in f if line.strip()]
+            updated_history = (recent_tracks + [chosen_name])[-7:]
+            with open(last_track_file, "w", encoding="utf-8") as f:
+                f.write("\n".join(updated_history))
         except Exception:
             pass
-
-    # Wyklucz ostatnie utwory z puli
-    candidates = [f for f in music_files if os.path.basename(f) not in recent_tracks]
-    if not candidates and len(music_files) > 1:
-        # Jeśli wszystkie z puli były w historii, wyklucz przynajmniej ostatni
-        candidates = [f for f in music_files if os.path.basename(f) != recent_tracks[-1]]
-    if candidates:
-        music_files = candidates
-        if recent_tracks:
-            print(f"🎵 Dedup: aktywna rotacja muzyki (wykluczono ostatnie: {', '.join(recent_tracks[-3:])})")
-
-    chosen = random.choice(music_files)
-    chosen_name = os.path.basename(chosen)
-
-    # Zapisz historię (max 7 ostatnich utworów — większy pool = lepsza rotacja)
-    try:
-        updated_history = (recent_tracks + [chosen_name])[-7:]
-        with open(last_track_file, "w", encoding="utf-8") as f:
-            f.write("\n".join(updated_history))
-    except Exception:
-        pass
 
     energy_label = MUSIC_ENERGY_MAP.get(chosen_name, "?")
     print(f"🎵 Muzyka [{energy_label}]: {chosen_name}")
@@ -313,14 +317,15 @@ def apply_editor_effects(input_path: str, output_path: str,
                          zoom_duration: float = 0.8,
                          slowmo_speed: float = 0.75,
                          slowmo_duration: float = 1.5,
-                         intermediate_peaks: list = None) -> float:
+                         intermediate_peaks: list = None,
+                         use_easing: bool = True) -> float:
     """
     Stosuje pionowe kadrowanie, zoom-punch i spowolnienie (speed ramp)
     w jednym przebiegu za pomocą filter_complex w FFmpeg.
+    Obsługuje krzywą easing (ease-in / ease-out) dla eliminacji nagłych skoków tempa.
     crop_x moze byc wyrazeniem (np. if(lt(t,5.0),...)) dla dynamicznego sledzenia.
     intermediate_peaks: czasy (rel. do klipu) killów PRZED glównym peak_moment.
-      -> kazdy dostaje mini slow-mo 0.8x/0.5s (zaznaczenie kill bez pelnego slow-mo)
-    Gwarantuje idealna dokladnosc klatkowaa i brak przyciec/desynchronizacji.
+    Gwarantuje idealna dokladnosc klatkowa i brak przyciec/desynchronizacji.
     """
     source_w, source_h = 1920, 1080
     crop_w = int(source_h * 9 / 16)   # 607 ~= 608
@@ -361,9 +366,20 @@ def apply_editor_effects(input_path: str, output_path: str,
     normal_crop = f"crop={crop_w}:{crop_h}:'{crop_x_expr}':0"
 
     segs = []
+    # Krzywa easing: eliminacja nagłych szarpnięć przy wejściu i wyjściu ze spowolnienia
+    ease_in_dur = min(0.15, max(0.0, (t1 - t0) * 0.35)) if (use_easing and slowmo_speed < 0.95) else 0.0
+    ease_out_dur = min(0.15, max(0.0, (t4 - t3) * 0.35)) if (use_easing and slowmo_speed < 0.95) else 0.0
+    ease_in_speed = round(1.0 - 0.5 * (1.0 - slowmo_speed), 3)
+    ease_out_speed = round(slowmo_speed + 0.5 * (1.0 - slowmo_speed), 3)
+
     # Segment 1: Naturalny, dynamiczny przebieg walki (1.0x, 60 FPS)
-    if t1 > t0 + 0.05:
-        segs.append({"start": t0, "end": t1, "speed": 1.0, "crop": normal_crop})
+    t1_norm = t1 - ease_in_dur
+    if t1_norm > t0 + 0.05:
+        segs.append({"start": t0, "end": t1_norm, "speed": 1.0, "crop": normal_crop})
+
+    # Segment 1-ease: Płynne wejście w slowmo (ease-in ramp)
+    if ease_in_dur > 0.04:
+        segs.append({"start": t1_norm, "end": t1, "speed": ease_in_speed, "crop": normal_crop})
 
     # Segment 2: Kulminacyjny decydujący cios (slow-mo + subtelny zoom-punch na gracza)
     if t2 > t1 + 0.05:
@@ -376,9 +392,14 @@ def apply_editor_effects(input_path: str, output_path: str,
     if t3 > t2 + 0.05:
         segs.append({"start": t2, "end": t3, "speed": slowmo_speed, "crop": normal_crop})
 
+    # Segment 3-ease: Płynny powrót do tempa normalnego (ease-out ramp)
+    t3_ease_end = t3 + ease_out_dur
+    if ease_out_dur > 0.04:
+        segs.append({"start": t3, "end": t3_ease_end, "speed": ease_out_speed, "crop": normal_crop})
+
     # Segment 4: Finisz i zakończenie akcji w tempie 1.0x
-    if t4 > t3 + 0.05:
-        segs.append({"start": t3, "end": t4, "speed": 1.0, "crop": normal_crop})
+    if t4 > t3_ease_end + 0.05:
+        segs.append({"start": t3_ease_end, "end": t4, "speed": 1.0, "crop": normal_crop})
 
     filter_lines = []
     labels = []
@@ -1452,52 +1473,8 @@ def render_short(
                 crop_w=int(1080 * 9 / 16),
                 peaks=peaks or []     # <- kill-snap: champion locked during kills
             )
-            # P1 FIX (2026-08-12): Kill banner shift — gdy kill peak, przesuń crop_x
-            # BANNER_SHIFT = 0: Champion pozostaje w 100% w centrum kadru.
-            # Wyeliminowano sztuczne przesuwanie kadru w lewo, które wyrzucało Katarinę poza prawy margines.
-            BANNER_SHIFT = 0
-            BANNER_WINDOW = 0.0
-            CROP_W = int(1080 * 9 / 16)
-            SOURCE_W = 1920
-            kill_times = [t_k for (t_k, _) in (peaks or [])]
-            if kill_times and BANNER_SHIFT > 0:
-                # SESJA 13 FIX: scal nakladajace sie kill windows (MERGE_GAP=1.5s)
-                # Eliminuje 320px round-trip jerk w 0.3-0.4s gapach miedzy TRIPLE/QUADRA/PENTA
-                MERGE_GAP = 1.5
-                merged_windows = []
-                for tk in sorted(kill_times):
-                    ws, we = tk - BANNER_WINDOW, tk + BANNER_WINDOW
-                    if merged_windows and ws < merged_windows[-1][1] + MERGE_GAP:
-                        merged_windows[-1] = (merged_windows[-1][0], max(merged_windows[-1][1], we))
-                    else:
-                        merged_windows.append([ws, we])
-                # SESJA 14 FIX A: ramp 0.5s przy wejsciu/wyjsciu z merged window
-                # Zamiast instant skoku -160px: plynny ramp w ciagu RAMP_SECS
-                RAMP_SECS = 0.5
-                shifted = []
-                for (pt, px) in path_points:
-                    # Znajdz najblizszy merged window i oblicz alpha rampy
-                    shift_alpha = 0.0
-                    for (ws, we) in merged_windows:
-                        if pt < ws:
-                            continue
-                        if pt > we:
-                            continue
-                        # pt jest wewnatrz okna
-                        dist_start = pt - ws  # jak daleko od poczatku
-                        dist_end   = we - pt  # jak daleko od konca
-                        ramp_in  = min(1.0, dist_start / RAMP_SECS) if RAMP_SECS > 0 else 1.0
-                        ramp_out = min(1.0, dist_end   / RAMP_SECS) if RAMP_SECS > 0 else 1.0
-                        shift_alpha = min(ramp_in, ramp_out)
-                        break
-                    if shift_alpha > 0:
-                        effective_shift = int(BANNER_SHIFT * shift_alpha)
-                        px_shifted = max(0, min(px - effective_shift, SOURCE_W - CROP_W))
-                        shifted.append((pt, px_shifted))
-                    else:
-                        shifted.append((pt, px))
-                path_points = shifted
-                print(f"   🏆 Kill banner shift: -{BANNER_SHIFT}px (ramp {RAMP_SECS}s) @ {len(merged_windows)} merged window(s) (from {len(kill_times)} kills)")
+            # Champion centering: BANNER_SHIFT is fixed at 0 to guarantee the player
+            # is always 100% centered in 9:16 frame without artificial horizontal offset.
             crop_x_expr = generate_ffmpeg_pan_expression(path_points)
         except Exception as e:
             print(f"   Blad sledzenia sciezki: {e} — fallback do centrum")
