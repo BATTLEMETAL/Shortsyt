@@ -248,9 +248,16 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  if (backendProcess) {
+  if (backendProcess && backendProcess.pid) {
     try {
-      backendProcess.kill();
-    } catch (_) {}
+      if (process.platform === 'win32') {
+        const { execSync } = require('child_process');
+        execSync(`taskkill /pid ${backendProcess.pid} /T /F`, { stdio: 'ignore' });
+      } else {
+        backendProcess.kill();
+      }
+    } catch (_) {
+      try { backendProcess.kill(); } catch (__) {}
+    }
   }
 });

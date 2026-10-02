@@ -627,8 +627,20 @@ GENERATE JSON ONLY (no markdown fences, raw json):
 
                     data = json.loads(raw_text)
                     _raw_title = data.get("title", "").strip()
-                    if not _raw_title:
-                        _raw_title = f"{action_type.upper()} {champ}"
+                    # Polish language detection — odrzuć ewentualne polskie słowa w angielskich Shortsach
+                    POLISH_MARKERS = [
+                        "roku", "nie ma", "szans", "który", "która", "przez",
+                        "tego", " jest ", " tak ", "ale ", "czyli", "żeby", "można",
+                        "kiedy", "każdy", "bardzo", "zawsze", "nigdy", "tylko",
+                        "więc", "jednak", "dlatego", "potem", "teraz", "właśnie",
+                        "przed", "zaraz", "nawet", "gdzie", "tutaj", " dlaczego ",
+                    ]
+                    _combined_check = f"{_raw_title.lower()} {(data.get('description') or '').lower()}"
+                    _detected_pl = [p for p in POLISH_MARKERS if p in _combined_check]
+                    if _detected_pl:
+                        print(f"   [Gemini AI] ⚠️ Wykryto polskie słowa w tytule/opisie ({_detected_pl}) — ponawiam...")
+                        continue
+
                     # Wymuś pełny zestaw viralowych tagów: #Shorts #LeagueOfLegends #LoL
                     gen_title = _format_final_title(_raw_title)
 

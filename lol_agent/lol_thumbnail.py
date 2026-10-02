@@ -174,7 +174,9 @@ def _find_best_hero_frame(video_path: str, center_t: float, search_window: float
 
             val = hsv[:, :, 2]
             avg_bright = float(np.mean(val))
-            if avg_bright < 30 or avg_bright > 240:
+            avg_sat = float(np.mean(sat))
+            # Odrzuć czarne/prześwietlone klatki oraz szary ekran śmierci (grey screen)
+            if avg_bright < 35 or avg_bright > 240 or avg_sat < 25.0:
                 continue
 
             score = vfx_score + (150.0 if gold_pts >= 10 else 0.0)

@@ -471,6 +471,8 @@ Return ONLY valid JSON (no markdown, no comments):
                 "roku", "nie ma", "szans", "który", "która", "przez",
                 "tego", " jest ", " tak ", "ale ", "czyli", "żeby", "można",
                 "kiedy", "każdy", "bardzo", "zawsze", "nigdy", "tylko",
+                "więc", "jednak", "dlatego", "potem", "teraz", "właśnie",
+                "przed", "zaraz", "nawet", "gdzie", "tutaj", " dlaczego ",
             ]
             title_lower = data.get("title", "").lower()
             hook_lower = data.get("hook_text", "").lower()
