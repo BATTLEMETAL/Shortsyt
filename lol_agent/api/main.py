@@ -62,10 +62,23 @@ async def lifespan(app: FastAPI):
         pass
 
 
+tags_metadata = [
+    {"name": "Auth", "description": "Uwierzytelnianie JWT i zarządzanie sesją (Bearer token & HttpOnly cookie)."},
+    {"name": "Pipeline", "description": "Sterowanie asynchronicznym montażem Shorts i monitoring kolejki renderów."},
+    {"name": "Clips", "description": "Skanowanie, detekcja killi, metadane, OCR i serwowanie plików wideo / miniatur."},
+    {"name": "YouTube", "description": "Integracja z YouTube API: autoryzacja OAuth 2.0 na 127.0.0.1, publikacja i przypinanie komentarzy."},
+    {"name": "Calendar", "description": "Harmonogram publikacji z auto-uzupełnianiem i optymalizacją peak hours."},
+    {"name": "Learning", "description": "Silnik samouczący: retencja widzów, optymalizacja wag akcji, testy A/B i rekomendacje."},
+    {"name": "System", "description": "Diagnostyka sprzętowa (GPU/NVENC), tuning parametrów i benchmarking."},
+]
+
 app = FastAPI(
-    title="Shortsyt API",
-    description="Shortsyt Studio Backend API",
-    version="1.0.0",
+    title="Shortsyt Studio Backend API",
+    description="Kompleksowy silnik autonomicznego montażu i publikacji YouTube Shorts dla League of Legends.",
+    version="1.1.0",
+    openapi_tags=tags_metadata,
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan,
 )
 
