@@ -1,6 +1,6 @@
 # LOL AGENT — MASTER CONTEXT (2026 PRODUCTION REVISION)
-> Ostatnia aktualizacja: 2026-09-30 (Sesja: Phrase-Level Title Dedup, Eliminacja wycieku tagów z tytułu, Rozszerzenie puli szablonów CTR, Rzetelna klasyfikacja solo_bolo vs outplay przez liczenie wrogów CV, Backfill statusu publikacji)
-> Wersja: v37 — PRODUKCYJNY PIPELINE + DEDUP FRAZOWY TYTUŁÓW + ENEMY BAR CLASSIFIER + DESKTOP STUDIO v25
+> Ostatnia aktualizacja: 2026-10-02 (Sesja: Naprawa PTS Freeze 0-2s, Smart Camera Shunpo Dagger Snap & Bottom HUD 815px, Wymuszenie Tagów #Shorts #LeagueOfLegends #LoL, Usunięcie Legacy main.py, Zabezpieczenie OAuth 127.0.0.1, Naprawa CI)
+> Wersja: v38 — ZERO PTS DESYNC + SHUNPO DAGGER SNAP + VIRAL TITLE SET + OAUTH SECURE LOOPBACK + DESKTOP STUDIO v25
 > **CZYTAJ TEN PLIK NA POCZĄTKU KAŻDEJ SESJI — zastępuje analizę rozproszonych plików i chroni przed regresjami.**
 
 ---
@@ -46,21 +46,22 @@ Kamera konwertuje materiał 16:9 (1920x1080) na wertykalny 9:16 (608x1080 przesk
 - **Detekcja paska gracza (Pure Player Tracking — ZERO wież/minionów)**: 
   - Maska koloru zielonego (standard): `(g > 130) & (r < 125) & (b < 120) & ((g - r) > 20) & ((g - b) > 25)`
   - Maska koloru złotego (colorblind): `(r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)`
-  - Geometria paska bohatera: `18 <= cw <= 150`, `5 <= ch <= 18`, `2.0 <= asp <= 12.0`, `area >= 45`
-  - **Odrzucanie wież**: Paski wież mają `cw > 180px` oraz wysoki asp — filtr `cw <= 150` i `asp <= 12.0` bezwzględnie eliminuje wieże.
-  - **BRAK FALLBACKU NA WROGÓW**: Usunięto detekcję `enemy_cx` (czerwone paski), ponieważ płonące/niszczone wieże generowały czerwone artefakty, kradnąc kamerę na wieżę.
+  - Geometria paska bohatera: `16 <= cw <= 150`, `4 <= ch <= 38`, `1.1 <= asp <= 15.0`, `area >= 30` (elastyczne progi dopasowane do wiru Death Lotus / Shunpo VFX)
+  - **Odrzucanie wież**: Paski wież mają `cw > 180px` oraz wysoki asp — filtr `cw <= 150` i `asp <= 15.0` bezwzględnie eliminuje wieże.
+  - **Scoring**: `score = float(area + cw * 10)` z karą dystansu `0.8 * hypot(c[5]-track_x, c[6]-track_y)`.
 - **Maski wykluczeń (HUD / Overlays)**:
   - Scoreboard górny (precyzyjny): `excl[:95, 680:1240] = False` (nigdy `excl[:140, :]`, by nie maskować walk w rzece/krzakach!).
-  - Dolny pasek skilli: `y > 864`
+  - Dolny pasek skilli: `y > 815` (obniżone z 864, aby wyeliminować drgania od ikon spelli i złotych przycisków level-up)
   - Minimapa i panel przedmiotów: `y > 626 oraz x > 1459`
   - Chat i portret gracza: `y > 670 oraz x < 345`
   - Portrety sojuszników HUD (prawe skrzydło): `excl[:450, 1540:] = False`
   - Marginesy boczne: `x < 45` oraz `x > 1740` (watermarki Outplayed/statystyki)
 - **Parametry kinematyki kinowej**:
   - **`DEADBAND_PX = 30.0`**: Mikro-ruchy gracza w granicach 30px nie poruszają kamerą (stabilność statywu).
-  - **`LERP_ALPHA = 0.45`**: Responsywne doganianie postaci podczas walki i po doskokach.
+  - **`LERP_ALPHA = 0.35`**: Płynne, kinowe doganianie postaci podczas walki bez nerwowych przeskoków.
   - **`MAX_PAN_PX = 80`**: Maksymalny przesuw na próbkę.
-  - **`SNAP_DELTA = 280`**: Natychmiastowy przeskok kamery przy Shunpo Katariny, Flashu lub skoku.
+  - **`SNAP_DELTA = 220`**: Natychmiastowy przeskok kamery przy doskoku do sztyletu (Shunpo Katariny), Flashu lub skoku.
+  - **`MAX_TELEPORT_DELTA = 480`**: Próg odrzucania teleportów (powyżej = anomalia).
   - **`SMOOTH_WIN = 5`**: Segmentowane wygładzanie kroczące per-segment z wykrywaniem granic skoków (>180px).
   - **`MOMENTUM_FRAMES = 3` + `MOMENTUM_DECAY = 0.6`**: Gdy gracz chwilowo niewidoczny (VFX Death Lotus, obrót), kamera kontynuuje wektor prędkości z zanikaniem 60% przez max 3 klatki, po czym twardo zamraża pozycję (nigdy nie dryfuje na inne obiekty).
   - **`end_freeze_sec = 0.6`**: Zamrożenie pozycji kadru w ostatnich 0.6s klipu. Nigdy nie ustawiać 1.8s!
@@ -72,14 +73,14 @@ Kamera konwertuje materiał 16:9 (1920x1080) na wertykalny 9:16 (608x1080 przesk
 - **Multi-kill (Double, Triple, Quadra, Penta)**:
   - **Lead-in (bufor startowy)**: **`min 4.5s – 5.5s`** przed pierwszym fragiem (`lead_in = max(4.5, buildup * 4.0)`). Widz MUSI widzieć rozpoczęcie walki, doskok i wymianę skilli. Zakaz zaczynania klipu 1 sekundę przed fragiem!
   - **Outro (bufor końcowy)**: **`1.5s – 2.0s`** po ostatnim fragu. Wystarczające na przeczytanie banera i natychmiastowe przejście do zapętlenia.
-  - **Slow-mo**: `0.7x` tylko na uderzenie wieńczące (finałowy frag). Zakaz przeciągłych spowolnień 0.4x trwających po 4 sekundy.
+  - **Slow-mo**: `0.5x–0.7x` tylko na uderzenie wieńczące (finałowy frag). Zakaz przeciągłych spowolnień trwających po 4 sekundy.
 
 ### C. Zbalansowanie Dźwięku (`lol_agent/lol_editor.py`, `lol_config.py`, `tuning_config.json`)
 - **Normalizacja głośności (FFmpeg loudnorm)**:
   - Muzyka w tle (NCS/Phonk): `loudnorm=I=-17:TP=-1.5` (wyraźna, energetyczna, rytmiczna).
   - Dźwięk z gry (efekty, spelle, announcer): `loudnorm=I=-14:TP=-1.5` (wyraźny, głośny, dominant).
 - **Proporcje miksu**:
-  - `musicBalance = 0.60` (60% głośności muzyki)
+  - `musicBalance = 0.55` (55% głośności muzyki)
   - `gameSoundBalance = 0.85` (85% głośności gry)
   - Sidechain ducking: -45% wyciszenia muzyki w momentach okrzyków announcera i killów.
 - **Pętla Samouczenia z Korekt Użytkownika (`lol_agent/user_learning_memory.py`)**:
@@ -96,8 +97,11 @@ Kamera konwertuje materiał 16:9 (1920x1080) na wertykalny 9:16 (608x1080 przesk
   4. `lol_editor.py`: Ostatnia linia obrony w `render_short()` przed generowaniem listy FFmpeg concat sprawdza klatki luki i resetuje `combat_segments = None`.
 - **Przypadek referencyjny**: Zabójstwo Jhina przykryte komunikatem "Your team destroyed the first turret!" w środku ekranu. OCR nie widział banera, ale Combat Continuity Guard zachował ciągłość wideo (24.5s) i wszystkie 3 zabójstwa znalazły się w finalnym shortsie.
 
-### E. Tytuły, SEO & Deduplikacja Frazowa (`lol_agent/lol_metadata_generator.py`, `lol_agent/lol_publisher.py`)
-- **Tylko `#Shorts` w tytule**: Zakaz wstrzykiwania `#LeagueOfLegends` czy `#LoL` do tytułu. Tytuł ma mieć mocny hook (<45 znaków) i wyłącznie `#Shorts` na końcu. Wszystkie pozostałe tagi i bloki wiralowe trafiają do opisu filmu (`_build_hashtags()`).
+### E. Tytuły, SEO & Wymuszenie Viralowych Tagów (`lol_metadata_generator.py`, `youtube_uploader.py`)
+- **Gwarancja hashtagów `#Shorts #LeagueOfLegends #LoL` w tytule**:
+  - Każdy tytuł wyjściowy (z Gemini AI, z szablonów CTR oraz w YouTube uploaderze) MUSI kończyć się pełnym zestawem: `<hook> #Shorts #LeagueOfLegends #LoL`.
+  - Odpowiada za to funkcja `_format_final_title()` podpięta w 4 punktach wejściowych/wyjściowych. Pilnuje limitu 96 znaków i normalizuje duplikaty.
+  - Zapewnia to maksymalny zasięg organiczny w algorytmie Shorts i wyszukiwarce YouTube.
 - **Deduplikacja frazowa (Fingerprint Guard)**: Ostatnie 15 opublikowanych filmów z `published_videos.jsonl` jest analizowane pod kątem odcisków pierwszych 3-4 słów (bez emoji i hashtagów). Szablony pasujące do odcisku otrzymują karę -85% wagi (`score * 0.15`), a Gemini dostaje listę `FORBIDDEN opening phrases`.
 - **Rozszerzona pula szablonów CTR**: Każda kategoria akcji ma 12-16 unikalnych szablonów nasyconych słowami o najwyższym CTR z dyrektywy samouczenia (`WRONG`, `ENEMY`, `OUTPLAY`, `TRIED`, `EGO`, `SOLO`, `BOLO`) oraz wyczyszczonych ze słów zakazanych (`HUNT`, `ESCAPE`, `INSTANT`).
 
@@ -196,6 +200,27 @@ W ostatnich sesjach wystąpiło 7 poważnych awarii / regresji. Poniżej zebrano
 - **Wniosek i Rozwiązanie**:
   - Dodano `_count_enemy_bars_in_frame()`. Jeśli w kadrze walki jest $\ge 2$ wrogów lub OCR wykrył baner SHUTDOWN/RAMPAGE/itp., klip jest uczciwie oznaczany jako `outplay`.
   - `solo_bolo` jest ściśle ograniczone do walk 1v1 (dokładnie 1 wróg w kadrze, brak banera shutdown).
+
+### ❌ BŁĄD 10: Freeze 2s na starcie klipu i ucięte pierwsze zabójstwo (Kai'sa) przez post-render SNAP TRIM
+- **Objaw**: Pierwsze 1.5–2 sekundy wideo są zamrożone (obraz stoi w miejscu), pierwsze zabójstwo w ogóle nie jest widoczne, a wideo ma `start_time = 2.26s` w strumieniu wideo.
+- **Źródło błędu (Root Cause)**:
+  - W `lol_editor.py` po całym 8-krokowym montażu znajdował się blok "15s SNAP TRIM", który docinał plik komendą `ffmpeg -ss ... -c copy` bez re-enkodowania. Kopiowanie strumienia bez ponownego kodowania trafiało na ramkę typu B/P zamiast ramki kluczowej I-frame, niszcząc strukturę GOP/PTS i powodując 2-sekundowy freeze oraz wycinając pierwsze 2 sekundy akcji.
+- **Wniosek i Rozwiązanie**:
+  - Całkowicie usunięto post-render SNAP trim z `lol_editor.py`. Pacing i długość są kontrolowane wyłącznie na początku (`cut_clip` z `-vf setpts=PTS-STARTPTS`, dającym równe `start_time = 0.000000s`).
+
+### ❌ BŁĄD 11: Znikające tagi #LeagueOfLegends #LoL na YouTube mimo ich obecności w UI
+- **Objaw**: W aplikacji Desktop Studio w podglądzie tytuł zawierał pełne tagi `#Shorts #LeagueOfLegends #LoL`, ale po opublikowaniu na YouTube tytuł miał wyłącznie `#Shorts`.
+- **Źródło błędu (Root Cause)**:
+  - W `lol_agent/api/youtube_uploader.py` linie 666–667 bezpośrednio przed wysłaniem zapytania do YouTube API wycinały tagi `#LeagueOfLegends` i `#LoL` za pomocą `re.sub()`.
+- **Wniosek i Rozwiązanie**:
+  - Zastąpiono wycinanie wywołaniem `_format_final_title()`. Tytuł wysyłany do YouTube API zachowuje pełny zestaw tagów.
+
+### ❌ BŁĄD 12: Błąd kolekcji testów w GitHub Actions CI (exit code 2)
+- **Objaw**: Pipeline CI w GitHub Actions natychmiast kończył się błędem `OSError: GEMINI_API_KEY is not set. Add it to your .env file.` przed uruchomieniem testów.
+- **Źródło błędu (Root Cause)**:
+  - `lol_agent/lol_config.py` rzucało `raise EnvironmentError` w momencie importu modułu na poziomie głównym pliku. Na czystym runnerze CI brak lokalnego pliku `.env` uniemożliwiał uruchomienie jakiegokolwiek testu importującego konfigurację.
+- **Wniosek i Rozwiązanie**:
+  - Zastąpiono `raise` nieblokującym ostrzeżeniem `warnings.warn`. W `.github/workflows/ci.yml` dodano instalację bibliotek graficznych (`libgl1`, `libglib2.0-0`) oraz dummy zmienne środowiskowe dla testów.
 
 ---
 

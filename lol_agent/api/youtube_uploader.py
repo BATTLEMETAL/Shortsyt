@@ -236,7 +236,7 @@ def _run_callback_server(port: int, flow_path_str: str) -> None:
             self.end_headers()
 
     try:
-        server = http.server.HTTPServer(("0.0.0.0", port), _CallbackHandler)
+        server = http.server.HTTPServer(("127.0.0.1", port), _CallbackHandler)
         server.timeout = 300
         server.serve_forever()
     except Exception as e:
