@@ -405,6 +405,9 @@ def build_pinned_comment(champion: str = "Katarina", action_type: str = "outplay
             f"Was this SOLO BOLO pure mechanics or pure luck? 😈 Comment below! 👇 (Leave a LIKE if this was clean! 🔥)",
             f"Did the enemy misplay or was this {champ} 100% calculated? 🧠👇 (Drop a LIKE for more {champ} duels!)",
             f"Rate this outplay 1-10! Would you ever take this 1v1? 👑👇 (Like to bless your ranked games 🍀)",
+            f"Pure reflex or cold prediction? How would you rate this duel 1-10? 👇🔥 (Hit LIKE if you love {champ}!)",
+            f"Would you have flashed or taken the fight? Rate 1-10! ⚡👇 (Leave a LIKE for Katarina luck in ranked!)",
+            f"Clean reset or greedy play that somehow worked? 👇 Let me know your score 1-10!",
         ]
         return random.choice(comments)
 
@@ -413,6 +416,16 @@ def build_pinned_comment(champion: str = "Katarina", action_type: str = "outplay
             f"Rate this {champ} PENTAKILL 1-10! 🔥 (Drop a LIKE if you love {champ} teamfights 💥)",
             f"Was this clean mechanics or was the enemy team inting? 💀 Let me know below! 👇",
             f"1 to 10: How clean was this Penta? 👇 (Leave a LIKE to bless your next ranked game! 🍀)",
+            f"Daggers everywhere! 🗡️ Rate this Pentakill 1-10! 👇 (Leave a LIKE if you respect the reset!)",
+            f"Is {champ} broken or just played to perfection? Rate 1-10 below! 👇👑 (Drop a LIKE for daily Short clips!)",
+        ]
+        return random.choice(comments)
+
+    if "triple" in act or "quadra" in act:
+        comments = [
+            f"Rate this multi-kill 1-10! 🔥 Did they disrespect the {champ} damage? 👇 (Drop a LIKE if clean!)",
+            f"1 to 10: Best reset or pure chaos? 👇 Leave a LIKE if you love high-tempo {champ} plays! 💥",
+            f"Clean double reset or enemy threw? Rate this 1-10 in comments! 👇",
         ]
         return random.choice(comments)
 
@@ -421,6 +434,8 @@ def build_pinned_comment(champion: str = "Katarina", action_type: str = "outplay
         f"Did the enemy team misplay or was this {champ} outplay 100% calculated? 🧠👇 (Leave a LIKE if this was clean!)",
         f"What would you have done in this situation? 👇 Rate 1-10! 🔥 (Drop a LIKE for more {champ} clips!)",
         f"Cleanest {champ} play today? Drop a rating 1-10 below! 👇🔥 (Drop a LIKE if you main {champ}!)",
+        f"Rate the survival instinct 1-10! 🛡️ Would you have turned around or run? 👇 (Hit LIKE if clean!)",
+        f"How tilted is the enemy team right now on a scale of 1-10? 💀👇 (Leave a LIKE to support the channel!)",
     ]
     return random.choice(comments)
 
