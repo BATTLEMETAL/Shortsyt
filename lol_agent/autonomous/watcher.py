@@ -176,6 +176,9 @@ def process_new_clip(file_path: str, auto_publish: bool = False):
     except Exception as e:
         log(f"   ❌ Błąd montażu: {e}")
         history_entry["status"] = f"ERROR: {e}"
+    finally:
+        history[h] = history_entry
+        save_history(history)
 
 def is_game_running() -> bool:
     """Sprawdza czy proces meczu League of Legends jest aktywny (zapobiega spadkom FPS w grze)."""

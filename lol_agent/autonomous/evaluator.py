@@ -117,14 +117,32 @@ def evaluate_clip_quality(video_path: str, fast_mode: bool = False) -> dict:
     scores_list, detected_kills = _compute_kill_scores(cap, fps, use_ocr=True)
 
     # ── 2. Kill Weight Score (35%) ─────────────────────────────────────────────
+    KILL_RANK = {
+        "PENTAKILL": 5,
+        "QUADRAKILL": 4,
+        "TRIPLE KILL": 3,
+        "DOUBLE KILL": 2,
+        "KILL": 1,
+    }
     highest_kill = "NONE"
-    kill_weight_score = 0.0
+    highest_rank = 0
     if detected_kills:
         for _, label in detected_kills:
-            w = float(dynamic_kill_weights.get(label.upper(), KILL_WEIGHTS.get(label.upper(), 10.0)))
-            if w > kill_weight_score:
-                kill_weight_score = w
-                highest_kill = label.upper()
+            lbl = label.upper()
+            rank = KILL_RANK.get(lbl, 0)
+            if rank > highest_rank:
+                highest_rank = rank
+                highest_kill = lbl
+            elif highest_rank == 0 and highest_kill == "NONE":
+                highest_kill = lbl
+
+        kill_weight_score = float(dynamic_kill_weights.get(highest_kill, KILL_WEIGHTS.get(highest_kill, 10.0)))
+        if "PENTA" in highest_kill:
+            quadra_w = float(dynamic_kill_weights.get("QUADRAKILL", KILL_WEIGHTS.get("QUADRAKILL", 75.0)))
+            kill_weight_score = max(kill_weight_score, quadra_w, 75.0)
+        elif "QUADRA" in highest_kill:
+            triple_w = float(dynamic_kill_weights.get("TRIPLE KILL", KILL_WEIGHTS.get("TRIPLE KILL", 50.0)))
+            kill_weight_score = max(kill_weight_score, triple_w, 60.0)
 
     # ── 3. Pacing Density Score (25%) ──────────────────────────────────────────
     # Im szybciej fragi padają po sobie, tym większa dynamika dla widza
@@ -152,6 +170,7 @@ def evaluate_clip_quality(video_path: str, fast_mode: bool = False) -> dict:
     clutch_score = 50.0   # domyślnie neutralne 50 pkt
     is_clutch = False
     lowest_hp_ratio = 1.0
+    player_died = False
 
     try:
         # Próbkuj klatki wokół pierwszego killa

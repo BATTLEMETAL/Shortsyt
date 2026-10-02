@@ -43,6 +43,6 @@ jobs:
           GEMINI_API_KEY: "ci-dummy-key"
           JWT_SECRET_KEY: "ci-dummy-jwt-secret-key-for-testing"
         run: |
-          pytest tests/ --cov=lol_agent.smart_camera --cov=lol_agent.lol_editor --cov=lol_agent.learning_engine --cov=lol_agent.lol_metadata_generator --cov=lol_agent.api --cov=lol_agent.lol_frag_detector --cov=lol_agent.lol_thumbnail --cov-report=term-missing --cov-fail-under=35
+          pytest tests/ --cov=lol_agent.smart_camera --cov=lol_agent.lol_editor --cov=lol_agent.learning_engine --cov=lol_agent.lol_metadata_generator --cov=lol_agent.api --cov=lol_agent.lol_frag_detector --cov=lol_agent.lol_thumbnail --cov=lol_agent.autonomous --cov-report=term-missing --cov-fail-under=35
 
 
