@@ -32,11 +32,11 @@ declare global {
   }
 }
 
-async function getStoreValue(key: string, defaultValue: any = null): Promise<any> {
+async function getStoreValue<T = any>(key: string, defaultValue: T = null as any): Promise<T> {
   if (window.electronStore) {
     try {
       const val = await window.electronStore.get(key, defaultValue);
-      return val !== undefined && val !== null ? val : defaultValue;
+      return val !== undefined && val !== null ? (val as T) : defaultValue;
     } catch {
       return defaultValue;
     }
@@ -155,6 +155,7 @@ export interface PipelineStateResponse {
   output_path: string | null;
   thumbnail_path?: string | null;
   title?: string | null;
+  title_variant_b?: string | null;
   description?: string | null;
   pinned_comment?: string | null;
   champion_name?: string | null;
@@ -171,6 +172,8 @@ export interface PipelineStateResponse {
   started_at: string | null;
   finished_at: string | null;
   logs: string[];
+  queue_length?: number;
+  queue?: Array<{ output_filename?: string; champion_name?: string; action_type?: string }>;
 }
 
 export async function apiGetStatus(): Promise<PipelineStateResponse> {

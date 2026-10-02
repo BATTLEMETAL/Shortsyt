@@ -32,6 +32,7 @@ class PipelineState:
     output_path: Optional[str] = None
     thumbnail_path: Optional[str] = None
     title: Optional[str] = None
+    title_variant_b: Optional[str] = None
     description: Optional[str] = None
     pinned_comment: Optional[str] = None
     champion_name: Optional[str] = None
@@ -103,6 +104,7 @@ def get_state() -> dict:
             "output_path": _state.output_path,
             "thumbnail_path": _state.thumbnail_path,
             "title": _state.title,
+            "title_variant_b": _state.title_variant_b,
             "description": _state.description,
             "pinned_comment": _state.pinned_comment,
             "champion_name": _state.champion_name,
@@ -122,6 +124,14 @@ def get_state() -> dict:
             "finished_at": _state.finished_at,
             "logs": list(_state.logs[-50:]),  # ostatnie 50 linii
             "queue_length": len(_job_queue),
+            "queue": [
+                {
+                    "output_filename": j.get("output_filename"),
+                    "champion_name": j.get("champion_name"),
+                    "action_type": j.get("action_type")
+                }
+                for j in _job_queue
+            ],
         }
 
 
@@ -162,6 +172,7 @@ def _run_pipeline(
             _state.output_path = None
             _state.thumbnail_path = None
             _state.title = None
+            _state.title_variant_b = None
             _state.description = None
             _state.pinned_comment = None
             _state.champion_name = champion_name
@@ -608,6 +619,7 @@ def _run_pipeline(
             _state.output_path = str(output)
             _state.thumbnail_path = str(thumb_file) if thumb_file else None
             _state.title = meta.get("title") or f"{action_type.upper()} {champion_name} #Shorts"
+            _state.title_variant_b = meta.get("title_variant_b")
             _state.description = meta.get("description") or ""
             _state.pinned_comment = meta.get("pinned_comment") or ""
             _state.finished_at = datetime.now().isoformat()

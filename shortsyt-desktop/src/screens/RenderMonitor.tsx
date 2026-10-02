@@ -30,6 +30,7 @@ export default function RenderMonitor() {
 
   // Review & Metadata state
   const [title, setTitle] = useState<string>('');
+  const [selectedVariant, setSelectedVariant] = useState<'A' | 'B'>('A');
   const [description, setDescription] = useState<string>('');
   const [pinnedComment, setPinnedComment] = useState<string>('');
   const [publishMode, setPublishMode] = useState<'now' | 'peak' | 'custom' | 'private'>('now');
@@ -40,6 +41,15 @@ export default function RenderMonitor() {
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const logsContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleSelectVariant = (variant: 'A' | 'B') => {
+    setSelectedVariant(variant);
+    if (variant === 'A' && pipelineState.title) {
+      setTitle(pipelineState.title);
+    } else if (variant === 'B' && pipelineState.title_variant_b) {
+      setTitle(pipelineState.title_variant_b);
+    }
+  };
 
   const fetchStatus = async () => {
     try {
@@ -224,6 +234,50 @@ export default function RenderMonitor() {
         </div>
       )}
 
+      {/* Job Queue Status Panel */}
+      {pipelineState.queue && pipelineState.queue.length > 0 && (
+        <div className="p-5 rounded-2xl bg-[#121624] border border-[#2A7FD4]/40 space-y-3.5 shadow-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-[#2A7FD4]/10 text-[#2A7FD4]">
+                <Layers className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-[#E4D6B5]">
+                  Kolejka renderowania ({pipelineState.queue.length} {pipelineState.queue.length === 1 ? 'zadanie w kolejce' : 'zadań w kolejce'})
+                </h3>
+                <p className="text-[11px] text-[#8B8FA8]">Zadania będą przetwarzane automatycznie jedno po drugim (FIFO)</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold text-[#2A7FD4] bg-[#2A7FD4]/15 px-2.5 py-1 rounded-full border border-[#2A7FD4]/30 uppercase tracking-wider">
+              Aktywny Worker
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+            {pipelineState.queue.map((job, idx) => (
+              <div key={idx} className="p-3 rounded-xl bg-[#0A0E1A] border border-[#1E2438] flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <span className="w-5 h-5 rounded-full bg-[#1E2438] text-[10px] font-bold text-[#8B8FA8] flex items-center justify-center shrink-0">
+                    {idx + 1}
+                  </span>
+                  <div className="truncate">
+                    <div className="text-xs font-bold text-[#E4D6B5] truncate">
+                      {job.champion_name || 'Brak postaci'} • <span className="text-[#C89B3C] uppercase">{job.action_type || 'Klip'}</span>
+                    </div>
+                    <div className="text-[10px] text-[#50546A] font-mono truncate">
+                      {job.output_filename || 'auto-output.mp4'}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-[#8B8FA8] bg-[#1E2438] px-2 py-0.5 rounded shrink-0">
+                  Oczekuje
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ════════════════════════════════════════════════════════════════════════════ */}
       {/* INTERACTIVE POST-RENDER REVIEW & APPROVAL SUITE (DONE STATE)                 */}
       {/* ════════════════════════════════════════════════════════════════════════════ */}
@@ -375,10 +429,39 @@ export default function RenderMonitor() {
                 {/* Metadata Fields */}
                 <div className="space-y-3 pt-2">
                   <div>
-                    <label className="text-xs font-bold text-[#C89B3C] flex items-center gap-1.5 mb-1">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Tytuł YouTube Shorts
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-[#C89B3C] flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Tytuł YouTube Shorts
+                      </label>
+                      {pipelineState.title_variant_b && (
+                        <div className="flex items-center gap-1 bg-[#0A0E1A] p-0.5 rounded-lg border border-[#1E2438]">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectVariant('A')}
+                            className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                              selectedVariant === 'A'
+                                ? 'bg-[#C89B3C] text-[#0A0E1A] shadow-sm'
+                                : 'text-[#8B8FA8] hover:text-[#E4D6B5]'
+                            }`}
+                          >
+                            Wariant A (Standard)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectVariant('B')}
+                            className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                              selectedVariant === 'B'
+                                ? 'bg-[#2A7FD4] text-white shadow-sm'
+                                : 'text-[#8B8FA8] hover:text-[#E4D6B5]'
+                            }`}
+                          >
+                            <span>Wariant B (CTR Hook)</span>
+                            <span className="text-[9px]">🧪</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={title}
@@ -386,6 +469,16 @@ export default function RenderMonitor() {
                       placeholder="Tytuł shortsa..."
                       className="w-full bg-[#0A0E1A] border border-[#1E2438] rounded-xl px-3.5 py-2 text-xs font-bold text-[#E4D6B5] focus:border-[#C89B3C] outline-none"
                     />
+                    {pipelineState.title_variant_b && (
+                      <div className="mt-1 text-[10px] text-[#8B8FA8] flex items-center gap-1.5">
+                        <span className="text-[#50546A]">
+                          {selectedVariant === 'A' ? 'Alternatywny wariant B (CTR Hook):' : 'Bazowy wariant A (Standard):'}
+                        </span>
+                        <span className="font-mono text-[#E4D6B5]/80 truncate">
+                          {selectedVariant === 'A' ? pipelineState.title_variant_b : (pipelineState.title || '')}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div>

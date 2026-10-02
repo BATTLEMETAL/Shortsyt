@@ -11,6 +11,8 @@ def test_pipeline_state_initial():
     assert 'progress' in state
     assert 'current_step' in state
     assert 'queue_length' in state
+    assert 'queue' in state
+    assert 'title_variant_b' in state
 
 
 def test_cancellation_flow():
@@ -49,7 +51,10 @@ def test_job_queue_mechanism():
         queue_if_busy=True,
     )
     assert queued is True
-    assert pipeline_runner.get_state()['queue_length'] == 1
+    st = pipeline_runner.get_state()
+    assert st['queue_length'] == 1
+    assert len(st['queue']) == 1
+    assert st['queue'][0]['output_filename'] == "clip2_output.mp4"
     queue = pipeline_runner.get_job_queue()
     assert len(queue) == 1
     assert queue[0]['output_filename'] == "clip2_output.mp4"
@@ -72,7 +77,12 @@ def test_run_pipeline_no_name_errors(tmp_path):
         mock_render.return_value = str(tmp_path / 'lol_short_final.mp4')
         mock_thumb.return_value = str(tmp_path / 'lol_short_final_thumb.jpg')
         mock_kills.return_value = [(2.0, 'KILL')]
-        mock_meta.return_value = {'title': 'Test Title', 'description': 'Test Desc', 'pinned_comment': 'Test Comment'}
+        mock_meta.return_value = {
+            'title': 'Test Title',
+            'title_variant_b': 'Test Title B (Hook)',
+            'description': 'Test Desc',
+            'pinned_comment': 'Test Comment',
+        }
 
         pipeline_runner._cancel_event.clear()
         pipeline_runner._run_pipeline(
@@ -94,4 +104,6 @@ def test_run_pipeline_no_name_errors(tmp_path):
         state = pipeline_runner.get_state()
         assert state['status'] == 'done'
         assert state.get('error') is None
+        assert state['title'] == 'Test Title'
+        assert state['title_variant_b'] == 'Test Title B (Hook)'
         mock_render.assert_called_once()

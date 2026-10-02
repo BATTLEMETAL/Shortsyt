@@ -211,9 +211,16 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
           </div>
           <div className="mt-3">
             <div className="flex items-baseline justify-between">
-              <span className="text-2xl font-black text-[#E4D6B5]">
-                {pipelineState.progress}%
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-black text-[#E4D6B5]">
+                  {pipelineState.progress}%
+                </span>
+                {pipelineState.queue_length != null && pipelineState.queue_length > 0 && (
+                  <span className="text-[10px] font-bold text-[#2A7FD4] bg-[#2A7FD4]/15 px-2 py-0.5 rounded-md border border-[#2A7FD4]/30">
+                    +{pipelineState.queue_length} w kolejce
+                  </span>
+                )}
+              </div>
               <span className="text-xs text-[#C89B3C] font-semibold truncate max-w-[150px]">
                 {pipelineState.current_step || (pipelineState.status === 'idle' ? 'Oczekiwanie' : 'Gotowy')}
               </span>
@@ -237,6 +244,48 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
           onRefresh={() => navigate('/settings')}
         />
       </div>
+
+      {/* Job Queue Status Panel if queue has items */}
+      {pipelineState.queue && pipelineState.queue.length > 0 && (
+        <div className="p-4 rounded-2xl bg-[#121624] border border-[#2A7FD4]/40 space-y-3 shadow-md">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-[#2A7FD4]" />
+              <span className="text-xs font-bold uppercase tracking-wider text-[#E4D6B5]">
+                Kolejka renderowania ({pipelineState.queue.length} {pipelineState.queue.length === 1 ? 'zadanie oczekujące' : 'zadań w kolejce'})
+              </span>
+            </div>
+            <button
+              onClick={() => navigate('/render')}
+              className="text-[11px] font-bold text-[#2A7FD4] hover:text-[#4FA3F7] transition-colors cursor-pointer"
+            >
+              Otwórz monitor &rarr;
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+            {pipelineState.queue.map((job, idx) => (
+              <div key={idx} className="p-3 rounded-xl bg-[#0A0E1A] border border-[#1E2438] flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <span className="w-5 h-5 rounded-full bg-[#1E2438] text-[10px] font-bold text-[#8B8FA8] flex items-center justify-center shrink-0">
+                    {idx + 1}
+                  </span>
+                  <div className="truncate">
+                    <div className="text-xs font-bold text-[#E4D6B5] truncate">
+                      {job.champion_name || 'Brak postaci'} • <span className="text-[#C89B3C] uppercase">{job.action_type || 'Klip'}</span>
+                    </div>
+                    <div className="text-[10px] text-[#50546A] font-mono truncate">
+                      {job.output_filename || 'auto-output.mp4'}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-[#8B8FA8] bg-[#1E2438] px-2 py-0.5 rounded shrink-0">
+                  W kolejce
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Error alert if any */}
       {pipelineState.error && (
