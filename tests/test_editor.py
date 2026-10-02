@@ -32,25 +32,32 @@ def test_action_energy_mappings_cover_standard_actions():
         assert ACTION_ENERGY[act] in ["high", "medium", "low"]
 
 
-def test_pick_music_for_action_selects_existing_file():
+@pytest.fixture
+def mock_music_dir(tmp_path, monkeypatch):
+    music_dir = tmp_path / "lol_music"
+    music_dir.mkdir()
+    (music_dir / "track1.mp3").write_text("dummy audio content")
+    (music_dir / "track2.mp3").write_text("dummy audio content")
+    (music_dir / "track3.mp3").write_text("dummy audio content")
+    monkeypatch.setattr("lol_agent.lol_editor.LOL_MUSIC_DIR", str(music_dir))
+    return music_dir
+
+
+def test_pick_music_for_action_selects_existing_file(mock_music_dir):
     track = pick_music_for_action("outplay")
     assert isinstance(track, str)
     assert os.path.exists(track)
     assert track.endswith(".mp3")
 
 
-def test_pick_music_for_action_preferred_track():
-    # Pick any valid track first to get a real filename
-    sample_track = os.path.basename(pick_music_for_action("outplay"))
-    preferred = pick_music_for_action("outplay", preferred_track=sample_track)
-    assert os.path.basename(preferred) == sample_track
+def test_pick_music_for_action_preferred_track(mock_music_dir):
+    preferred = pick_music_for_action("outplay", preferred_track="track2.mp3")
+    assert os.path.basename(preferred) == "track2.mp3"
 
 
-def test_pick_music_rotates_and_records_history(tmp_path):
-    # Call pick_music multiple times to ensure deduplication doesn't crash
+def test_pick_music_rotates_and_records_history(mock_music_dir):
     tracks = set()
     for _ in range(5):
         t = pick_music_for_action("outplay")
         tracks.add(os.path.basename(t))
-    # In a library with multiple tracks, rotation should pick at least 1 track
     assert len(tracks) >= 1
