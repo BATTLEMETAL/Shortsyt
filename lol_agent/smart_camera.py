@@ -690,6 +690,144 @@ def find_action_crop_x(video_path: str, clip_start: float, clip_end: float,
         return (source_w - crop_w) // 2
 
 
+def simulate_player_trajectory(
+    frames_data: list,
+    duration: float,
+    source_w: int = 1920,
+    source_h: int = 1080,
+    crop_w: int = 608,
+    analysis_w: int = 1920,
+    analysis_h: int = 1080,
+) -> list:
+    """
+    Czysta funkcja kinematyki śledzenia trajektorii gracza (Universal Stateful HD Trajectory Tracker).
+    Pozwala na deterministyczną walidację zachowania kamery dla championów z dashami (Zed, Akali, LeBlanc, Katarina)
+    oraz precyzyjne testowanie reguł LERP_ALPHA, SNAP_DELTA, DEADBAND i MAX_TELEPORT_DELTA.
+    """
+    default_x = (source_w - crop_w) // 2
+    if not frames_data:
+        return [(0.0, default_x), (duration, default_x)]
+
+    analysis_scale = source_w / max(analysis_w, 1)
+    crop_w_a = max(1, int(round(crop_w / analysis_scale)))
+    t_points = np.linspace(0.0, duration, len(frames_data))
+
+    # KROK 2: Znalezienie pierwszego pewnego punktu zaczepienia gracza
+    first_x = float(analysis_w // 2)
+    first_y = float(analysis_h // 2)
+
+    for hp_b in frames_data:
+        if hp_b:
+            hp_b.sort(key=lambda c: -c[4])
+            first_x = float(hp_b[0][5])
+            first_y = float(hp_b[0][6])
+            break
+
+    # KROK 3: Płynne śledzenie gracza z kinową stabilizacją (sprawdzone parametry)
+    # ── Parametry płynności ────────────────────────────────────────────────
+    LERP_ALPHA    = 0.35   # kinowa płynność doganiania (sprawdzona wartość bez drgań)
+    MAX_PAN_PX    = 80     # max przesunięcie [px] na próbkę
+    SNAP_DELTA    = 220    # powyżej → natychmiastowy snap na doskok Shunpo / sztylet
+    MAX_TELEPORT_DELTA = 480  # powyżej → odrzuć jako fałszywy wynik
+    DEADBAND_PX   = 30.0   # mikro-ruchy wewnątrz 30px nie ruszają kamery
+    MOMENTUM_DECAY = 0.6   # zanik prędkości na klatkę gdy gracz niewidoczny
+    MOMENTUM_FRAMES = 3    # max klatek kontynuacji momentum (potem hard freeze)
+    # ──────────────────────────────────────────────────────────────────────
+
+    track_x = first_x
+    track_y = first_y
+    crop_xs = []
+    champ_detected = 0
+    invisible_streak = 0
+    last_velocity = 0.0
+
+    for hp_b in frames_data:
+        if hp_b:
+            champ_detected += 1
+            invisible_streak = 0
+            # Wybierz pasek gracza najbliższy aktualnej trajektorii z umiarkowaną karą dystansu
+            hp_b.sort(key=lambda c: c[4] - 0.8 * math.hypot(c[5] - track_x, c[6] - track_y), reverse=True)
+            player_target_x = float(hp_b[0][5])
+            player_target_y = float(hp_b[0][6])
+            target_x = player_target_x
+
+            dist = math.hypot(target_x - track_x, player_target_y - track_y)
+            delta = abs(target_x - track_x)
+            if dist > MAX_TELEPORT_DELTA:
+                # Zbyt daleko — fałszywy wynik (Outplayed HUD leak, wieża poza ekranem)
+                # Zamroź pozycję i kontynuuj momentum jeśli istnieje
+                if abs(last_velocity) > 2.0:
+                    momentum = last_velocity * MOMENTUM_DECAY
+                    track_x = float(np.clip(track_x + momentum, 0, analysis_w - crop_w_a))
+                    last_velocity = momentum
+                # track_y bez zmian — zachowaj ostatni znany Y
+            elif delta > SNAP_DELTA or dist > (SNAP_DELTA * 1.2):
+                # Gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
+                track_x = target_x
+                track_y = player_target_y
+                last_velocity = 0.0
+            elif delta < DEADBAND_PX:
+                # Strefa martwa — zero drgań, tłumienie prędkości
+                last_velocity *= 0.5
+            else:
+                # Płynne doganianie: lerp + limit prędkości
+                desired = LERP_ALPHA * target_x + (1.0 - LERP_ALPHA) * track_x
+                move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
+                track_x = track_x + move
+                track_y = LERP_ALPHA * player_target_y + (1.0 - LERP_ALPHA) * track_y
+                last_velocity = move   # zapamiętaj prędkość do momentum
+        else:
+            invisible_streak += 1
+            if invisible_streak <= MOMENTUM_FRAMES and abs(last_velocity) > 2.0:
+                # Krótka niewidoczność (VFX Death Lotus itp.) — kontynuuj momentum z zanikaniem
+                momentum = last_velocity * (MOMENTUM_DECAY ** invisible_streak)
+                track_x = float(np.clip(track_x + momentum, 0, analysis_w - crop_w_a))
+            else:
+                # Długa niewidoczność → ZAMROŻENIE (nigdy nie dryfujemy na wieże/inne obiekty)
+                last_velocity = 0.0
+
+        crop_x_a = int(max(0, min(track_x - crop_w_a // 2, analysis_w - crop_w_a)))
+        crop_x = int(round(crop_x_a * analysis_scale))
+        crop_x = int(max(0, min(crop_x, source_w - crop_w)))
+        crop_xs.append(crop_x)
+
+    print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames_data)} klatek z graczem w kadrze")
+
+    # KROK 4: Wygładzanie adaptacyjne — zachowuje ostre cięcia (snapy i jump-cuts > 180px)
+    SMOOTH_WIN = 5
+    raw_arr = np.array(crop_xs, dtype=float)
+    smoothed = np.zeros_like(raw_arr)
+
+    # Podziel na niezależne sekcje w miejscach gwałtownych przeskoków (jump-cut / Shunpo)
+    cut_indices = [0]
+    for idx in range(1, len(raw_arr)):
+        if abs(raw_arr[idx] - raw_arr[idx - 1]) > 180:
+            cut_indices.append(idx)
+    cut_indices.append(len(raw_arr))
+
+    for s_i in range(len(cut_indices) - 1):
+        s_start = cut_indices[s_i]
+        s_end = cut_indices[s_i + 1]
+        seg_len = s_end - s_start
+        for local_i in range(seg_len):
+            w_start = max(0, local_i - SMOOTH_WIN // 2)
+            w_end = min(seg_len, local_i + SMOOTH_WIN // 2 + 1)
+            smoothed[s_start + local_i] = raw_arr[s_start:s_end][w_start:w_end].mean()
+
+    # KROK 5: End Freeze — ostatnie 0.6s klipu (PROJECT_GUIDELINES.md) — brak zamrażania przed fragiem
+    end_freeze_sec = 0.6
+    if duration > end_freeze_sec * 1.5:
+        freeze_idx = int(len(smoothed) * (1.0 - end_freeze_sec / duration))
+        freeze_idx = max(0, min(freeze_idx, len(smoothed) - 1))
+        smoothed[freeze_idx:] = smoothed[freeze_idx]
+
+    smoothed = np.clip(smoothed, 0, source_w - crop_w).astype(int)
+
+    # KROK 6: Pełna gęsta trajektoria punktów dla FFmpeg
+    final_points = [(float(t_points[i]), int(smoothed[i])) for i in range(len(smoothed))]
+    return final_points
+
+
 def find_action_path(video_path: str, clip_start: float, clip_end: float,
                      source_w: int = 1920, source_h: int = 1080,
                      crop_w: int = 608, n_samples: int = 80,
@@ -762,121 +900,15 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
             frames_data.append(hp_bars)
 
 
-        # KROK 2: Znalezienie pierwszego pewnego punktu zaczepienia gracza
-        first_x = float(analysis_w // 2)
-        first_y = float(analysis_h // 2)
-
-        for hp_b in frames_data:
-            if hp_b:
-                hp_b.sort(key=lambda c: -c[4])
-                first_x = float(hp_b[0][5])
-                first_y = float(hp_b[0][6])
-                break
-
-        # KROK 3: Płynne śledzenie gracza z kinową stabilizacją (sprawdzone parametry)
-        # ── Parametry płynności ────────────────────────────────────────────────
-        LERP_ALPHA    = 0.35   # kinowa płynność doganiania (sprawdzona wartość bez drgań)
-        MAX_PAN_PX    = 80     # max przesunięcie [px] na próbkę
-        SNAP_DELTA    = 220    # powyżej → natychmiastowy snap na doskok Shunpo / sztylet
-        MAX_TELEPORT_DELTA = 480  # powyżej → odrzuć jako fałszywy wynik
-        DEADBAND_PX   = 30.0   # mikro-ruchy wewnątrz 30px nie ruszają kamery
-        MOMENTUM_DECAY = 0.6   # zanik prędkości na klatkę gdy gracz niewidoczny
-        MOMENTUM_FRAMES = 3    # max klatek kontynuacji momentum (potem hard freeze)
-        # ──────────────────────────────────────────────────────────────────────
-
-        track_x = first_x
-        track_y = first_y
-        crop_xs = []
-        champ_detected = 0
-        invisible_streak = 0
-        last_velocity = 0.0
-
-        for hp_b in frames_data:
-            if hp_b:
-                champ_detected += 1
-                invisible_streak = 0
-                # Wybierz pasek gracza najbliższy aktualnej trajektorii z umiarkowaną karą dystansu
-                hp_b.sort(key=lambda c: c[4] - 0.8 * math.hypot(c[5] - track_x, c[6] - track_y), reverse=True)
-                player_target_x = float(hp_b[0][5])
-                player_target_y = float(hp_b[0][6])
-                target_x = player_target_x
-
-                dist = math.hypot(target_x - track_x, player_target_y - track_y)
-                delta = abs(target_x - track_x)
-                if dist > MAX_TELEPORT_DELTA:
-                    # Zbyt daleko — fałszywy wynik (Outplayed HUD leak, wieża poza ekranem)
-                    # Zamroź pozycję i kontynuuj momentum jeśli istnieje
-                    if abs(last_velocity) > 2.0:
-                        momentum = last_velocity * MOMENTUM_DECAY
-                        track_x = float(np.clip(track_x + momentum, 0, analysis_w - crop_w_a))
-                        last_velocity = momentum
-                    # track_y bez zmian — zachowaj ostatni znany Y
-                elif delta > SNAP_DELTA or dist > (SNAP_DELTA * 1.2):
-                    # Gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
-                    track_x = target_x
-                    track_y = player_target_y
-                    last_velocity = 0.0
-                elif delta < DEADBAND_PX:
-                    # Strefa martwa — zero drgań, tłumienie prędkości
-                    last_velocity *= 0.5
-                else:
-                    # Płynne doganianie: lerp + limit prędkości
-                    desired = LERP_ALPHA * target_x + (1.0 - LERP_ALPHA) * track_x
-                    move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
-                    track_x = track_x + move
-                    track_y = LERP_ALPHA * player_target_y + (1.0 - LERP_ALPHA) * track_y
-                    last_velocity = move   # zapamiętaj prędkość do momentum
-            else:
-                invisible_streak += 1
-                if invisible_streak <= MOMENTUM_FRAMES and abs(last_velocity) > 2.0:
-                    # Krótka niewidoczność (VFX Death Lotus itp.) — kontynuuj momentum z zanikaniem
-                    momentum = last_velocity * (MOMENTUM_DECAY ** invisible_streak)
-                    track_x = float(np.clip(track_x + momentum, 0, analysis_w - crop_w_a))
-                else:
-                    # Długa niewidoczność → ZAMROŻENIE (nigdy nie dryfujemy na wieże/inne obiekty)
-                    last_velocity = 0.0
-
-            crop_x_a = int(max(0, min(track_x - crop_w_a // 2, analysis_w - crop_w_a)))
-            # Przelicz z przestrzeni analizy na przestrzeń źródłową
-            crop_x = int(round(crop_x_a * analysis_scale))
-            crop_x = int(max(0, min(crop_x, source_w - crop_w)))
-            crop_xs.append(crop_x)
-
-
-        print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames)} klatek z graczem w kadrze")
-
-        # KROK 4: Wygładzanie adaptacyjne — zachowuje ostre cięcia (snapy i jump-cuts > 180px)
-        SMOOTH_WIN = 5
-        raw_arr = np.array(crop_xs, dtype=float)
-        smoothed = np.zeros_like(raw_arr)
-
-        # Podziel na niezależne sekcje w miejscach gwałtownych przeskoków (jump-cut / Shunpo)
-        cut_indices = [0]
-        for idx in range(1, len(raw_arr)):
-            if abs(raw_arr[idx] - raw_arr[idx - 1]) > 180:
-                cut_indices.append(idx)
-        cut_indices.append(len(raw_arr))
-
-        for s_i in range(len(cut_indices) - 1):
-            s_start = cut_indices[s_i]
-            s_end = cut_indices[s_i + 1]
-            seg_len = s_end - s_start
-            for local_i in range(seg_len):
-                w_start = max(0, local_i - SMOOTH_WIN // 2)
-                w_end = min(seg_len, local_i + SMOOTH_WIN // 2 + 1)
-                smoothed[s_start + local_i] = raw_arr[s_start:s_end][w_start:w_end].mean()
-
-        # KROK 5: End Freeze — ostatnie 0.6s klipu (PROJECT_GUIDELINES.md) — brak zamrażania przed fragiem
-        end_freeze_sec = 0.6
-        if duration > end_freeze_sec * 1.5:
-            freeze_idx = int(len(smoothed) * (1.0 - end_freeze_sec / duration))
-            freeze_idx = max(0, min(freeze_idx, len(smoothed) - 1))
-            smoothed[freeze_idx:] = smoothed[freeze_idx]
-
-        smoothed = np.clip(smoothed, 0, source_w - crop_w).astype(int)
-
-        # KROK 6: Pełna gęsta trajektoria 80 punktów w FFmpeg dla maksymalnej precyzji
-        final_points = [(float(t_points[i]), int(smoothed[i])) for i in range(len(smoothed))]
+        final_points = simulate_player_trajectory(
+            frames_data=frames_data,
+            duration=duration,
+            source_w=source_w,
+            source_h=source_h,
+            crop_w=crop_w,
+            analysis_w=analysis_w,
+            analysis_h=analysis_h,
+        )
 
         print(f"   Wygenerowano {len(final_points)} płynnych punktów ścieżki kamery")
         return final_points

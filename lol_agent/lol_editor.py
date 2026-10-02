@@ -548,36 +548,31 @@ def _get_font_path() -> str:
     return ""
 
 
-def add_text_overlay(
-    video_path: str,
+def build_text_overlay_filters(
     hook_text: str,
     peak_moment: float,
     video_duration: float,
-    output_path: str,
     show_duration: float = 2.5
-) -> str:
+) -> list[str]:
     """
-    Nakłada tekst hook (np. 'TRIPLE KILL') na wideo przy peak_moment.
-    Styl: białe duże litery z czarnym obramowaniem, na dole ekranu.
+    Buduje filtry FFmpeg drawbox i drawtext dla tekstu hook (np. 'DOUBLE KILL - CLEAN OR LUCKY?').
     """
     if not hook_text:
-        import shutil as _sh
-        _sh.copy(video_path, output_path)
-        return output_path
+        return []
 
     font = _get_font_path()
     if not font:
         print("⚠️  Brak czcionki Impact — pomijam overlay tekstu")
-        import shutil as _sh
-        _sh.copy(video_path, output_path)
-        return output_path
+        return []
 
-    # Usuń emoji — FFmpeg drawtext ich nie obsługuje
     import re
     clean_text = re.sub(r'[^\x00-\x7F]+', '', hook_text).strip()
     clean_text = clean_text.replace("'", "")   # usuń apostrof — łamie FFmpeg drawtext parser w subprocess
     clean_text = clean_text.replace(":", "\\:")  # escape dwukropek (separator FFmpeg)
     clean_text = clean_text.replace("%", "%%")   # escape procent
+
+    if not clean_text:
+        return []
 
     if peak_moment <= 0.5:
         t_start = 0.0
@@ -585,7 +580,6 @@ def add_text_overlay(
         t_start = max(0.0, peak_moment - 0.2)
     t_end = min(video_duration, t_start + show_duration)
 
-    # Styl: duży Impact z czarnym obrysem i półprzezroczystym tłem dla maksymalnego CTR
     hook_color = "0xFFD700" if any(w in clean_text.upper() for w in ("SOLO", "PENTA", "CLUTCH", "1V1", "1%")) else "white"
     approx_w = min(max(int(len(clean_text) * 58) + 80, 480), 1020)
     drawbox = (
@@ -611,16 +605,36 @@ def add_text_overlay(
         f":shadowx=4:shadowy=4:shadowcolor=black@0.8"
         f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
+    return [drawbox, drawtext]
 
+
+def add_text_overlay(
+    video_path: str,
+    hook_text: str,
+    peak_moment: float,
+    video_duration: float,
+    output_path: str,
+    show_duration: float = 2.5
+) -> str:
+    """
+    Nakłada tekst hook (np. 'TRIPLE KILL') na wideo przy peak_moment.
+    Styl: białe duże litery z czarnym obramowaniem, na dole ekranu.
+    """
+    filters = build_text_overlay_filters(hook_text, peak_moment, video_duration, show_duration)
+    if not filters:
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
+        return output_path
+
+    vf_chain = ",".join(filters)
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
-        "-vf", f"{drawbox},{drawtext}",
+        "-vf", vf_chain,
         *get_optimal_encoder_args("high"),
         "-c:a", "copy",
         output_path
     ]
-    print(f"🗨️  Overlay tekstu: '{clean_text}' @ {t_start:.1f}s–{t_end:.1f}s")
     r = _run_ffmpeg(cmd, timeout=60.0, desc="add_text_overlay GPU")
     if r.returncode != 0:
         err = r.stderr.decode('utf-8', errors='replace')[:400]
@@ -628,7 +642,7 @@ def add_text_overlay(
         cmd_cpu = [
             "ffmpeg", "-y",
             "-i", video_path,
-            "-vf", f"{drawbox},{drawtext}",
+            "-vf", vf_chain,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-c:a", "copy",
             output_path
@@ -641,46 +655,29 @@ def add_text_overlay(
     return output_path
 
 
-def add_dynamic_captions(
-    video_path: str,
+def build_dynamic_captions_filters(
     peaks: list,
     trim_start: float,
     video_duration: float,
-    output_path: str,
     peak_moment: float = 0.0,
     slowmo_speed: float = 0.50,
     slowmo_duration: float = 1.5,
     action_type: str = "",
-) -> str:
+) -> list[str]:
     """
-    Nakłada wiele dynamicznych napisów — jeden na każdy wykryty kill peak.
-    peaks = [(t_abs, label), ...] gdzie t_abs to czas w ORYGINALNYM klipie.
-    trim_start = offset od którego zaczęto ciąć (do przeliczenia na czas w klipie).
-
-    Rozmiary fontów i kolory wg rangi killa:
-      DOUBLE KILL  → 80px, biały
-      TRIPLE KILL  → 100px, żółty
-      QUADRAKILL   → 115px, pomarańczowy
-      PENTAKILL    → 135px, czerwony + blink
-      SOLO BOLO    → 115px, karmazynowy (#DC2626)
+    Buduje filtry FFmpeg dla dynamicznych napisów kill-by-kill, HUD oraz progress bara.
     """
     if not peaks:
-        import shutil as _sh
-        _sh.copy(video_path, output_path)
-        return output_path
+        return []
 
     font = _get_font_path()
     if not font:
         print("⚠️  Brak czcionki — pomijam dynamiczne napisy")
-        import shutil as _sh
-        _sh.copy(video_path, output_path)
-        return output_path
+        return []
 
     import re
     font_safe = font.replace(chr(92), '/').replace(':', '\\:')
 
-    # Konfiguracja wizualna wg etykiety killa
-    # P3 FIX (2026-08-12): PENTAKILL/GODLIKE zmienione z 'red' na złoty LoL '0xFFD700'
     KILL_STYLES = {
         "DOUBLE KILL":   {"size": 80,  "color": "white",     "duration": 1.8},
         "TRIPLE KILL":   {"size": 100, "color": "yellow",    "duration": 2.0},
@@ -699,10 +696,7 @@ def add_dynamic_captions(
         "ONESHOT":       {"size": 110, "color": "0xFF9100",  "duration": 2.0},
     }
 
-    # Przelicz czas z oryginalnego klipu na czas w zmontowanym wideo
-    # Oblicza dokładną analityczną transformację czasu uwzględniając mini slow-mo (0.6x) i główny slow-mo (0.5x)
     def _adjust_t(t_orig: float) -> float:
-        """Map original-clip timestamp → rendered-video timestamp accounting for all slow-mo segments."""
         MINI_SPEED = 0.6
         MINI_DUR   = 1.0
         
@@ -712,11 +706,9 @@ def add_dynamic_captions(
         t3 = max(t2, min(peak_moment + slowmo_duration, video_duration))
         t4 = video_duration
 
-        # Buduj sekwencję segmentów czasu
         segments = []
         cursor = t0
         
-        # Wyciągnij intermediate_peaks z peaks
         int_peaks = [
             (tk if (tk < trim_start or trim_start == 0.0) else (tk - trim_start))
             for (tk, _) in (peaks or [])
@@ -743,7 +735,6 @@ def add_dynamic_captions(
         if t4 > t3 + 0.05:
             segments.append((t3, t4, 1.0))
 
-        # Oblicz zmapowany czas
         mapped_t = 0.0
         for s_start, s_end, speed in segments:
             if t_orig < s_start:
@@ -760,8 +751,6 @@ def add_dynamic_captions(
 
     caption_items = []
     if is_solo:
-        # W trybie Solo Bolo (1v1) istnieje tylko jeden cel pojedynku.
-        # Wszelkie multikille (DOUBLE/TRIPLE/PENTA) oraz liczniki KILL 2/3 są całkowicie eliminowane!
         if peaks:
             best_p = min(peaks, key=lambda p: abs((p[0] if p[0] < trim_start or trim_start == 0.0 else p[0] - trim_start) - peak_moment))
             t_abs, _ = best_p
@@ -780,14 +769,12 @@ def add_dynamic_captions(
                 })
     else:
         for (t_abs, label) in peaks:
-            # Obsłuż zarówno relatywne (0..dur) jak i absolutne (> trim_start) timestamps
             t_raw = t_abs if (t_abs < trim_start or trim_start == 0.0) else (t_abs - trim_start)
             t_in_clip = _adjust_t(t_raw)
             if t_in_clip < 0 or t_in_clip > video_duration:
                 continue
 
             style = KILL_STYLES.get(str(label).upper().strip(), {"size": 90, "color": "white", "duration": 2.0})
-            # Offset antycypacji 0.6s: synchronizacja z momentem animacji ciosu/zgonu w grze
             t_start = max(0.0, t_in_clip - 0.6)
             t_end   = min(video_duration, t_start + style["duration"])
 
@@ -802,7 +789,6 @@ def add_dynamic_captions(
                 "t_in_clip": t_in_clip,
             })
 
-    # Zabezpieczenie przed nakładaniem napisów: poprzedni napis znika natychmiast gdy pojawia się kolejny kill!
     caption_items.sort(key=lambda x: x["start"])
     for i in range(len(caption_items) - 1):
         next_start = caption_items[i+1]["start"]
@@ -818,7 +804,6 @@ def add_dynamic_captions(
         clean_label = item["label"]
         style = item["style"]
 
-        # ── A. Dynamic Kill Streak Counter HUD (np. [ 💀 1 / 3 ] -> [ 👑 TRIPLE ]) ──
         if total_kills >= 2 and not is_solo:
             is_final_kill = (idx == total_kills - 1)
             hud_text = f"KILL {idx + 1}/{total_kills}" if not is_final_kill else f"FINAL KILL {idx + 1}/{total_kills}"
@@ -853,7 +838,6 @@ def add_dynamic_captions(
             drawtext_filters.append(hud_dbox)
             drawtext_filters.append(hud_dt)
 
-        # ── B. Główny Kill Banner w strefie centralnej ────────────────────────
         box_h = style['size'] + 20
         approx_box_w = min(max(int(style['size'] * max(len(clean_label), 6) * 0.72), 400), 1020)
         box_x_expr = f"trunc((iw-{approx_box_w})/2)"
@@ -885,7 +869,6 @@ def add_dynamic_captions(
         drawtext_filters.append(dt)
         print(f"   🗨️  {clean_label} (kill {idx+1}/{total_kills}) @ {item.get('t_in_clip', t_start):.1f}s (start {t_start:.1f}s) — {style['size']}px")
 
-    # ── C. Neon Loop Progress Scrubber (Złoty pasek na dole pod zapętlenie) ─────
     progress_bar = (
         f"drawbox="
         f"x=0"
@@ -896,7 +879,34 @@ def add_dynamic_captions(
         f":t=fill"
     )
     drawtext_filters.append(progress_bar)
+    return drawtext_filters
 
+
+def add_dynamic_captions(
+    video_path: str,
+    peaks: list,
+    trim_start: float,
+    video_duration: float,
+    output_path: str,
+    peak_moment: float = 0.0,
+    slowmo_speed: float = 0.50,
+    slowmo_duration: float = 1.5,
+    action_type: str = "",
+) -> str:
+    """
+    Nakłada wiele dynamicznych napisów — jeden na każdy wykryty kill peak.
+    peaks = [(t_abs, label), ...] gdzie t_abs to czas w ORYGINALNYM klipie.
+    trim_start = offset od którego zaczęto ciąć (do przeliczenia na czas w klipie).
+    """
+    drawtext_filters = build_dynamic_captions_filters(
+        peaks=peaks,
+        trim_start=trim_start,
+        video_duration=video_duration,
+        peak_moment=peak_moment,
+        slowmo_speed=slowmo_speed,
+        slowmo_duration=slowmo_duration,
+        action_type=action_type,
+    )
     if not drawtext_filters:
         import shutil as _sh
         _sh.copy(video_path, output_path)
@@ -1225,23 +1235,21 @@ def prepend_freeze_hook(
     return output_path
 
 
-def add_cta_overlay(
-    video_path: str,
+def build_cta_overlay_filters(
     video_duration: float,
-    output_path: str,
     cta_text: str = "SUBSCRIBE FOR MORE!",
     show_duration: float = 2.0,
-) -> str:
+) -> list[str]:
     """
-    Nakłada wezwanie do subskrypcji (CTA) na ostatnie `show_duration` sekund wideo.
-    Tekst pojawia się u góry ekranu — poza zasłoniętą strefą UI YouTube Shorts.
+    Buduje filtry FFmpeg drawbox i drawtext dla wezwania do akcji (CTA).
     """
+    if not cta_text:
+        return []
+
     font = _get_font_path()
     if not font:
         print("⚠️  Brak czcionki — pomijam CTA overlay")
-        import shutil as _sh
-        _sh.copy(video_path, output_path)
-        return output_path
+        return []
 
     import re
     font_safe = font.replace(chr(92), '/').replace(':', '\\:')
@@ -1249,6 +1257,9 @@ def add_cta_overlay(
     clean_cta = clean_cta.replace("'", "\\\\'")
     clean_cta = clean_cta.replace(":", "\\:")
     clean_cta = clean_cta.replace("%", "%%")
+
+    if not clean_cta:
+        return []
 
     t_start = max(0.0, video_duration - show_duration)
     t_end   = video_duration
@@ -1283,17 +1294,36 @@ def add_cta_overlay(
         f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
         f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
+    return [cta_box, drawtext]
 
+
+def add_cta_overlay(
+    video_path: str,
+    video_duration: float,
+    output_path: str,
+    cta_text: str = "SUBSCRIBE FOR MORE!",
+    show_duration: float = 2.0,
+) -> str:
+    """
+    Nakłada wezwanie do subskrypcji (CTA) na ostatnie `show_duration` sekund wideo.
+    Tekst pojawia się u góry ekranu — poza zasłoniętą strefą UI YouTube Shorts.
+    """
+    filters = build_cta_overlay_filters(video_duration, cta_text, show_duration)
+    if not filters:
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
+        return output_path
+
+    vf_chain = ",".join(filters)
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
-        "-vf", f"{cta_box},{drawtext}",
+        "-vf", vf_chain,
         *get_optimal_encoder_args("draft"),
         "-movflags", "+faststart",
         "-c:a", "copy",
         output_path
     ]
-    print(f"🔔 CTA overlay: '{clean_cta}' @ ostatnie {show_duration:.1f}s (fsize={fsize}px)")
     r = _run_ffmpeg(cmd, timeout=90.0, desc="add_cta_overlay GPU")
     if r.returncode != 0:
         err = r.stderr.decode('utf-8', errors='replace')[:400]
@@ -1301,7 +1331,7 @@ def add_cta_overlay(
         cmd_cpu = [
             "ffmpeg", "-y",
             "-i", video_path,
-            "-vf", f"{cta_box},{drawtext}",
+            "-vf", vf_chain,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-movflags", "+faststart",
             "-c:a", "copy",
@@ -1310,6 +1340,96 @@ def add_cta_overlay(
         r_cpu = _run_ffmpeg(cmd_cpu, timeout=120.0, desc="add_cta_overlay CPU")
         if r_cpu.returncode != 0:
             print(f"⚠️  CTA overlay CPU fallback error (pomijam): {r_cpu.stderr.decode('utf-8', errors='replace')[:400]}")
+            import shutil as _sh
+            _sh.copy(video_path, output_path)
+    return output_path
+
+
+def apply_overlays_unified(
+    video_path: str,
+    output_path: str,
+    peaks: list = None,
+    trim_start: float = 0.0,
+    video_duration: float = 0.0,
+    peak_moment: float = 0.0,
+    slowmo_speed: float = 0.50,
+    slowmo_duration: float = 1.5,
+    action_type: str = "",
+    hook_text: str = "",
+    cta_text: str = "",
+    cta_duration: float = 1.8,
+) -> str:
+    """
+    Łączy dynamiczne napisy kill-by-kill, hook overlay oraz CTA overlay
+    w jeden zunifikowany filtergraph FFmpeg (Task B2).
+    Eliminuje 2 zbędne fazy re-enkodowania i 2 pliki tymczasowe na dysku.
+    """
+    filters = []
+
+    # 1. Dynamic captions (HUD + Kill Banners + Neon Scrubber)
+    if peaks:
+        cap_filters = build_dynamic_captions_filters(
+            peaks=peaks,
+            trim_start=trim_start,
+            video_duration=video_duration,
+            peak_moment=peak_moment,
+            slowmo_speed=slowmo_speed,
+            slowmo_duration=slowmo_duration,
+            action_type=action_type,
+        )
+        filters.extend(cap_filters)
+
+    # 2. Hook overlay (0.0s - 2.5s)
+    if hook_text and hook_text.strip():
+        hook_filters = build_text_overlay_filters(
+            hook_text=hook_text.strip(),
+            peak_moment=0.0,
+            video_duration=video_duration,
+            show_duration=2.5,
+        )
+        filters.extend(hook_filters)
+
+    # 3. CTA overlay (ostatnie cta_duration s)
+    if cta_text and cta_text.strip():
+        cta_filters = build_cta_overlay_filters(
+            video_duration=video_duration,
+            cta_text=cta_text.strip(),
+            show_duration=cta_duration,
+        )
+        filters.extend(cta_filters)
+
+    if not filters:
+        import shutil as _sh
+        _sh.copy(video_path, output_path)
+        return output_path
+
+    vf_chain = ",".join(filters)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-vf", vf_chain,
+        *get_optimal_encoder_args("high"),
+        "-movflags", "+faststart",
+        "-c:a", "copy",
+        output_path
+    ]
+    print(f"🎬 [Unified Overlays] Renderuję {len(filters)} filtrów w jednym przejściu FFmpeg...")
+    r = _run_ffmpeg(cmd, timeout=120.0, desc="apply_overlays_unified GPU")
+    if r.returncode != 0:
+        err = r.stderr.decode('utf-8', errors='replace')[:600]
+        print(f"⚠️  Unified overlays GPU error (fallback CPU): {err}")
+        cmd_cpu = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vf", vf_chain,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-movflags", "+faststart",
+            "-c:a", "copy",
+            output_path
+        ]
+        r_cpu = _run_ffmpeg(cmd_cpu, timeout=150.0, desc="apply_overlays_unified CPU")
+        if r_cpu.returncode != 0:
+            print(f"⚠️  Unified overlays CPU error (fallback copy): {r_cpu.stderr.decode('utf-8', errors='replace')[:600]}")
             import shutil as _sh
             _sh.copy(video_path, output_path)
     return output_path
@@ -1359,7 +1479,6 @@ def render_short(
     step1        = t("01_cut.mp4")
     step4        = t("04_processed.mp4")
     step5_music  = t("05_music.mp4")
-    step5_cta    = t("06_cta.mp4")
     step5        = os.path.join(_tmp, output_filename)
 
     # ── KROK 1: Wycięcie fragmentu / segmentów ────────────────────────────────
@@ -1562,31 +1681,7 @@ def render_short(
                 game_audio_path=step1, kill_peaks=_rel_kill_peaks,
                 music_volume=_music_vol, game_volume=_game_vol)
 
-    # KROK 5: Dynamiczne napisy kill-by-kill
-    _peaks = peaks or []
-    step5_captions = t("05_captions.mp4")
-    if _peaks:
-        print(f"\n[5/6] Dynamiczne napisy ({len(_peaks)} kill peaks)...")
-        add_dynamic_captions(
-            video_path    = step5_music,
-            peaks         = _peaks,
-            trim_start    = clip_start,
-            video_duration= final_duration,
-            output_path   = step5_captions,
-            peak_moment   = peak_moment,
-            slowmo_speed  = _slowmo_speed,
-            slowmo_duration = _slowmo_dur,
-            action_type   = action_type,
-        )
-    else:
-        # Brak OCR peaks — przeskocz ten krok
-        import shutil as _sh
-        _sh.copy(step5_music, step5_captions)
-        print("\n[5/6] Brak kill peaks — pomijam dynamiczne napisy")
-
-    # KROK 6: Hook overlay — pojawia sie na POCZATKU (pierwsze 2s) żeby zatrzymać scroll
-    # Badania: hook musi trafić przed pierwszą decyzją o swipe (0-2s)
-    # Kill captions (QUADRAKILL/PENTAKILL) sa dodawane w add_dynamic_captions (krok 5)
+    # ── KROK 5+6+7: Zunifikowany montaż nakładek (Unified Overlays — Task B2) ──
     _hook = hook_text.strip() if hook_text else ""
     if not _hook:
         try:
@@ -1594,12 +1689,7 @@ def render_short(
         except ImportError:
             from lol_config import ACTION_LABELS
         _hook = ACTION_LABELS.get(action_type, "").replace("🔥","").replace("⚡","").replace("💥","").replace("🎯","").replace("👑","").strip()
-    print(f"\n[6/7] Hook overlay: '{_hook}' @ 0.0s (zatrzymanie scrolla)...")
-    hook_show_start = 0.0   # od klatki 0.0s — kluczowe dla obniżenia wskaźnika Swiped Away (<15%)
-    add_text_overlay(step5_captions, _hook, hook_show_start, final_duration, step5_cta)
 
-    # KROK 7: Engagement Trigger CTA overlay (ostatnie 1.8s)
-    # Zamiast nudnego "Leave a like" -> prowokujące pytanie wymuszające komentarze i podbijające AVD przy zapętleniu
     act_lower = action_type.lower()
     if "penta" in act_lower:
         _end_cta = "CLEAN 1v5 OR TROLLING? RATE 1-10"
@@ -1611,8 +1701,22 @@ def render_short(
         _end_cta = "CALCULATED OR 100% LUCK? RATE 1-10"
     else:
         _end_cta = "CLEAN PLAY OR PURE LUCK? RATE 1-10"
-    print(f"\n[7/7] Engagement CTA overlay: '{_end_cta}'...")
-    add_cta_overlay(step5_cta, final_duration, step5, cta_text=_end_cta, show_duration=1.8)
+
+    print(f"\n[5/6] Zunifikowane nakładki (Dynamic Captions + Hook '{_hook[:25]}' + CTA '{_end_cta[:25]}')...")
+    apply_overlays_unified(
+        video_path=step5_music,
+        output_path=step5,
+        peaks=peaks or [],
+        trim_start=clip_start,
+        video_duration=final_duration,
+        peak_moment=peak_moment,
+        slowmo_speed=_slowmo_speed,
+        slowmo_duration=_slowmo_dur,
+        action_type=action_type,
+        hook_text=_hook,
+        cta_text=_end_cta,
+        cta_duration=1.8,
+    )
 
     # ── KROK 8: Freeze-frame hook na klatce 0.0s (P2 — Hook Frame Zero) ─────────
     # Wstawia 0.6s freeze pierwszej klatki z hookiem żeby zatrzymać scrollera.
@@ -1633,7 +1737,7 @@ def render_short(
             hook_text=_hook,
             output_path=step5_freeze,
             freeze_duration=0.6,
-            clean_source_path=step5_captions,
+            clean_source_path=step5_music,
         )
         if os.path.exists(step5_freeze) and os.path.getsize(step5_freeze) > 10_000:
             import shutil as _shfz
@@ -1657,7 +1761,7 @@ def render_short(
 
 
     # ── SPRZĄTANIE PLIKÓW TYMCZASOWYCH ──────────────────────────────────────────
-    temp_intermediates = [step1, step4, step5_music, step5_captions, step5_cta]
+    temp_intermediates = [step1, step4, step5_music]
     for temp_f in temp_intermediates:
         try:
             if temp_f and os.path.exists(temp_f) and temp_f != step5:

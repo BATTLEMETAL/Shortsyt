@@ -103,3 +103,159 @@ class TestDetectFightCenterX:
 
         yellow_x, fight_x, count = _detect_fight_center_x(frame, hud_y_cutoff=180, top_cutoff=30)
         assert yellow_x is None
+
+
+class TestPlayerTrajectoryTracking:
+    """
+    Task A3: Multi-champion camera validation for dash-heavy champions (Zed, Akali, LeBlanc, Katarina).
+    Tests kinematic tracking properties: SNAP_DELTA, DEADBAND, LERP, and Teleport guards.
+    """
+
+    def _make_hp_bar(self, cen_x: float, cen_y: float = 540.0, score: float = 500.0):
+        # Format: (cx, cy, cw, ch, score, cen_x, cen_y)
+        return [(int(cen_x - 30), int(cen_y - 10), 60, 20, score, float(cen_x), float(cen_y))]
+
+    def test_tracking_empty_frames_returns_center_fallback(self):
+        from lol_agent.smart_camera import simulate_player_trajectory
+        pts = simulate_player_trajectory([], duration=10.0, source_w=1920, crop_w=608)
+        assert len(pts) == 2
+        default_x = (1920 - 608) // 2
+        assert pts[0][1] == default_x
+        assert pts[1][1] == default_x
+
+    def test_tracking_zed_shadow_swap_instant_snap(self):
+        """
+        Zed W shadow swap: position instantaneously shifts by ~260px (> SNAP_DELTA 220px).
+        The camera must immediately snap without sluggish multi-frame lag.
+        """
+        from lol_agent.smart_camera import simulate_player_trajectory
+        frames = []
+        # First 10 frames: Zed at x=800
+        for _ in range(10):
+            frames.append(self._make_hp_bar(cen_x=800.0))
+        # Zed casts W2 to shadow at x=1060 (delta = 260px > SNAP_DELTA=220)
+        for _ in range(10):
+            frames.append(self._make_hp_bar(cen_x=1060.0))
+
+        pts = simulate_player_trajectory(frames, duration=10.0, source_w=1920, crop_w=608)
+        assert len(pts) == 20
+
+        # Before swap: camera centers around 800 - 304 = 496
+        x_before = pts[9][1]
+        assert 480 <= x_before <= 510
+
+        # At swap (frame 10): camera snapped to ~1060 - 304 = 756
+        x_after = pts[10][1]
+        assert 740 <= x_after <= 770
+
+        # Difference must reflect the snap
+        assert abs(x_after - x_before) > 200
+
+    def test_tracking_leblanc_distortion_and_snapback(self):
+        """
+        LeBlanc W distortion dash forward and return snapback.
+        Both transitions (> SNAP_DELTA) must snap cleanly.
+        """
+        from lol_agent.smart_camera import simulate_player_trajectory
+        frames = []
+        # Stationary at 960 (center)
+        for _ in range(8):
+            frames.append(self._make_hp_bar(cen_x=960.0))
+        # W forward to 1240 (delta = 280 > SNAP_DELTA)
+        for _ in range(8):
+            frames.append(self._make_hp_bar(cen_x=1240.0))
+        # W snapback to 960 (delta = 280 > SNAP_DELTA)
+        for _ in range(8):
+            frames.append(self._make_hp_bar(cen_x=960.0))
+
+        pts = simulate_player_trajectory(frames, duration=12.0, source_w=1920, crop_w=608)
+        assert len(pts) == 24
+
+        # Verify initial position
+        assert 640 <= pts[7][1] <= 670
+        # Verify forward snap
+        assert pts[8][1] >= 900
+        # Verify return snapback
+        assert 640 <= pts[16][1] <= 670
+
+    def test_tracking_akali_shroud_invisibility_streak(self):
+        """
+        Akali enters Twilight Shroud: HP bar is missing for 2 frames.
+        Camera must preserve momentum decay and freeze, NOT drift onto faraway objects or center.
+        """
+        from lol_agent.smart_camera import simulate_player_trajectory
+        frames = []
+        # Walking right at ~40px per frame
+        pos = 700.0
+        for _ in range(10):
+            frames.append(self._make_hp_bar(cen_x=pos))
+            pos += 40.0
+        last_known_pos = pos - 40.0
+
+        # Invisible in shroud for 2 frames
+        frames.append([])
+        frames.append([])
+
+        # Re-appears near shroud exit
+        frames.append(self._make_hp_bar(cen_x=last_known_pos + 60.0))
+
+        pts = simulate_player_trajectory(frames, duration=6.5, source_w=1920, crop_w=608)
+        assert len(pts) == 13
+        # Invisibility frames should stay smoothly near last known position
+        assert abs(pts[10][1] - pts[9][1]) < 80
+        assert abs(pts[11][1] - pts[10][1]) < 80
+
+    def test_tracking_deadband_micro_jitter_suppressed(self):
+        """
+        Micro-movements < DEADBAND_PX (30px) must be suppressed so camera does not jitter.
+        """
+        from lol_agent.smart_camera import simulate_player_trajectory
+        frames = []
+        base_x = 900.0
+        # Jitter +/- 10px
+        for i in range(15):
+            jitter = 10.0 if (i % 2 == 0) else -10.0
+            frames.append(self._make_hp_bar(cen_x=base_x + jitter))
+
+        pts = simulate_player_trajectory(frames, duration=7.5, source_w=1920, crop_w=608)
+        crops = [p[1] for p in pts]
+        # Camera crop variation should be minimal (< 10px across entire sequence)
+        max_diff = max(crops) - min(crops)
+        assert max_diff <= 10
+
+    def test_tracking_teleport_cutoff_protects_against_hud_leak(self):
+        """
+        Anomalous jump > MAX_TELEPORT_DELTA (480px) represents a false positive (HUD leak / tower)
+        and must be rejected rather than causing a disorienting camera warp.
+        """
+        from lol_agent.smart_camera import simulate_player_trajectory
+        frames = []
+        for _ in range(8):
+            frames.append(self._make_hp_bar(cen_x=700.0))
+        # Single frame glitch on right edge of screen (x=1600, delta = 900px > 480px)
+        frames.append(self._make_hp_bar(cen_x=1600.0))
+        # Player resumes at x=720.0
+        for _ in range(8):
+            frames.append(self._make_hp_bar(cen_x=720.0))
+
+        pts = simulate_player_trajectory(frames, duration=8.5, source_w=1920, crop_w=608)
+        # Glitch frame crop must NOT warp to right edge
+        glitch_crop = pts[8][1]
+        assert glitch_crop < 600  # Stays close to ~700 - 304 = 396
+
+    def test_tracking_outro_end_freeze(self):
+        """
+        Last 0.6s of clip must have stationary camera crop (outro freeze requirement).
+        """
+        from lol_agent.smart_camera import simulate_player_trajectory
+        frames = []
+        pos = 600.0
+        for _ in range(20):
+            frames.append(self._make_hp_bar(cen_x=pos))
+            pos += 30.0
+
+        # Duration 10s -> last 0.6s is 6% of frames (last ~2 frames frozen)
+        pts = simulate_player_trajectory(frames, duration=10.0, source_w=1920, crop_w=608)
+        last_crop = pts[-1][1]
+        second_last_crop = pts[-2][1]
+        assert last_crop == second_last_crop

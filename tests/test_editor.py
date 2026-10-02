@@ -114,3 +114,88 @@ def test_apply_editor_effects_script_generation(tmp_path, monkeypatch):
     script_content = captured_scripts[0]
     assert "setpts" in script_content
     assert "concat=n=" in script_content
+
+
+def test_build_text_overlay_filters():
+    from lol_agent.lol_editor import build_text_overlay_filters
+    filters = build_text_overlay_filters(
+        hook_text="DOUBLE KILL - CLEAN OR LUCKY?",
+        peak_moment=0.0,
+        video_duration=15.0,
+        show_duration=2.5,
+    )
+    assert len(filters) == 2
+    assert "drawbox" in filters[0]
+    assert "drawtext" in filters[1]
+    assert "DOUBLE KILL" in filters[1]
+
+
+def test_build_dynamic_captions_filters():
+    from lol_agent.lol_editor import build_dynamic_captions_filters
+    peaks = [(3.5, "DOUBLE KILL"), (7.2, "TRIPLE KILL")]
+    filters = build_dynamic_captions_filters(
+        peaks=peaks,
+        trim_start=0.0,
+        video_duration=15.0,
+        peak_moment=7.2,
+        action_type="outplay"
+    )
+    assert len(filters) >= 3  # HUD + Kill banners + Neon progress bar
+    vf_text = " ".join(filters)
+    assert "DOUBLE KILL" in vf_text
+    assert "TRIPLE KILL" in vf_text
+    assert "C89B3C" in vf_text  # Neon gold scrubber
+
+
+def test_build_cta_overlay_filters():
+    from lol_agent.lol_editor import build_cta_overlay_filters
+    filters = build_cta_overlay_filters(
+        video_duration=15.0,
+        cta_text="CLEAN OUTPLAY OR PURE LUCK? RATE 1-10",
+        show_duration=1.8,
+    )
+    assert len(filters) == 2
+    assert "drawbox" in filters[0]
+    assert "drawtext" in filters[1]
+    assert "RATE 1-10" in filters[1]
+
+
+def test_apply_overlays_unified_single_ffmpeg_invocation(tmp_path, monkeypatch):
+    """Task B2: verifies that dynamic captions, hook overlay, and CTA overlay execute in a single FFmpeg pass."""
+    from lol_agent.lol_editor import apply_overlays_unified
+
+    dummy_in = tmp_path / "dummy_in.mp4"
+    dummy_in.write_text("dummy")
+    dummy_out = tmp_path / "dummy_out.mp4"
+
+    ffmpeg_calls = []
+
+    def mock_run_ffmpeg(cmd, timeout=120.0, desc=""):
+        ffmpeg_calls.append((cmd, desc))
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr("lol_agent.lol_editor._run_ffmpeg", mock_run_ffmpeg)
+
+    res = apply_overlays_unified(
+        video_path=str(dummy_in),
+        output_path=str(dummy_out),
+        peaks=[(2.0, "DOUBLE KILL"), (5.0, "TRIPLE KILL")],
+        trim_start=0.0,
+        video_duration=15.0,
+        peak_moment=5.0,
+        hook_text="CAN HE SURVIVE THIS?",
+        cta_text="RATE 1-10",
+        cta_duration=1.8,
+    )
+
+    assert res == str(dummy_out)
+    # Gwarancja Task B2: dokładnie 1 wywołanie FFmpeg zamiast 3 osobnych
+    assert len(ffmpeg_calls) == 1
+    cmd, desc = ffmpeg_calls[0]
+    assert "apply_overlays_unified" in desc
+    vf_idx = cmd.index("-vf")
+    vf_arg = cmd[vf_idx + 1]
+    assert "DOUBLE KILL" in vf_arg
+    assert "TRIPLE KILL" in vf_arg
+    assert "CAN HE SURVIVE THIS?" in vf_arg
+    assert "RATE 1-10" in vf_arg
