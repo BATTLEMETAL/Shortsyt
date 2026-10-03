@@ -30,6 +30,6 @@ echo.
 set PYTHONPATH=%~dp0..\..
 set PYTHONIOENCODING=utf-8
 
-..\..\venv313\Scripts\python.exe -m uvicorn lol_agent.api.main:app --host 0.0.0.0 --port 8765 --reload
+"%~dp0..\..\venv313\Scripts\python.exe" -m uvicorn lol_agent.api.main:app --host 0.0.0.0 --port 8765 --reload
 
 pause
