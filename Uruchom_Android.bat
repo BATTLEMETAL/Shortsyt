@@ -61,7 +61,18 @@ goto end
 
 :start_expo
 echo.
+echo Konfigurowanie tunelowania portow USB (adb reverse)...
+if exist "%ADB_EXE%" (
+    "%ADB_EXE%" reverse tcp:8081 tcp:8081
+    "%ADB_EXE%" reverse tcp:8765 tcp:8765
+) else (
+    adb reverse tcp:8081 tcp:8081 >nul 2>&1
+    adb reverse tcp:8765 tcp:8765 >nul 2>&1
+)
+echo.
 echo Uruchamianie Expo Metro Bundler...
+echo (Wskazowka: po starcie wcisnij 'a' w terminalu, aby otworzyc aplikacje na podlaczonym telefonie)
+echo.
 cd /d "%~dp0shortsyt-app"
 npx expo start
 goto end
