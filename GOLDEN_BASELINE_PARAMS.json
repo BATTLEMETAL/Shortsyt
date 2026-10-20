@@ -1,0 +1,193 @@
+{
+  "_meta": {
+    "snapshot_name": "GOLDEN_BASELINE_DWANNELLENGA_46K",
+    "timestamp": "2026-10-06T09:18:00+02:00",
+    "description": "Nienaruszalna kopia roboczych, produkcyjnych parametrów Shortsyt przed rozbudową bazy wiedzy o grze (LoL Knowledge Base). Wersja odpowiedzialna za 45.8k wyświetleń i 112-135% retencji.",
+    "production_channel": "Dwannellenga (@dwannellenga471)",
+    "channel_id": "UCJ5VuQ8jOhkz5TZpDB0Rggg",
+    "verified_metrics": {
+      "views_28d": 45840,
+      "watch_hours_28d": 108.0,
+      "retention_range": "112.1% - 135.5%",
+      "published_shorts_count": 48
+    }
+  },
+  "smart_camera_kinematics": {
+    "source_resolution": [1920, 1080],
+    "target_crop": [608, 1080],
+    "deadband_px": 30.0,
+    "lerp_alpha": 0.45,
+    "max_pan_px": 80.0,
+    "snap_delta": 280.0,
+    "smooth_win": 5,
+    "momentum_frames": 3,
+    "momentum_decay": 0.6,
+    "end_freeze_sec": 0.6,
+    "notch_merge_dy_max": 4,
+    "notch_merge_dx_max": 15,
+    "hp_bar_geometry": {
+      "min_width": 18,
+      "max_width": 150,
+      "min_height": 5,
+      "max_height": 18,
+      "aspect_ratio_min": 2.0,
+      "aspect_ratio_max": 12.0,
+      "min_area": 45
+    },
+    "hp_color_masks": {
+      "standard_green": "((g > 115) & (r < 110) & (b < 100) & ((g - r) > 35) & ((g - b) > 35))",
+      "colorblind_gold": "((r > 175) & (g > 140) & (b < 95) & ((r - b) > 80) & ((g - b) > 50))"
+    },
+    "exclusion_zones_1080p": {
+      "kda_scoreboard": "y: 0-95, x: 680-1240",
+      "abilities_hud": "y > 864",
+      "minimap_and_items": "y > 626 & x > 1459",
+      "portrait_and_chat": "y > 670 & x < 345",
+      "ally_portraits_hud": "y: 0-450, x > 1540",
+      "side_watermark_margins": "x < 45 or x > 1740"
+    }
+  },
+  "active_tuning_config": {
+    "pacing": "balanced",
+    "zoom_aggression": 1.18,
+    "zoomAggression": 1.20,
+    "slowmoDuration": 1.4,
+    "musicBalance": 0.55,
+    "gameSoundBalance": 0.85,
+    "titleTone": "narrative",
+    "userNotes": "Balanced (14-17s): optymalny buildup 1.8s, zoom 1.20x, zwolnienie 1.4s."
+  },
+  "pacing_presets": {
+    "aggressive": {
+      "id": "aggressive",
+      "name": "Ekstremalnie Szybkie 🔥",
+      "buildup_sec": 0.8,
+      "outro_sec": 1.5,
+      "target_min_dur": 10.0,
+      "target_max_dur": 13.0,
+      "zoom_aggression": 1.30,
+      "slowmo_duration": 0.9,
+      "music_balance": 0.60,
+      "game_sound_balance": 0.85,
+      "title_tone": "hype"
+    },
+    "balanced": {
+      "id": "balanced",
+      "name": "Zbalansowane (Dwannellenga v25) ✅",
+      "buildup_sec": 1.8,
+      "outro_sec": 2.2,
+      "target_min_dur": 14.0,
+      "target_max_dur": 17.0,
+      "zoom_aggression": 1.20,
+      "slowmo_duration": 1.4,
+      "music_balance": 0.55,
+      "game_sound_balance": 0.85,
+      "title_tone": "narrative"
+    },
+    "cinematic": {
+      "id": "cinematic",
+      "name": "Cinematic Outplay 🎬",
+      "buildup_sec": 4.0,
+      "outro_sec": 3.5,
+      "target_min_dur": 20.0,
+      "target_max_dur": 25.0,
+      "zoom_aggression": 1.10,
+      "slowmo_duration": 2.2,
+      "music_balance": 0.45,
+      "game_sound_balance": 0.90,
+      "title_tone": "narrative"
+    }
+  },
+  "action_timing_rules": {
+    "solo_bolo": {
+      "clip_start": 0.0,
+      "clip_duration": 15.0,
+      "jump_cuts_enabled": false,
+      "badge_color": "#DC2626",
+      "badge_name": "Crimson Red"
+    },
+    "multikills": {
+      "min_lead_in_sec": 4.5,
+      "lead_in_formula": "max(4.5, buildup * 4.0)",
+      "outro_min_sec": 1.5,
+      "outro_target_sec": 2.0
+    },
+    "slow_motion": {
+      "slowmo_factor_config": 0.5,
+      "slowmo_factor_guidelines": 0.7,
+      "smooth_slowmo_minterpolate": true
+    }
+  },
+  "render_and_hardware": {
+    "output_width": 1080,
+    "output_height": 1920,
+    "output_fps": 60,
+    "short_max_duration": 50,
+    "video_codec": "h264_nvenc",
+    "audio_codec": "aac",
+    "render_time_target_s": "12-15s per short"
+  },
+  "ai_and_vision_baseline": {
+    "gemini_model": "gemini-flash-lite-latest",
+    "gemini_fallback_models": [
+      "gemini-flash-lite-latest",
+      "gemini-2.5-flash",
+      "gemini-flash-latest",
+      "gemini-3.7-flash",
+      "gemini-3.5-flash"
+    ],
+    "champion_whitelist_v1": [
+      "Katarina",
+      "Ahri",
+      "Zed",
+      "Yasuo",
+      "Jinx",
+      "Thresh",
+      "Lux",
+      "Ezreal",
+      "Akali",
+      "Yone"
+    ],
+    "action_labels": {
+      "pentakill": "PENTAKILL 🔥",
+      "quadrakill": "QUADRA KILL ⚡",
+      "triple": "TRIPLE KILL 💥",
+      "double": "DOUBLE KILL",
+      "outplay": "OUTPLAY 🎯",
+      "solo_bolo": "SOLO BOLO 👑",
+      "clutch": "CLUTCH PLAY 👑",
+      "escape": "IMPOSSIBLE ESCAPE 🚀",
+      "oneshot": "ONE SHOT 💀",
+      "baron": "BARON STEAL 🐉",
+      "dragon": "DRAGON STEAL"
+    }
+  },
+  "youtube_publishing_baseline": {
+    "channel_name": "Dwannellenga",
+    "category_id": "20",
+    "privacy": "public",
+    "title_format": "<hook> #Shorts #LeagueOfLegends #LoL",
+    "title_max_len": 96,
+    "base_tags": [
+      "league of legends",
+      "lol",
+      "katarina",
+      "pentakill",
+      "katarina pentakill",
+      "lol pentakill",
+      "lol shorts",
+      "league shorts",
+      "lol gameplay",
+      "lol highlights",
+      "league of legends highlights",
+      "lol montage",
+      "lol outplay",
+      "best plays lol",
+      "gaming shorts",
+      "#shorts",
+      "#leagueoflegends",
+      "#katarina",
+      "#pentakill"
+    ]
+  }
+}
