@@ -551,7 +551,6 @@
         <a href="#telemetry">Live Telemetry</a>
         <a href="#features">Features</a>
         <a href="#tiktok">TikTok API</a>
-        <a href="#reviewer-sandbox">Reviewer Access</a>
         <a href="#screenshots">Screenshots</a>
         <a href="privacy.html">Privacy Policy</a>
         <a href="terms.html">Terms of Service</a>
@@ -579,7 +578,6 @@
       <div class="hero-btns">
         <a href="#telemetry" class="btn-primary">View Real-Time Telemetry &darr;</a>
         <a href="privacy.html" class="btn-secondary">Privacy & Data Policy</a>
-        <a href="#reviewer-sandbox" class="btn-secondary" style="border-color: var(--gold); color: var(--gold-light);">Reviewer Test Account &rarr;</a>
       </div>
 
       <!-- App Interface Mockup -->
@@ -817,73 +815,9 @@
             <div style="display: flex; gap: 12px; margin-top: 20px;">
               <a href="privacy.html" style="font-size: 0.8rem; color: var(--gold); text-decoration: underline;">Read Full Privacy Policy &rarr;</a>
               <a href="terms.html" style="font-size: 0.8rem; color: var(--gold); text-decoration: underline;">Read Terms of Service &rarr;</a>
-              <a href="#reviewer-sandbox" style="font-size: 0.8rem; color: var(--cyan); text-decoration: underline;">Reviewer Credentials &rarr;</a>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </section>
-
-  
-  <!-- ── REVIEWER TEST ACCOUNT & DEMO SANDBOX ── -->
-  <section class="section" id="reviewer-sandbox" style="border-top: 1px solid var(--border); background: linear-gradient(180deg, rgba(200, 155, 60, 0.05) 0%, rgba(10, 14, 26, 0.95) 100%);">
-    <div class="container">
-      <div class="section-title">
-        <div class="hero-pill" style="margin-bottom: 12px; background: rgba(200, 155, 60, 0.15); border-color: rgba(200, 155, 60, 0.4); color: var(--gold-light);">
-          <span class="hero-pill-dot" style="background: var(--gold);"></span>
-          <span>TikTok App Reviewer Sandbox &amp; Compliance Hub</span>
-        </div>
-        <h2>Reviewer Test Account &amp; Live Verification</h2>
-        <p>Shortsyt Studio is an externally-facing, fully developed application. For TikTok App Reviewers inspecting OAuth 2.0 PKCE and API integration, test credentials and sandbox details are provided below.</p>
-      </div>
-
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; max-width: 960px; margin: 0 auto;">
-        <!-- Test Account Credentials Card -->
-        <div class="card" style="border-color: rgba(200, 155, 60, 0.35); position: relative; overflow: hidden;">
-          <div style="position: absolute; top: 0; right: 0; background: var(--gold); color: #0A0E1A; font-weight: 800; font-size: 0.7rem; padding: 4px 12px; border-bottom-left-radius: 8px;">ACTIVE TEST ACCOUNT</div>
-          <div class="card-icon">&#128273;</div>
-          <h3>Tester Login Credentials</h3>
-          <p style="margin-bottom: 16px; font-size: 0.9rem; color: var(--text-muted);">
-            Dedicated credentials for TikTok Reviewers to verify authentication and content publishing permissions:
-          </p>
-          <div style="background: #080B14; padding: 14px 18px; border-radius: 8px; border: 1px solid var(--border); font-family: monospace; font-size: 0.9rem; line-height: 1.8;">
-            <div><span style="color: var(--text-muted);">Environment:</span> <span style="color: var(--cyan);">Shortsyt Studio v25 Sandbox</span></div>
-            <div><span style="color: var(--text-muted);">Test Account:</span> <span style="color: #FFF; font-weight: bold;">tester@shortsyt.salon-prettywoman.pl</span></div>
-            <div><span style="color: var(--text-muted);">Demo Password:</span> <span style="color: var(--gold); font-weight: bold;">ShortsytTester2026!</span></div>
-            <div><span style="color: var(--text-muted);">OAuth Client Key:</span> <span style="color: var(--pink);">awszg03b9v3j8171</span></div>
-            <div><span style="color: var(--text-muted);">App ID:</span> <span style="color: var(--cyan);">7698664436617365511</span></div>
-          </div>
-          <div style="margin-top: 14px; font-size: 0.8rem; color: var(--text-muted);">
-            Use these credentials to test OAuth consent, token exchange, and direct video publishing flow.
-          </div>
-        </div>
-
-        <!-- Architecture & Flow Card -->
-        <div class="card" style="border-color: rgba(0, 242, 254, 0.25);">
-          <div class="card-icon">&#9881;</div>
-          <h3>Architecture &amp; OAuth 2.0 PKCE</h3>
-          <p style="margin-bottom: 12px; font-size: 0.9rem; color: var(--text-muted);">
-            Shortsyt Studio operates as a local creator client with PKCE security:
-          </p>
-          <ul style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.8; margin-left: 18px; margin-bottom: 16px;">
-            <li><strong>PKCE Local Redirect:</strong> <code>http://localhost:8989/callback</code></li>
-            <li><strong>Public Web Callback:</strong> <a href="callback.html" style="color: var(--cyan);">https://shortsyt.salon-prettywoman.pl/callback.html</a></li>
-            <li><strong>Requested Scopes:</strong> <code>user.info.basic</code>, <code>video.upload</code>, <code>video.publish</code></li>
-            <li><strong>Zero Login Barrier:</strong> Website documentation, telemetry, Terms, and Privacy Policy are completely public.</li>
-          </ul>
-          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <a href="callback.html" class="btn-secondary" style="font-size: 0.8rem; padding: 8px 14px;">Open OAuth Callback Inspector &rarr;</a>
-          </div>
-        </div>
-      </div>
-
-      <!-- Public Accessibility Assurance -->
-      <div style="text-align: center; margin-top: 30px; font-size: 0.85rem; color: var(--text-muted);">
-        All legal policies are fully open and publicly accessible: 
-        <a href="privacy.html" style="color: var(--gold); margin: 0 8px; text-decoration: underline;">Privacy Policy</a> &bull; 
-        <a href="terms.html" style="color: var(--gold); margin: 0 8px; text-decoration: underline;">Terms of Service</a> &bull; 
-        <a href="mailto:dwannellenga@gmail.com" style="color: var(--gold); margin: 0 8px; text-decoration: underline;">Developer Contact</a>
       </div>
     </div>
   </section>
@@ -978,7 +912,6 @@
             <li><a href="privacy.html">Privacy Policy</a></li>
             <li><a href="terms.html">Terms of Service</a></li>
             <li><a href="callback.html">OAuth Callback</a></li>
-            <li><a href="#reviewer-sandbox">Reviewer Sandbox</a></li>
             <li><a href="https://www.tiktok.com/legal/page/global/terms-of-service/en" target="_blank">TikTok Terms</a></li>
           </ul>
         </div>

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TikTok OAuth Authorization &amp; Reviewer Sandbox — Shortsyt Studio</title>
-  <meta name="description" content="TikTok OAuth 2.0 Callback and Developer Reviewer Sandbox for Shortsyt Studio.">
+  <title>TikTok OAuth Authorization — Shortsyt Studio</title>
+  <meta name="description" content="TikTok OAuth 2.0 PKCE Callback Endpoint for Shortsyt Studio.">
   <link rel="icon" type="image/png" sizes="1024x1024" href="icon.png?v=20261027_2">
   <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=20261027_2">
   <link rel="shortcut icon" href="favicon.ico?v=20261027_2">
@@ -20,8 +20,6 @@
       --text-muted: #8B8FA8;
       --text-white: #FFFFFF;
       --cyan: #00F2FE;
-      --pink: #FE2C55;
-      --green: #22C55E;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -39,7 +37,7 @@
       padding: 36px;
       border-radius: 16px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-      max-width: 600px;
+      max-width: 540px;
       width: 100%;
       border: 1px solid var(--border);
       text-align: center;
@@ -57,21 +55,11 @@
       border-radius: 10px;
       border: 1px solid var(--gold);
     }
-    h1 { font-size: 1.6rem; margin-bottom: 8px; color: var(--text-white); }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; color: var(--text-white); }
     .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px; }
     .status { margin-top: 20px; padding: 14px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; }
-    .success { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid #22c55e; }
     .info { background: rgba(0, 242, 254, 0.1); color: var(--cyan); border: 1px solid rgba(0, 242, 254, 0.3); }
-    .sandbox-box {
-      margin-top: 24px;
-      padding: 16px;
-      background: #080B14;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      text-align: left;
-      font-size: 0.85rem;
-      line-height: 1.8;
-    }
+    .success { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid #22c55e; }
     .code-box {
       margin-top: 16px;
       padding: 12px;
@@ -83,6 +71,18 @@
       font-size: 0.9rem;
       word-break: break-all;
     }
+    .endpoint-details {
+      margin-top: 24px;
+      padding: 16px;
+      background: #080B14;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      text-align: left;
+      font-size: 0.85rem;
+      line-height: 1.8;
+      color: var(--text-muted);
+    }
+    .endpoint-details strong { color: var(--text-white); }
     .btn {
       display: inline-block;
       margin-top: 24px;
@@ -113,26 +113,24 @@
     </div>
 
     <h1>TikTok OAuth 2.0 PKCE Callback</h1>
-    <div class="subtitle">Secure authentication endpoint for TikTok Content Posting API v2.</div>
+    <div class="subtitle">Authorization receiver endpoint for Shortsyt Studio desktop client.</div>
 
-    <div id="status" class="status info">Listening for authorization code...</div>
+    <div id="status" class="status info">Ready to receive authorization code</div>
     <div id="codeDisplay" class="code-box" style="display: none;"></div>
 
-    <div class="sandbox-box">
-      <div style="font-weight: 700; color: var(--gold); margin-bottom: 6px;">TikTok Reviewer Sandbox Specifications:</div>
+    <div class="endpoint-details">
+      <div><strong>Application:</strong> Shortsyt Studio (Desktop v25)</div>
       <div><strong>App ID:</strong> 7698664436617365511</div>
       <div><strong>Client Key:</strong> awszg03b9v3j8171</div>
-      <div><strong>Flow:</strong> Authorization Code with PKCE (RFC 7636)</div>
-      <div><strong>Scopes:</strong> <code>user.info.basic</code>, <code>video.upload</code>, <code>video.publish</code></div>
-      <div><strong>Test Account:</strong> tester@shortsyt.salon-prettywoman.pl</div>
+      <div><strong>Protocol:</strong> Authorization Code with PKCE</div>
+      <div><strong>Integration:</strong> TikTok Content Posting API v2</div>
     </div>
 
-    <a href="index.html" class="btn">&larr; Return to Shortsyt Homepage</a>
+    <a href="index.html" class="btn">&larr; Return to Homepage</a>
 
     <div class="links">
       <a href="privacy.html">Privacy Policy</a>
       <a href="terms.html">Terms of Service</a>
-      <a href="index.html#reviewer-sandbox">Reviewer Credentials</a>
     </div>
   </div>
 
@@ -157,12 +155,12 @@
       codeDisplay.textContent = 'Code: ' + code;
       codeDisplay.style.display = 'block';
 
-      // Relay to local desktop daemon if running
+      // Relay to local desktop client
       fetch('http://localhost:8989/callback' + window.location.search, { mode: 'no-cors' })
         .then(() => {})
         .catch(() => {});
     } else {
-      status.textContent = 'ℹ️ Standby: Ready to receive TikTok OAuth 2.0 PKCE redirects.';
+      status.textContent = 'ℹ️ Standby: Waiting for TikTok OAuth redirect.';
     }
   </script>
 </body>
