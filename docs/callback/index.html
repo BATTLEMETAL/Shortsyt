@@ -123,7 +123,7 @@
       status.textContent = '✅ Authorization successful! Returning to Shortsyt Studio...';
 
       // Relay authorization code to local desktop app
-      fetch('http://localhost:8989/callback' + window.location.search, { mode: 'no-cors' })
+      fetch('http://localhost:8180/callback' + window.location.search, { mode: 'no-cors' })
         .then(() => {
           setTimeout(() => {
             status.textContent = '✅ Connected! You can now close this tab and return to the application.';
