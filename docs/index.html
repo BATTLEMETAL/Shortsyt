@@ -8,10 +8,10 @@
   <meta name="theme-color" content="#0A0E1A">
 
   <!-- Favicon & App Icons (100% consistent with TikTok Basic Info 1024x1024 requirement) -->
-  <link rel="icon" type="image/png" sizes="1024x1024" href="icon.png">
-  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
-  <link rel="shortcut icon" href="favicon.ico">
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="1024x1024" href="icon.png?v=3">
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=3">
+  <link rel="shortcut icon" href="favicon.ico?v=3">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=3">
 
   <!-- OpenGraph -->
   <meta property="og:title" content="Shortsyt Studio — Autonomous Gaming Short-Form Platform">
@@ -73,13 +73,17 @@
       letter-spacing: -0.5px;
     }
     .brand img {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      border: 1px solid var(--gold);
-      box-shadow: 0 0 15px rgba(200, 155, 60, 0.3);
+      width: 42px;
+      height: 42px;
+      border-radius: 11px;
       display: block;
       object-fit: cover;
+      filter: drop-shadow(0 4px 14px rgba(0, 242, 254, 0.28));
+      transition: transform 0.2s ease, filter 0.2s ease;
+    }
+    .brand img:hover {
+      transform: scale(1.05);
+      filter: drop-shadow(0 6px 20px rgba(0, 242, 254, 0.45));
     }
     .brand-badge {
       font-size: 0.65rem;
@@ -115,9 +119,10 @@
 
     /* Hero */
     .hero {
-      padding: 70px 0 50px;
+      padding: 85px 0 55px;
       text-align: center;
       position: relative;
+      background: radial-gradient(circle at 50% 15%, rgba(0, 242, 254, 0.08) 0%, rgba(254, 44, 85, 0.04) 35%, transparent 70%);
     }
     .hero-pill {
       display: inline-flex;
