@@ -3,64 +3,136 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Policy — Shortsyt</title>
+  <title>Privacy Policy — Shortsyt Studio</title>
+  <meta name="description" content="Privacy Policy for Shortsyt Studio - League of Legends Shorts Automation.">
+  <meta name="theme-color" content="#0A0E1A">
+
+  <link rel="icon" type="image/png" href="../icon.png">
+  <link rel="shortcut icon" href="../favicon.ico">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 60px auto; padding: 0 20px; color: #111; line-height: 1.7; }
-    h1 { font-size: 2rem; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-    h2 { font-size: 1.2rem; margin-top: 2rem; }
-    a { color: #0066cc; }
-    .highlight { background: #f0f7ff; padding: 12px 16px; border-left: 4px solid #0066cc; border-radius: 4px; }
+    :root {
+      --bg: #0A0E1A;
+      --card-bg: #121624;
+      --border: #1E2438;
+      --gold: #C89B3C;
+      --gold-light: #E5C269;
+      --text: #E4D6B5;
+      --text-muted: #8B8FA8;
+      --text-white: #FFFFFF;
+      --cyan: #00F2FE;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.7;
+      padding: 0 20px;
+    }
+    .container { max-width: 820px; margin: 0 auto; padding: 40px 0 80px; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 36px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-white);
+      font-weight: 800;
+      font-size: 1.2rem;
+    }
+    .brand img {
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      border: 1px solid var(--gold);
+    }
+    .back-link {
+      color: var(--gold);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .back-link:hover { text-decoration: underline; }
+
+    h1 { font-size: 2.2rem; color: var(--text-white); margin-bottom: 8px; font-weight: 900; }
+    .date { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 24px; }
+    .highlight {
+      background: rgba(200, 155, 60, 0.1);
+      border-left: 4px solid var(--gold);
+      padding: 16px 20px;
+      border-radius: 8px;
+      margin-bottom: 32px;
+      color: var(--text-white);
+      font-size: 0.95rem;
+    }
+
+    h2 { font-size: 1.25rem; color: var(--gold-light); margin: 32px 0 12px; font-weight: 700; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    p { margin-bottom: 14px; font-size: 0.95rem; color: var(--text-muted); }
+    ul { margin: 12px 0 20px 24px; color: var(--text-muted); font-size: 0.95rem; }
+    li { margin-bottom: 8px; }
+    code { font-family: monospace; background: var(--card-bg); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; color: var(--cyan); }
+    a { color: var(--gold); }
   </style>
 </head>
 <body>
-  <h1>Privacy Policy — Shortsyt</h1>
-  <p><strong>Effective date:</strong> October 20, 2026</p>
+  <div class="container">
+    <header>
+      <a href="/Shortsyt/" class="brand">
+        <img src="../icon.png" alt="Shortsyt Studio">
+        <span>Shortsyt Studio</span>
+      </a>
+      <a href="/Shortsyt/" class="back-link">&larr; Back to Homepage</a>
+    </header>
 
-  <div class="highlight">
-    <strong>Summary:</strong> Shortsyt does not collect any personal data. All data stays on your device.
+    <h1>Privacy Policy</h1>
+    <div class="date">Effective Date: October 20, 2026 (Updated: October 27, 2026)</div>
+
+    <div class="highlight">
+      <strong>Core Principle:</strong> Shortsyt Studio is a 100% desktop application that processes and renders video strictly on your local machine. We do not operate external tracking servers and we never collect, store, or sell your personal data.
+    </div>
+
+    <h2>1. Overview</h2>
+    <p>Shortsyt Studio is an autonomous desktop video creation tool designed for gaming content creators. This Privacy Policy details how data is accessed, handled, and protected when using the desktop application and its integrations.</p>
+
+    <h2>2. Data We Do Not Collect</h2>
+    <p>Shortsyt does <strong>not</strong> collect personal information. Specifically:</p>
+    <ul>
+      <li>No user account credentials or passwords are sent to external servers.</li>
+      <li>No tracking cookies, pixels, or third-party behavioral analytics are embedded in the app.</li>
+      <li>No personal data or video files are sold, rented, or distributed to any third party.</li>
+    </ul>
+
+    <h2>3. TikTok Content Posting API Integration</h2>
+    <p>When you connect your TikTok account to Shortsyt Studio via OAuth 2.0 PKCE:</p>
+    <ul>
+      <li><strong>Local Token Storage:</strong> Access tokens and refresh tokens are stored exclusively on your local computer in your local project workspace. They are never transmitted to any third-party or developer-owned backend.</li>
+      <li><strong>Requested Scopes:</strong> We request only <code>video.publish</code>, <code>video.upload</code> (to upload video chunks on your behalf), and <code>user.info.basic</code> (to verify your username/avatar in the local desktop UI).</li>
+      <li><strong>Immediate Revocation:</strong> You can disconnect and revoke access at any time via TikTok mobile app &gt; Settings &amp; Privacy &gt; Security &gt; Apps and Sessions &gt; Manage app permissions.</li>
+    </ul>
+
+    <h2>4. Video Processing & Media Files</h2>
+    <p>All video analysis (OCR, kill-feed detection) and FFmpeg 9:16 rendering happen locally on your PC. Rendered video files are uploaded directly from your machine to TikTok / YouTube / Meta servers over encrypted HTTPS connections.</p>
+
+    <h2>5. Compliance with Platform Guidelines</h2>
+    <p>Shortsyt operates in full accordance with the <a href="https://www.tiktok.com/legal/page/global/terms-of-service/en" target="_blank">TikTok Terms of Service</a> and <a href="https://www.tiktok.com/legal/page/global/community-guidelines/en" target="_blank">TikTok Community Guidelines</a>.</p>
+
+    <h2>6. Contact</h2>
+    <p>If you have any questions about this Privacy Policy or data security, please contact:</p>
+    <p><strong>Email:</strong> <a href="mailto:dwannellenga@gmail.com">dwannellenga@gmail.com</a><br>
+    <strong>Developer:</strong> Michał Zalewski</p>
+
+    <p style="margin-top: 40px;"><a href="/Shortsyt/">&larr; Return to Shortsyt Studio Homepage</a></p>
   </div>
-
-  <h2>1. Overview</h2>
-  <p>Shortsyt is a personal automation tool for publishing gaming highlight clips. This policy explains what data is handled and how.</p>
-
-  <h2>2. Data We Collect</h2>
-  <p>Shortsyt does <strong>not</strong> collect any personal data. Specifically:</p>
-  <ul>
-    <li>No user account data is stored on external servers</li>
-    <li>No analytics or tracking is performed</li>
-    <li>No data is sold or shared with third parties</li>
-    <li>No cookies are used</li>
-  </ul>
-
-  <h2>3. OAuth Tokens (TikTok API)</h2>
-  <p>When you authorize Shortsyt to access your TikTok account:</p>
-  <ul>
-    <li>OAuth tokens are stored <strong>locally</strong> on your device only</li>
-    <li>Only <code>video.publish</code> scope is requested — for uploading videos on your behalf</li>
-    <li>Only an anonymous <code>open_id</code> identifier is stored locally — no profile name, email, or personal information is accessed</li>
-    <li>Tokens can be revoked at any time via TikTok Settings → Security → Manage app permissions</li>
-  </ul>
-
-  <h2>4. Video Content</h2>
-  <ul>
-    <li>Gameplay footage is processed locally on your device using FFmpeg</li>
-    <li>Rendered clips are uploaded directly to your authorized TikTok account</li>
-    <li>No video content passes through Shortsyt servers (there are none)</li>
-  </ul>
-
-  <h2>5. TikTok API Compliance</h2>
-  <p>Shortsyt uses TikTok's Content Posting API solely to publish video content. We access only the minimum required data and do not store, share, or use TikTok user data beyond what is necessary for the upload operation.</p>
-
-  <h2>6. Your Rights</h2>
-  <p>You may revoke access at any time:</p>
-  <ul>
-    <li><strong>TikTok:</strong> Settings &amp; Privacy → Security → Apps and Sessions → Manage app permissions</li>
-    <li><strong>YouTube:</strong> <a href="https://myaccount.google.com/permissions">Google Account Permissions</a></li>
-  </ul>
-
-  <h2>7. Contact</h2>
-  <p>For privacy-related questions: <a href="mailto:dwannellenga@gmail.com">dwannellenga@gmail.com</a></p>
-
-  <p><a href="/Shortsyt/">&larr; Back to home</a></p>
 </body>
 </html>
