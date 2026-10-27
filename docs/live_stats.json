@@ -1,0 +1,52 @@
+{
+  "status": "ONLINE",
+  "service": "Shortsyt Studio Daemon",
+  "version": "2.5.0-desktop",
+  "last_updated": "2026-10-27T14:29:23.766925+00:00",
+  "total_views": 84749,
+  "total_engagement": 449,
+  "total_published_videos": 114,
+  "average_view_duration_pct": 96.4,
+  "hardware_acceleration": "NVIDIA NVENC H.264 / AV1",
+  "render_speed_multiplier": "8.4x realtime (< 12s per short)",
+  "active_platforms_count": 3,
+  "platforms": {
+    "youtube": {
+      "name": "YouTube Shorts",
+      "status": "Connected & Scheduling",
+      "views": 84095,
+      "videos_count": 50,
+      "share_pct": 99.2,
+      "engagement": 445,
+      "auto_thumbnails": true
+    },
+    "tiktok": {
+      "name": "TikTok Direct Post",
+      "status": "OAuth 2.0 PKCE Active",
+      "handle": "@dwannellenga",
+      "views": 0,
+      "videos_count": 2,
+      "engagement": 0,
+      "direct_post_enabled": true
+    },
+    "instagram": {
+      "name": "Instagram Reels",
+      "status": "Graph API Connected",
+      "handle": "@dwannellenga",
+      "views": 625,
+      "videos_count": 2,
+      "engagement": 4,
+      "auto_thumbnails": true
+    }
+  },
+  "scheduled_queue": [
+    {
+      "id": "instagram_1792789469897",
+      "platform": "instagram",
+      "scheduled_time": "Scheduled (Daily Peak 18:00)",
+      "caption_snippet": "Press R to spin to win 🌀\nDid I deserve that reset or was that pure luck?\n\n🔗 Więc...",
+      "has_thumbnail": true
+    }
+  ],
+  "recent_published": []
+}
