@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta name="tiktok-developers-site-verification" content="44Fphw7t2u0o7IeXwo5Yb0noKwMlD7Gy">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TikTok OAuth Authorization — Shortsyt Studio</title>
-  <meta name="description" content="TikTok OAuth 2.0 PKCE Callback Endpoint for Shortsyt Studio.">
+  <title>TikTok Authorization — Shortsyt Studio</title>
+  <meta name="description" content="TikTok OAuth 2.0 PKCE Authorization Endpoint for Shortsyt Studio.">
   <link rel="icon" type="image/png" sizes="1024x1024" href="icon.png?v=20261027_2">
   <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=20261027_2">
   <link rel="shortcut icon" href="favicon.ico?v=20261027_2">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=20261027_2">
+  <meta name="tiktok-developers-site-verification" content="Y3La46jKFk9g97hsYmJV5LwzvEUhWR4z">
   <style>
     :root {
       --bg: #0A0E1A;
@@ -35,10 +35,10 @@
     }
     .card {
       background: var(--card-bg);
-      padding: 36px;
+      padding: 40px 32px;
       border-radius: 16px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-      max-width: 540px;
+      max-width: 480px;
       width: 100%;
       border: 1px solid var(--border);
       text-align: center;
@@ -48,62 +48,42 @@
       align-items: center;
       justify-content: center;
       gap: 12px;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
     .brand-bar img {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
       border: 1px solid var(--gold);
     }
     h1 { font-size: 1.5rem; margin-bottom: 8px; color: var(--text-white); }
-    .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px; }
-    .status { margin-top: 20px; padding: 14px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; }
-    .info { background: rgba(0, 242, 254, 0.1); color: var(--cyan); border: 1px solid rgba(0, 242, 254, 0.3); }
-    .success { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid #22c55e; }
-    .code-box {
-      margin-top: 16px;
-      padding: 12px;
-      background: #080B14;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--cyan);
-      font-family: monospace;
-      font-size: 0.9rem;
-      word-break: break-all;
-    }
-    .endpoint-details {
-      margin-top: 24px;
-      padding: 16px;
-      background: #080B14;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      text-align: left;
-      font-size: 0.85rem;
-      line-height: 1.8;
-      color: var(--text-muted);
-    }
-    .endpoint-details strong { color: var(--text-white); }
+    .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px; line-height: 1.5; }
+    .status { padding: 14px 18px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; line-height: 1.5; }
+    .info { background: rgba(0, 242, 254, 0.08); color: var(--cyan); border: 1px solid rgba(0, 242, 254, 0.25); }
+    .success { background: rgba(34, 197, 94, 0.12); color: #4ade80; border: 1px solid #22c55e; }
+    .error { background: rgba(239, 68, 68, 0.12); color: #f87171; border: 1px solid #ef4444; }
     .btn {
       display: inline-block;
-      margin-top: 24px;
-      padding: 10px 20px;
+      margin-top: 28px;
+      padding: 11px 24px;
       background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%);
       color: #0A0E1A;
       font-weight: 700;
       text-decoration: none;
       border-radius: 8px;
       font-size: 0.9rem;
+      transition: opacity 0.2s;
     }
+    .btn:hover { opacity: 0.9; }
     .links {
-      margin-top: 20px;
+      margin-top: 24px;
       display: flex;
       justify-content: center;
-      gap: 16px;
+      gap: 20px;
       font-size: 0.85rem;
     }
-    .links a { color: var(--gold); text-decoration: none; }
-    .links a:hover { text-decoration: underline; }
+    .links a { color: var(--text-muted); text-decoration: none; }
+    .links a:hover { color: var(--gold); text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -113,19 +93,10 @@
       <span style="font-weight: 800; font-size: 1.3rem; color: #FFF;">Shortsyt Studio</span>
     </div>
 
-    <h1>TikTok OAuth 2.0 PKCE Callback</h1>
-    <div class="subtitle">Authorization receiver endpoint for Shortsyt Studio desktop client.</div>
+    <h1>TikTok Authorization</h1>
+    <div class="subtitle">Secure authentication gateway for Shortsyt Studio desktop application.</div>
 
-    <div id="status" class="status info">Ready to receive authorization code</div>
-    <div id="codeDisplay" class="code-box" style="display: none;"></div>
-
-    <div class="endpoint-details">
-      <div><strong>Application:</strong> Shortsyt Studio (Desktop v25)</div>
-      <div><strong>App ID:</strong> 7698664436617365511</div>
-      <div><strong>Client Key:</strong> awszg03b9v3j8171</div>
-      <div><strong>Protocol:</strong> Authorization Code with PKCE</div>
-      <div><strong>Integration:</strong> TikTok Content Posting API v2</div>
-    </div>
+    <div id="status" class="status info">Standby: Waiting for TikTok authorization redirect...</div>
 
     <a href="index.html" class="btn">&larr; Return to Homepage</a>
 
@@ -143,25 +114,25 @@
     const errorDesc = params.get('error_description');
 
     const status = document.getElementById('status');
-    const codeDisplay = document.getElementById('codeDisplay');
 
     if (error) {
+      status.className = 'status error';
       status.textContent = '❌ Authorization failed: ' + (errorDesc || error);
-      status.style.background = 'rgba(239, 68, 68, 0.15)';
-      status.style.color = '#f87171';
-      status.style.border = '1px solid #ef4444';
     } else if (code) {
       status.className = 'status success';
-      status.textContent = '✅ Authorization code received successfully!';
-      codeDisplay.textContent = 'Code: ' + code;
-      codeDisplay.style.display = 'block';
+      status.textContent = '✅ Authorization successful! Returning to Shortsyt Studio...';
 
-      // Relay to local desktop client
+      // Relay authorization code to local desktop app
       fetch('http://localhost:8989/callback' + window.location.search, { mode: 'no-cors' })
-        .then(() => {})
+        .then(() => {
+          setTimeout(() => {
+            status.textContent = '✅ Connected! You can now close this tab and return to the application.';
+          }, 1500);
+        })
         .catch(() => {});
     } else {
-      status.textContent = 'ℹ️ Standby: Waiting for TikTok OAuth redirect.';
+      status.className = 'status info';
+      status.textContent = 'ℹ️ Standby: Ready to receive TikTok authorization response.';
     }
   </script>
 </body>
