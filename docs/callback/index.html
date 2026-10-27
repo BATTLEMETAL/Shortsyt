@@ -3,53 +3,137 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shortsyt — TikTok Authorization</title>
-  <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="shortcut icon" href="../favicon.ico">
-  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <title>TikTok OAuth Authorization &amp; Reviewer Sandbox — Shortsyt Studio</title>
+  <meta name="description" content="TikTok OAuth 2.0 Callback and Developer Reviewer Sandbox for Shortsyt Studio.">
+  <link rel="icon" type="image/png" sizes="1024x1024" href="/icon.png?v=20261027_2">
+  <link rel="icon" type="image/png" sizes="64x64" href="fav/icon.png?v=20261027_2">
+  <link rel="shortcut icon" href="/favicon.ico?v=20261027_2">
+  <link rel="/apple-touch-icon" sizes="180x180" href="apple-touch-/icon.png?v=20261027_2">
   <style>
+    :root {
+      --bg: #0A0E1A;
+      --card-bg: #121624;
+      --border: #1E2438;
+      --gold: #C89B3C;
+      --gold-light: #E5C269;
+      --text: #E4D6B5;
+      --text-muted: #8B8FA8;
+      --text-white: #FFFFFF;
+      --cyan: #00F2FE;
+      --pink: #FE2C55;
+      --green: #22C55E;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0f172a;
-      color: #f8fafc;
+      background: var(--bg);
+      color: var(--text);
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 100vh;
-      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
     }
     .card {
-      background: #1e293b;
-      padding: 32px;
-      border-radius: 12px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-      max-width: 480px;
+      background: var(--card-bg);
+      padding: 36px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      max-width: 600px;
+      width: 100%;
+      border: 1px solid var(--border);
       text-align: center;
-      border: 1px solid #334155;
     }
-    h1 { font-size: 1.5rem; margin-bottom: 12px; color: #38bdf8; }
-    p { color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }
-    .status { margin-top: 16px; padding: 12px; border-radius: 6px; font-weight: 500; font-size: 0.9rem; }
+    .brand-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .brand-bar img {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      border: 1px solid var(--gold);
+    }
+    h1 { font-size: 1.6rem; margin-bottom: 8px; color: var(--text-white); }
+    .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px; }
+    .status { margin-top: 20px; padding: 14px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; }
     .success { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid #22c55e; }
+    .info { background: rgba(0, 242, 254, 0.1); color: var(--cyan); border: 1px solid rgba(0, 242, 254, 0.3); }
+    .sandbox-box {
+      margin-top: 24px;
+      padding: 16px;
+      background: #080B14;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      text-align: left;
+      font-size: 0.85rem;
+      line-height: 1.8;
+    }
     .code-box {
       margin-top: 16px;
-      padding: 10px;
-      background: #0f172a;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      color: #e2e8f0;
+      padding: 12px;
+      background: #080B14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--cyan);
       font-family: monospace;
-      font-size: 1rem;
+      font-size: 0.9rem;
       word-break: break-all;
     }
+    .btn {
+      display: inline-block;
+      margin-top: 24px;
+      padding: 10px 20px;
+      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%);
+      color: #0A0E1A;
+      font-weight: 700;
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+    .links {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      font-size: 0.85rem;
+    }
+    .links a { color: var(--gold); text-decoration: none; }
+    .links a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>TikTok Authorization</h1>
-    <p id="msg">Processing authorization response from TikTok...</p>
-    <div id="status" class="status success" style="display: none;"></div>
+    <div class="brand-bar">
+      <img src="/icon.png?v=20261027_2" alt="Shortsyt Studio">
+      <span style="font-weight: 800; font-size: 1.3rem; color: #FFF;">Shortsyt Studio</span>
+    </div>
+
+    <h1>TikTok OAuth 2.0 PKCE Callback</h1>
+    <div class="subtitle">Secure authentication endpoint for TikTok Content Posting API v2.</div>
+
+    <div id="status" class="status info">Listening for authorization code...</div>
     <div id="codeDisplay" class="code-box" style="display: none;"></div>
+
+    <div class="sandbox-box">
+      <div style="font-weight: 700; color: var(--gold); margin-bottom: 6px;">TikTok Reviewer Sandbox Specifications:</div>
+      <div><strong>App ID:</strong> 7698664436617365511</div>
+      <div><strong>Client Key:</strong> awszg03b9v3j8171</div>
+      <div><strong>Flow:</strong> Authorization Code with PKCE (RFC 7636)</div>
+      <div><strong>Scopes:</strong> <code>user.info.basic</code>, <code>video.upload</code>, <code>video.publish</code></div>
+      <div><strong>Test Account:</strong> tester@shortsyt.salon-prettywoman.pl</div>
+    </div>
+
+    <a href="index.html" class="btn">&larr; Return to Shortsyt Homepage</a>
+
+    <div class="links">
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="index.html#reviewer-sandbox">Reviewer Credentials</a>
+    </div>
   </div>
 
   <script>
@@ -59,33 +143,26 @@
     const error = params.get('error');
     const errorDesc = params.get('error_description');
 
-    const msg = document.getElementById('msg');
     const status = document.getElementById('status');
     const codeDisplay = document.getElementById('codeDisplay');
 
     if (error) {
-      msg.textContent = 'Authorization failed: ' + (errorDesc || error);
-      status.textContent = '❌ Error occurred during login';
-      status.className = 'status';
+      status.textContent = '❌ Authorization failed: ' + (errorDesc || error);
       status.style.background = 'rgba(239, 68, 68, 0.15)';
       status.style.color = '#f87171';
       status.style.border = '1px solid #ef4444';
-      status.style.display = 'block';
     } else if (code) {
-      msg.textContent = 'Authorization successful! Returning to Shortsyt...';
-      status.textContent = '✅ Connected to TikTok successfully';
-      status.style.display = 'block';
-      codeDisplay.textContent = 'Auth code: ' + code;
+      status.className = 'status success';
+      status.textContent = '✅ Authorization code received successfully!';
+      codeDisplay.textContent = 'Code: ' + code;
       codeDisplay.style.display = 'block';
 
-      // Forward to local server
-      fetch('http://localhost:8180/callback' + window.location.search, { mode: 'no-cors' })
-        .then(() => {
-          setTimeout(() => { window.close(); }, 2000);
-        })
+      // Relay to local desktop daemon if running
+      fetch('http://localhost:8989/callback' + window.location.search, { mode: 'no-cors' })
+        .then(() => {})
         .catch(() => {});
     } else {
-      msg.textContent = 'No authorization code received.';
+      status.textContent = 'ℹ️ Standby: Ready to receive TikTok OAuth 2.0 PKCE redirects.';
     }
   </script>
 </body>

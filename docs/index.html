@@ -8,16 +8,27 @@
   <meta name="theme-color" content="#0A0E1A">
 
   <!-- Favicon & App Icons (100% consistent with TikTok Basic Info 1024x1024 requirement) -->
-  <link rel="icon" type="image/png" sizes="1024x1024" href="icon.png?v=3">
-  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=3">
-  <link rel="shortcut icon" href="favicon.ico?v=3">
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=3">
+  <link rel="icon" type="image/png" sizes="1024x1024" href="icon.png?v=20261027_2">
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=20261027_2">
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261027_2">
+  <link rel="shortcut icon" href="favicon.ico?v=20261027_2">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=20261027_2">
 
-  <!-- OpenGraph -->
+  <!-- Canonical & Open Graph -->
+  <link rel="canonical" href="https://shortsyt.salon-prettywoman.pl/">
   <meta property="og:title" content="Shortsyt Studio — Autonomous Gaming Short-Form Platform">
   <meta property="og:description" content="AI highlight detection, dynamic 9:16 vertical camera tracking, automated thumbnails, and multi-platform publishing for TikTok, YouTube Shorts, and Instagram Reels.">
-  <meta property="og:image" content="https://battlemetal.github.io/Shortsyt/icon.png">
-  <meta property="og:url" content="https://battlemetal.github.io/Shortsyt/">
+  <meta property="og:image" content="https://shortsyt.salon-prettywoman.pl/icon.png?v=20261027_2">
+  <meta property="og:image:width" content="1024">
+  <meta property="og:image:height" content="1024">
+  <meta property="og:url" content="https://shortsyt.salon-prettywoman.pl/">
+  <meta property="og:type" content="website">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Shortsyt Studio — Autonomous Gaming Short-Form Platform">
+  <meta name="twitter:description" content="AI highlight detection, dynamic 9:16 vertical camera tracking, automated thumbnails, and multi-platform publishing for TikTok, YouTube Shorts, and Instagram Reels.">
+  <meta name="twitter:image" content="https://shortsyt.salon-prettywoman.pl/icon.png?v=20261027_2">
 
   <style>
     :root {
@@ -530,8 +541,8 @@
   <!-- ── NAVIGATION BAR ── -->
   <header>
     <div class="container nav-inner">
-      <a href="/Shortsyt/" class="brand">
-        <img src="icon.png" alt="Shortsyt Studio Logo">
+      <a href="./" class="brand">
+        <img src="icon.png?v=20261027_2" alt="Shortsyt Studio Logo">
         <span>Shortsyt Studio</span>
         <span class="brand-badge">DESKTOP v25</span>
       </a>
@@ -540,9 +551,10 @@
         <a href="#telemetry">Live Telemetry</a>
         <a href="#features">Features</a>
         <a href="#tiktok">TikTok API</a>
+        <a href="#reviewer-sandbox">Reviewer Access</a>
         <a href="#screenshots">Screenshots</a>
-        <a href="/Shortsyt/privacy">Privacy Policy</a>
-        <a href="/Shortsyt/terms">Terms of Service</a>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="terms.html">Terms of Service</a>
         <a href="https://github.com/BATTLEMETAL/Shortsyt" target="_blank" class="btn-nav">GitHub</a>
       </nav>
     </div>
@@ -566,7 +578,8 @@
 
       <div class="hero-btns">
         <a href="#telemetry" class="btn-primary">View Real-Time Telemetry &darr;</a>
-        <a href="/Shortsyt/privacy" class="btn-secondary">Privacy & Data Policy</a>
+        <a href="privacy.html" class="btn-secondary">Privacy & Data Policy</a>
+        <a href="#reviewer-sandbox" class="btn-secondary" style="border-color: var(--gold); color: var(--gold-light);">Reviewer Test Account &rarr;</a>
       </div>
 
       <!-- App Interface Mockup -->
@@ -577,7 +590,7 @@
           <span class="mockup-dot green"></span>
           <span class="mockup-title">Shortsyt Studio — League of Legends Shorts Studio (Running Instance)</span>
         </div>
-        <img src="screenshots/01_studio_dashboard.png" alt="Shortsyt Studio Application Interface">
+        <img src="screenshots/01_studio_dashboard.png?v=20261027_2" alt="Shortsyt Studio Application Interface">
       </div>
     </div>
   </section>
@@ -802,11 +815,75 @@
               • No user telemetry, credentials, or tracking cookies are collected.
             </p>
             <div style="display: flex; gap: 12px; margin-top: 20px;">
-              <a href="/Shortsyt/privacy" style="font-size: 0.8rem; color: var(--gold); text-decoration: underline;">Read Full Privacy Policy &rarr;</a>
-              <a href="/Shortsyt/terms" style="font-size: 0.8rem; color: var(--gold); text-decoration: underline;">Read Terms of Service &rarr;</a>
+              <a href="privacy.html" style="font-size: 0.8rem; color: var(--gold); text-decoration: underline;">Read Full Privacy Policy &rarr;</a>
+              <a href="terms.html" style="font-size: 0.8rem; color: var(--gold); text-decoration: underline;">Read Terms of Service &rarr;</a>
+              <a href="#reviewer-sandbox" style="font-size: 0.8rem; color: var(--cyan); text-decoration: underline;">Reviewer Credentials &rarr;</a>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  
+  <!-- ── REVIEWER TEST ACCOUNT & DEMO SANDBOX ── -->
+  <section class="section" id="reviewer-sandbox" style="border-top: 1px solid var(--border); background: linear-gradient(180deg, rgba(200, 155, 60, 0.05) 0%, rgba(10, 14, 26, 0.95) 100%);">
+    <div class="container">
+      <div class="section-title">
+        <div class="hero-pill" style="margin-bottom: 12px; background: rgba(200, 155, 60, 0.15); border-color: rgba(200, 155, 60, 0.4); color: var(--gold-light);">
+          <span class="hero-pill-dot" style="background: var(--gold);"></span>
+          <span>TikTok App Reviewer Sandbox &amp; Compliance Hub</span>
+        </div>
+        <h2>Reviewer Test Account &amp; Live Verification</h2>
+        <p>Shortsyt Studio is an externally-facing, fully developed application. For TikTok App Reviewers inspecting OAuth 2.0 PKCE and API integration, test credentials and sandbox details are provided below.</p>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; max-width: 960px; margin: 0 auto;">
+        <!-- Test Account Credentials Card -->
+        <div class="card" style="border-color: rgba(200, 155, 60, 0.35); position: relative; overflow: hidden;">
+          <div style="position: absolute; top: 0; right: 0; background: var(--gold); color: #0A0E1A; font-weight: 800; font-size: 0.7rem; padding: 4px 12px; border-bottom-left-radius: 8px;">ACTIVE TEST ACCOUNT</div>
+          <div class="card-icon">&#128273;</div>
+          <h3>Tester Login Credentials</h3>
+          <p style="margin-bottom: 16px; font-size: 0.9rem; color: var(--text-muted);">
+            Dedicated credentials for TikTok Reviewers to verify authentication and content publishing permissions:
+          </p>
+          <div style="background: #080B14; padding: 14px 18px; border-radius: 8px; border: 1px solid var(--border); font-family: monospace; font-size: 0.9rem; line-height: 1.8;">
+            <div><span style="color: var(--text-muted);">Environment:</span> <span style="color: var(--cyan);">Shortsyt Studio v25 Sandbox</span></div>
+            <div><span style="color: var(--text-muted);">Test Account:</span> <span style="color: #FFF; font-weight: bold;">tester@shortsyt.salon-prettywoman.pl</span></div>
+            <div><span style="color: var(--text-muted);">Demo Password:</span> <span style="color: var(--gold); font-weight: bold;">ShortsytTester2026!</span></div>
+            <div><span style="color: var(--text-muted);">OAuth Client Key:</span> <span style="color: var(--pink);">awszg03b9v3j8171</span></div>
+            <div><span style="color: var(--text-muted);">App ID:</span> <span style="color: var(--cyan);">7698664436617365511</span></div>
+          </div>
+          <div style="margin-top: 14px; font-size: 0.8rem; color: var(--text-muted);">
+            Use these credentials to test OAuth consent, token exchange, and direct video publishing flow.
+          </div>
+        </div>
+
+        <!-- Architecture & Flow Card -->
+        <div class="card" style="border-color: rgba(0, 242, 254, 0.25);">
+          <div class="card-icon">&#9881;</div>
+          <h3>Architecture &amp; OAuth 2.0 PKCE</h3>
+          <p style="margin-bottom: 12px; font-size: 0.9rem; color: var(--text-muted);">
+            Shortsyt Studio operates as a local creator client with PKCE security:
+          </p>
+          <ul style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.8; margin-left: 18px; margin-bottom: 16px;">
+            <li><strong>PKCE Local Redirect:</strong> <code>http://localhost:8989/callback</code></li>
+            <li><strong>Public Web Callback:</strong> <a href="callback.html" style="color: var(--cyan);">https://shortsyt.salon-prettywoman.pl/callback.html</a></li>
+            <li><strong>Requested Scopes:</strong> <code>user.info.basic</code>, <code>video.upload</code>, <code>video.publish</code></li>
+            <li><strong>Zero Login Barrier:</strong> Website documentation, telemetry, Terms, and Privacy Policy are completely public.</li>
+          </ul>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <a href="callback.html" class="btn-secondary" style="font-size: 0.8rem; padding: 8px 14px;">Open OAuth Callback Inspector &rarr;</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Public Accessibility Assurance -->
+      <div style="text-align: center; margin-top: 30px; font-size: 0.85rem; color: var(--text-muted);">
+        All legal policies are fully open and publicly accessible: 
+        <a href="privacy.html" style="color: var(--gold); margin: 0 8px; text-decoration: underline;">Privacy Policy</a> &bull; 
+        <a href="terms.html" style="color: var(--gold); margin: 0 8px; text-decoration: underline;">Terms of Service</a> &bull; 
+        <a href="mailto:dwannellenga@gmail.com" style="color: var(--gold); margin: 0 8px; text-decoration: underline;">Developer Contact</a>
       </div>
     </div>
   </section>
@@ -821,19 +898,19 @@
 
       <div class="gallery-grid">
         <div class="gallery-item">
-          <img src="screenshots/01_studio_dashboard.png" alt="Studio Dashboard">
+          <img src="screenshots/01_studio_dashboard.png?v=20261027_2" alt="Studio Dashboard">
           <div class="gallery-caption">1. Studio Dashboard & Clip Queue</div>
         </div>
         <div class="gallery-item">
-          <img src="screenshots/02_studio_klipow.png" alt="Clip Detection">
+          <img src="screenshots/02_studio_klipow.png?v=20261027_2" alt="Clip Detection">
           <div class="gallery-caption">2. AI Highlight Detection & OCR</div>
         </div>
         <div class="gallery-item">
-          <img src="screenshots/03_analityka_roi_30d.png" alt="Analytics">
+          <img src="screenshots/03_analityka_roi_30d.png?v=20261027_2" alt="Analytics">
           <div class="gallery-caption">3. Omnichannel Multi-Platform Analytics</div>
         </div>
         <div class="gallery-item">
-          <img src="screenshots/05_feedback_ai_tuning.png" alt="AI Tuning">
+          <img src="screenshots/05_feedback_ai_tuning.png?v=20261027_2" alt="AI Tuning">
           <div class="gallery-caption">4. AI Style & Retention Tuning</div>
         </div>
       </div>
@@ -876,7 +953,7 @@
       <div class="footer-grid">
         <div class="footer-col">
           <div class="brand" style="margin-bottom: 16px;">
-            <img src="icon.png" alt="Shortsyt Studio">
+            <img src="icon.png?v=20261027_2" alt="Shortsyt Studio">
             <span>Shortsyt Studio</span>
           </div>
           <p style="line-height: 1.6; max-width: 380px;">
@@ -898,9 +975,10 @@
         <div class="footer-col">
           <h4>Legal & Policies</h4>
           <ul>
-            <li><a href="/Shortsyt/privacy">Privacy Policy</a></li>
-            <li><a href="/Shortsyt/terms">Terms of Service</a></li>
-            <li><a href="/Shortsyt/callback">OAuth Callback</a></li>
+            <li><a href="privacy.html">Privacy Policy</a></li>
+            <li><a href="terms.html">Terms of Service</a></li>
+            <li><a href="callback.html">OAuth Callback</a></li>
+            <li><a href="#reviewer-sandbox">Reviewer Sandbox</a></li>
             <li><a href="https://www.tiktok.com/legal/page/global/terms-of-service/en" target="_blank">TikTok Terms</a></li>
           </ul>
         </div>
@@ -918,8 +996,8 @@
       <div class="footer-bottom">
         <div>&copy; 2026 Shortsyt Studio. All rights reserved.</div>
         <div style="display: flex; gap: 20px;">
-          <a href="/Shortsyt/privacy" style="color: var(--text-muted); text-decoration: none;">Privacy Policy</a>
-          <a href="/Shortsyt/terms" style="color: var(--text-muted); text-decoration: none;">Terms of Service</a>
+          <a href="privacy.html" style="color: var(--text-muted); text-decoration: none;">Privacy Policy</a>
+          <a href="terms.html" style="color: var(--text-muted); text-decoration: none;">Terms of Service</a>
           <a href="mailto:dwannellenga@gmail.com" style="color: var(--text-muted); text-decoration: none;">Contact Support</a>
         </div>
       </div>

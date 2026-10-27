@@ -7,9 +7,10 @@
   <meta name="description" content="Privacy Policy for Shortsyt Studio - League of Legends Shorts Automation.">
   <meta name="theme-color" content="#0A0E1A">
 
-  <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="shortcut icon" href="../favicon.ico">
-  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="1024x1024" href="/icon.png?v=20261027_2">
+  <link rel="icon" type="image/png" sizes="64x64" href="fav/icon.png?v=20261027_2">
+  <link rel="shortcut icon" href="/favicon.ico?v=20261027_2">
+  <link rel="/apple-touch-icon" sizes="180x180" href="apple-touch-/icon.png?v=20261027_2">
 
   <style>
     :root {
@@ -57,13 +58,18 @@
       border-radius: 8px;
       border: 1px solid var(--gold);
     }
-    .back-link {
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .nav-links a {
       color: var(--gold);
       text-decoration: none;
       font-size: 0.85rem;
       font-weight: 600;
     }
-    .back-link:hover { text-decoration: underline; }
+    .nav-links a:hover { text-decoration: underline; }
 
     h1 { font-size: 2.2rem; color: var(--text-white); margin-bottom: 8px; font-weight: 900; }
     .date { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 24px; }
@@ -88,11 +94,15 @@
 <body>
   <div class="container">
     <header>
-      <a href="/Shortsyt/" class="brand">
-        <img src="../icon.png" alt="Shortsyt Studio">
+      <a href="index.html" class="brand">
+        <img src="/icon.png?v=20261027_2" alt="Shortsyt Studio">
         <span>Shortsyt Studio</span>
       </a>
-      <a href="/Shortsyt/" class="back-link">&larr; Back to Homepage</a>
+      <div class="nav-links">
+        <a href="index.html">&larr; Homepage</a>
+        <a href="terms.html">Terms of Service</a>
+        <a href="index.html#reviewer-sandbox">Reviewer Access</a>
+      </div>
     </header>
 
     <h1>Privacy Policy</h1>
@@ -121,7 +131,7 @@
       <li><strong>Immediate Revocation:</strong> You can disconnect and revoke access at any time via TikTok mobile app &gt; Settings &amp; Privacy &gt; Security &gt; Apps and Sessions &gt; Manage app permissions.</li>
     </ul>
 
-    <h2>4. Video Processing & Media Files</h2>
+    <h2>4. Video Processing &amp; Media Files</h2>
     <p>All video analysis (OCR, kill-feed detection) and FFmpeg 9:16 rendering happen locally on your PC. Rendered video files are uploaded directly from your machine to TikTok / YouTube / Meta servers over encrypted HTTPS connections.</p>
 
     <h2>5. Compliance with Platform Guidelines</h2>
@@ -130,9 +140,10 @@
     <h2>6. Contact</h2>
     <p>If you have any questions about this Privacy Policy or data security, please contact:</p>
     <p><strong>Email:</strong> <a href="mailto:dwannellenga@gmail.com">dwannellenga@gmail.com</a><br>
-    <strong>Developer:</strong> Michał Zalewski</p>
+    <strong>Developer:</strong> Michał Zalewski<br>
+    <strong>Website:</strong> <a href="https://shortsyt.salon-prettywoman.pl/">https://shortsyt.salon-prettywoman.pl/</a></p>
 
-    <p style="margin-top: 40px;"><a href="/Shortsyt/">&larr; Return to Shortsyt Studio Homepage</a></p>
+    <p style="margin-top: 40px;"><a href="index.html">&larr; Return to Shortsyt Studio Homepage</a></p>
   </div>
 </body>
 </html>

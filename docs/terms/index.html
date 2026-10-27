@@ -7,9 +7,10 @@
   <meta name="description" content="Terms of Service for Shortsyt Studio - League of Legends Shorts Automation.">
   <meta name="theme-color" content="#0A0E1A">
 
-  <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="shortcut icon" href="../favicon.ico">
-  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="1024x1024" href="/icon.png?v=20261027_2">
+  <link rel="icon" type="image/png" sizes="64x64" href="fav/icon.png?v=20261027_2">
+  <link rel="shortcut icon" href="/favicon.ico?v=20261027_2">
+  <link rel="/apple-touch-icon" sizes="180x180" href="apple-touch-/icon.png?v=20261027_2">
 
   <style>
     :root {
@@ -57,13 +58,18 @@
       border-radius: 8px;
       border: 1px solid var(--gold);
     }
-    .back-link {
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .nav-links a {
       color: var(--gold);
       text-decoration: none;
       font-size: 0.85rem;
       font-weight: 600;
     }
-    .back-link:hover { text-decoration: underline; }
+    .nav-links a:hover { text-decoration: underline; }
 
     h1 { font-size: 2.2rem; color: var(--text-white); margin-bottom: 8px; font-weight: 900; }
     .date { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 24px; }
@@ -78,11 +84,15 @@
 <body>
   <div class="container">
     <header>
-      <a href="/Shortsyt/" class="brand">
-        <img src="../icon.png" alt="Shortsyt Studio">
+      <a href="index.html" class="brand">
+        <img src="/icon.png?v=20261027_2" alt="Shortsyt Studio">
         <span>Shortsyt Studio</span>
       </a>
-      <a href="/Shortsyt/" class="back-link">&larr; Back to Homepage</a>
+      <div class="nav-links">
+        <a href="index.html">&larr; Homepage</a>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="index.html#reviewer-sandbox">Reviewer Access</a>
+      </div>
     </header>
 
     <h1>Terms of Service</h1>
@@ -91,7 +101,7 @@
     <h2>1. Description of Service</h2>
     <p>Shortsyt Studio is an autonomous desktop video automation tool that identifies highlight moments in gameplay video recordings, renders vertical 9:16 short-form video clips with visual effects, and publishes them to authorized social media platforms (TikTok, YouTube Shorts, Meta Reels) on behalf of the account owner.</p>
 
-    <h2>2. User Obligations & Compliance</h2>
+    <h2>2. User Obligations &amp; Compliance</h2>
     <p>By using Shortsyt Studio to upload and publish content to TikTok, you agree to comply strictly with:</p>
     <ul>
       <li><a href="https://www.tiktok.com/legal/page/global/terms-of-service/en" target="_blank">TikTok Terms of Service</a></li>
@@ -99,7 +109,7 @@
       <li>Copyright laws and intellectual property rights concerning gaming footage and background audio.</li>
     </ul>
 
-    <h2>3. Authentication & API Usage</h2>
+    <h2>3. Authentication &amp; API Usage</h2>
     <p>Shortsyt Studio connects to third-party services exclusively via standard OAuth 2.0 PKCE authentication authorized directly by the user. You retain full control over your connected accounts and may revoke access at any time through platform security settings.</p>
 
     <h2>4. Limitation of Liability</h2>
@@ -108,9 +118,10 @@
     <h2>5. Contact Information</h2>
     <p>For support, questions, or inquiries regarding these Terms of Service, contact:</p>
     <p><strong>Email:</strong> <a href="mailto:dwannellenga@gmail.com">dwannellenga@gmail.com</a><br>
-    <strong>Developer:</strong> Michał Zalewski</p>
+    <strong>Developer:</strong> Michał Zalewski<br>
+    <strong>Website:</strong> <a href="https://shortsyt.salon-prettywoman.pl/">https://shortsyt.salon-prettywoman.pl/</a></p>
 
-    <p style="margin-top: 40px;"><a href="/Shortsyt/">&larr; Return to Shortsyt Studio Homepage</a></p>
+    <p style="margin-top: 40px;"><a href="index.html">&larr; Return to Shortsyt Studio Homepage</a></p>
   </div>
 </body>
 </html>
