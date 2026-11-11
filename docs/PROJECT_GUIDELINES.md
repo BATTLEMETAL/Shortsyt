@@ -116,3 +116,15 @@ Repozytorium `BATTLEMETAL/Shortsyt` jest publiczne. Obowiązują rygorystyczne z
 - **Restart backendu**:
   - Zabić proces uvicorn na porcie 8765 i uruchomić ponownie w tle:
   - `.\venv313\Scripts\python.exe -m uvicorn lol_agent.api.main:app --host 127.0.0.1 --port 8765`
+
+---
+
+## 6. ZASADY ROZWOJU SILNIKA (FLIKCUT ENGINE RULES)
+
+1. **Jedna oś czasu (`lol_timeline.py`)**: Każda zmiana tempa, zwolnienie (slow-mo), synchronizacja napisów i dźwięku gry przechodzi przez nią. Czas po zwolnieniu nie jest liczony nigdzie poza tym modułem.
+2. **Stałe montażu i kamery w `engine_rules.json`**: Każda liczba montażu i parametr kamery stoi w `engine_rules.json`; zmiana w kodzie bez zmiany reguł jest blokowana przez testy (`test_rules.py`).
+3. **Weryfikacja dwuetapowa**: Przed każdą zmianą i po niej uruchamiaj:
+   - `python lol_agent/engine_tests/run_tests.py` (37 testów silnika)
+   - `pytest tests/` (testy platformy i pipeline'u)
+4. **Jedna zmiana na raz**: Wszelkie modyfikacje algorytmu wymagają renderu kontrolnego klipów wzorcowych przed merge do gałęzi głównej.
+5. **Wnioski oparte na dowodach**: Wnioski z danych w cyklu uczenia tylko z `reliable: true` (minimum filmów i 15% przewagi); reszta to obserwacja, nie decyzja.
