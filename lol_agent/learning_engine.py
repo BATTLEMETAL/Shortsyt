@@ -49,7 +49,13 @@ DEFAULT_ACTION_WEIGHTS = {
 # ── Minimalna próbka wymagana do wyliczenia wiarygodnej wagi ─────────────────────────────────
 MIN_SAMPLE_FOR_WEIGHT = 3      # poniżej tej liczby → waga domyślna, bez modyfikacji
 MIN_SAMPLE_FOR_DEMOTION = 4    # poniżej → zakaz democji formatu
-MIN_SAMPLE_FOR_BUCKET = 3      # poniżej → bucket duration ignorowany dla rekomendacji
+MIN_SAMPLE_FOR_BUCKET = 8      # poniżej → bucket długości bez rekomendacji (było 3: sześć filmów nie rozstrzyga długości)
+MIN_SAMPLE_FOR_SLOT = 5        # godzina / dzień publikacji: poniżej → slot nie może zostać "najlepszym" (było 2)
+MIN_SAMPLE_FOR_KEYWORD = 4     # słowo w tytule: poniżej → ani "winning", ani "avoid" (było 2)
+MIN_SAMPLE_FOR_STRUCTURE = 5   # struktura tytułu: poniżej → nie może wygrać (było 3)
+MIN_LEAD_TO_WIN = 0.15         # zwycięzca musi wyprzedzać drugiego o 15 %, inaczej "brak wyraźnego zwycięzcy"
+SHRINK_K = 10.0                # waga formatu ściągana do 1.0: w = 1 + (ratio - 1) * n / (n + SHRINK_K)
+BREAKOUT_VIEWS_RATIO = 1.5     # "świeży hit" = film z ostatnich 5 mający >= 1.5x mediany kanału albo >= 40 wyświetleń/h
 
 # ── Guard: filmy z ≤ threshold wyświetleń są uważane za błędy dystrybucji/testy ────────────
 ZERO_VIEWS_THRESHOLD = 50      # < 50 views = prawdopodobnie błąd tech / draft / prywatny
@@ -370,8 +376,8 @@ def _analyze_best_pub_hour(all_videos: List[Dict[str, Any]]) -> Dict[str, Any]:
     for hour, vws in hour_views.items():
         if len(vws) >= 2:
             avg = statistics.median(vws)
-            hour_stats[hour] = {"count": len(vws), "median_views": round(avg)}
-            if avg > best_hour_avg:
+            hour_stats[hour] = {"count": len(vws), "median_views": round(avg), "reliable": len(vws) >= MIN_SAMPLE_FOR_SLOT}
+            if avg > best_hour_avg and len(vws) >= MIN_SAMPLE_FOR_SLOT:
                 best_hour_avg = avg
                 best_hour = hour
 
@@ -381,17 +387,33 @@ def _analyze_best_pub_hour(all_videos: List[Dict[str, Any]]) -> Dict[str, Any]:
     for wd, vws in weekday_views.items():
         if len(vws) >= 2:
             avg = statistics.median(vws)
-            weekday_stats[weekday_names[wd]] = {"count": len(vws), "median_views": round(avg)}
-            if avg > best_weekday_avg:
+            weekday_stats[weekday_names[wd]] = {"count": len(vws), "median_views": round(avg), "reliable": len(vws) >= MIN_SAMPLE_FOR_SLOT}
+            if avg > best_weekday_avg and len(vws) >= MIN_SAMPLE_FOR_SLOT:
                 best_weekday_avg = avg
                 best_weekday = weekday_names[wd]
+
+    def _clear(stats: Dict[Any, Any], best_val: float) -> bool:
+        rel = sorted((d["median_views"] for d in stats.values() if d.get("reliable")), reverse=True)
+        return len(rel) >= 2 and rel[1] > 0 and best_val >= rel[1] * (1.0 + MIN_LEAD_TO_WIN)
+
+    # Zgodność: reszta systemu (kalendarz) dostaje liczbę jak dawniej. Gdy żaden slot nie ma MIN_SAMPLE_FOR_SLOT
+    # filmów, zwracamy najlepszy z tych, które mają >= 2 (stare zachowanie), ale z flagą clear = False.
+    hour_clear = best_hour is not None and _clear(hour_stats, best_hour_avg)
+    weekday_clear = best_weekday is not None and _clear(weekday_stats, best_weekday_avg)
+    if best_hour is None and hour_stats:
+        best_hour = max(hour_stats.items(), key=lambda kv: kv[1]["median_views"])[0]
+    if best_weekday is None and weekday_stats:
+        best_weekday = max(weekday_stats.items(), key=lambda kv: kv[1]["median_views"])[0]
 
     return {
         "best_hour_utc": best_hour,
         "best_weekday": best_weekday,
+        "best_hour_clear": hour_clear,        # False = różnica mieści się w szumie; nie planuj pod tę godzinę
+        "best_weekday_clear": weekday_clear,
         "hour_stats": hour_stats,
         "weekday_stats": weekday_stats,
-        "note": "Mediana wyświetleń per godzina/dzień publikacji. Min 2 próbki na slot.",
+        "note": (f"Mediana wyświetleń per godzina/dzień. Slot wygrywa dopiero od {MIN_SAMPLE_FOR_SLOT} filmów "
+                 f"i przewagi {int(MIN_LEAD_TO_WIN * 100)} % nad drugim; best_*_clear mówi, czy zwycięzca jest wyraźny."),
     }
 
 
@@ -504,7 +526,11 @@ def _compute_robust_metric(views_list: List[int], pub_dates: Optional[List[str]]
         weight = 1.0
         if pub_dates and i < len(pub_dates):
             try:
-                dt = datetime.fromisoformat((pub_dates[i] or "").replace("Z", "+00:00"))
+                dt = pub_dates[i]
+                if not isinstance(dt, datetime):
+                    dt = datetime.fromisoformat(str(dt or "").replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
                 age_days = (now - dt).days
                 # Filmy starsze niż RECENT_WINDOW_DAYS mają wagę 0.5
                 weight = 0.5 if age_days > RECENT_WINDOW_DAYS else 1.0
@@ -536,6 +562,53 @@ def _compute_robust_metric(views_list: List[int], pub_dates: Optional[List[str]]
     }
 
 
+def robust_summary(values: List[float]) -> Dict[str, Any]:
+    """Mediana, średnia i średnia bez 10 % skrajnych, z listą wartości odstających (reguła 1.5 IQR)."""
+    vals = sorted(float(v) for v in values if v is not None)
+    n = len(vals)
+    if n == 0:
+        return {"count": 0, "median": None, "mean": None, "trimmed_mean": None, "outliers": []}
+    med = statistics.median(vals)
+    trim = int(n * 0.10)
+    core = vals[trim: n - trim] if n - 2 * trim >= 1 else vals
+    q1 = vals[int((n - 1) * 0.25)]; q3 = vals[int((n - 1) * 0.75)]; iqr = q3 - q1
+    out = [v for v in vals if v < q1 - 1.5 * iqr or v > q3 + 1.5 * iqr] if n >= 5 and iqr > 0 else []
+    return {"count": n, "median": round(med, 1), "mean": round(statistics.mean(vals), 1),
+            "trimmed_mean": round(statistics.mean(core), 1), "outliers": [round(v, 1) for v in out]}
+
+
+def bootstrap_median_ratio_ci(values: List[float], baseline: float, rounds: int = 2000, seed: int = 7) -> Tuple[float, float]:
+    """Przedział 90 % dla (mediana grupy / mediana kanału). Gdy obejmuje 1.0, różnica może być przypadkiem."""
+    import random as _r
+    vals = [float(v) for v in values]
+    if len(vals) < 2 or baseline <= 0:
+        return (0.0, 0.0)
+    rng = _r.Random(seed); meds = []
+    for _ in range(rounds):
+        meds.append(statistics.median([vals[rng.randrange(len(vals))] for _ in vals]) / baseline)
+    meds.sort()
+    return (round(meds[int(0.05 * rounds)], 2), round(meds[int(0.95 * rounds) - 1], 2))
+
+
+def shrunk_weight(ratio: float, n: int, k: float = SHRINK_K) -> float:
+    """Waga formatu: stosunek do mediany kanału ściągnięty do 1.0 tym mocniej, im mniej filmów."""
+    return 1.0 + (float(ratio) - 1.0) * (n / (n + k))
+
+
+def summarize_retention(videos: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Retencja liczona odpornie. Średnia z 15 filmów daje się przeciągnąć jednemu (474.7 % przy medianie ~100 %),
+    a swiped_away równe 0.0 przy klipach 5–8 s to brak danych, nie wynik; filmy poniżej ZERO_VIEWS_THRESHOLD odpadają.
+    """
+    # film odpada tylko wtedy, gdy ZNAMY jego wyświetlenia i jest ich za mało (rekord bez pola "views" zostaje)
+    ok = [v for v in videos if v.get("views") is None or int(v.get("views") or 0) >= ZERO_VIEWS_THRESHOLD]
+    avd = robust_summary([v.get("avg_view_pct") for v in ok if v.get("avg_view_pct") is not None])
+    sw = robust_summary([v.get("swiped_away_pct") for v in ok
+                         if v.get("swiped_away_pct") is not None and float(v.get("swiped_away_pct")) > 0.0])
+    return {"videos_used": len(ok), "avg_view_pct": avd, "swiped_away_pct": sw,
+            "note": "Podawaj medianę. Średnia jest tu tylko dla porównania ze starymi raportami."}
+
+
 def correlate_viral_duration_and_pacing(
     viral_videos: List[Dict[str, Any]],
     all_videos: List[Dict[str, Any]],
@@ -563,11 +636,12 @@ def correlate_viral_duration_and_pacing(
         valid_videos, key=lambda x: x.get("views", 0), reverse=True
     )[:max(3, len(valid_videos) // 3)]
 
-    for v in sample_videos:
+    # Porównujemy WSZYSTKIE ważne filmy z prawdziwą długością. Liczenie mediany tylko wśród hitów (jak dawniej)
+    # nie mówi, która długość robi hity; a wpisywanie 12/15 s tam, gdzie długości brak, fałszowało koszyki.
+    for v in valid_videos:
         dur = float(v.get("duration_s", 0.0) or 0.0)
         if dur <= 0.0:
-            act = str(v.get("action_type") or "").lower()
-            dur = 12.0 if act in ("solo_bolo", "clutch") else 15.0
+            continue
         for b_name, b_data in buckets.items():
             if b_data["min"] <= dur < b_data["max"]:
                 b_data["videos"].append(v)
@@ -612,6 +686,11 @@ def correlate_viral_duration_and_pacing(
         if score > best_score and count >= MIN_SAMPLE_FOR_BUCKET:
             best_score = score
             best_bucket = b_name
+
+    # Zwycięzca musi być wyraźny; inaczej nie ruszamy ustawień montażu
+    reliable_scores = sorted((d["composite_score"] for d in bucket_stats.values() if d["reliable"]), reverse=True)
+    clear_winner = (len(reliable_scores) >= 2 and reliable_scores[1] > 0
+                    and reliable_scores[0] >= reliable_scores[1] * (1.0 + MIN_LEAD_TO_WIN))
 
     # Parametry montażu per bucket
     pacing_params = {
@@ -664,6 +743,7 @@ def correlate_viral_duration_and_pacing(
         "title_tone": params["title_tone"],
         "user_notes": params["user_notes"],
         "bucket_stats": bucket_stats,
+        "clear_winner": clear_winner,
         "mei_directives": {
             "target_combat_density_pct": 85.0,
             "max_outro_latency_sec": 1.8,
@@ -850,24 +930,21 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         act_eng = statistics.mean(engs) if engs else 0.0
         eng_factor = 1.0 + min(0.2, max(-0.2, (act_eng - avg_eng) / (avg_eng or 1.0) * 0.15))
 
-        # ── GUARD: Waga bazuje na medianie, nie średniej ──────────────────────────
-        # Używamy trimmed_mean jako signal, ale z ograniczeniem zmiany ±30% per cykl
+        # ── Waga = stosunek MEDIANY formatu do mediany kanału, ściągnięty do 1.0 przy małej próbie ──
+        # Dawniej: "breakout boost" podbijał do >= 1.10 każdy format, którego któryś z 5 ostatnich filmów miał
+        # avg_view_pct >= 95 %. Shorty zapętlają się, więc ten warunek spełniał prawie każdy film i formaty
+        # PONIŻEJ mediany dostawały wagę powyżej 1 (triple: stosunek 0.95, waga 1.34).
+        recent_breakout = any(
+            (int(v.get("views", 0) or 0) >= BREAKOUT_VIEWS_RATIO * channel_median or float(v.get("views_per_hour") or 0) >= 40.0)
+            for v in vids[-5:]
+        )
+        ci_low, ci_high = bootstrap_median_ratio_ci([x for x in vws if x >= ZERO_VIEWS_THRESHOLD], channel_median)
         if n_valid >= MIN_SAMPLE_FOR_WEIGHT:
-            raw_weight = ratio_trimmed * eng_factor
-
-            # Ochrona formatów ze świeżym hitem (np. Double Kill z nowym montażem i retencją > 100% lub wysokim VPH)
-            recent_breakout = any(
-                (float(v.get("avg_view_pct") or 0) >= 95.0 or float(v.get("views_per_hour") or 0) >= 40.0)
-                for v in vids[-5:]
-            )
-            if recent_breakout and raw_weight < 1.10:
-                raw_weight = max(1.10, raw_weight * 1.35)
-
-            # Clamp: max zmiana od domyślnej wartości ±40%
-            default_w = DEFAULT_ACTION_WEIGHTS.get(act, 1.0)
-            clamped_w = max(default_w * 0.60, min(default_w * 1.60, raw_weight))
-            final_weight = round(max(0.4, min(2.5, clamped_w)), 2)
-            weight_source = f"computed_n{n_valid}" + ("_breakout_boost" if recent_breakout else "")
+            raw_weight = shrunk_weight(ratio_median, n_valid) * eng_factor
+            if recent_breakout and raw_weight < 1.0:
+                raw_weight = 1.0   # świeży hit chroni przed obniżeniem, ale niczego nie zawyża
+            final_weight = round(max(0.6, min(1.6, raw_weight)), 2)
+            weight_source = f"median_shrunk_n{n_valid}" + ("_breakout_floor" if recent_breakout else "")
         else:
             # Za mała próba — zostaw domyślną wagę
             final_weight = DEFAULT_ACTION_WEIGHTS.get(act, 1.0)
@@ -876,10 +953,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         action_weights[act] = final_weight
 
         # ── Democja: wymaga MIN_SAMPLE_FOR_DEMOTION i ratio < 0.75 i nie jest w NEVER_DEMOTE i brak świeżego hitu ──
-        has_recent_breakout = any(
-            (float(v.get("avg_view_pct") or 0) >= 95.0 or float(v.get("views_per_hour") or 0) >= 40.0)
-            for v in vids[-5:]
-        )
+        has_recent_breakout = recent_breakout
         if (ratio_median < 0.75 and n_valid >= MIN_SAMPLE_FOR_DEMOTION
                 and act.lower() not in _NEVER_DEMOTE and not has_recent_breakout):
             demoted_formats.append(act)
@@ -890,8 +964,11 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
             "avg_views": round(act_mean, 1),
             "median_views": round(act_median, 1),
             "trimmed_mean_views": round(act_trimmed, 1),
-            "performance_ratio_mean": round(ratio_median, 2),
+            "performance_ratio_mean": round((act_mean / channel_mean) if channel_mean > 0 else 1.0, 2),
             "performance_ratio_median": round(ratio_median, 2),
+            "ratio_ci90": [ci_low, ci_high],
+            # pewne = cały przedział 90 % po jednej stronie 1.0; inaczej różnica może być przypadkiem
+            "reliable": bool(n_valid >= MIN_SAMPLE_FOR_WEIGHT and (ci_low > 1.0 or (ci_high < 1.0 and ci_high > 0))),
             "avg_engagement_rate": round(act_eng, 2),
             "weight": final_weight,
             "weight_source": weight_source,
@@ -940,16 +1017,28 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         ratio = (vw / channel_median) if channel_median > 0 else 1.0
         structure_groups[st].append(ratio)
 
+    # Struktura tytułu jest spleciona z typem akcji (tytuł "1V1" dostają klipy 1v1, które i tak idą najlepiej).
+    # Dlatego obok liczymy stosunek do mediany WŁASNEGO typu akcji: to on mówi, co daje sam tytuł.
+    _act_median = {a: d.get("median_views", 0) for a, d in action_stats.items()}
+    structure_within: Dict[str, List[float]] = defaultdict(list)
+    for v in valid_videos:
+        a_ = (v.get("action_type") or v.get("frag_type") or infer_frag_type_from_title(v.get("title", ""))).lower().strip()
+        base = _act_median.get(a_, 0) or channel_median
+        if base > 0:
+            structure_within[classify_title_structure(v.get("title", ""))].append(int(v.get("views", 0) or 0) / base)
+
     title_structure_stats = {}
     for st, ratios in structure_groups.items():
         title_structure_stats[st] = {
             "count": len(ratios),
             "avg_ratio": round(statistics.mean(ratios), 2),
             "median_ratio": round(statistics.median(ratios), 2),
+            "median_ratio_within_action": round(statistics.median(structure_within[st]), 2) if structure_within.get(st) else None,
+            "reliable": len(ratios) >= MIN_SAMPLE_FOR_STRUCTURE,
         }
 
     # Najlepsza struktura bazuje na medianie (nie średniej) i wymaga >= 3 próbek
-    qualified_structures = [(st, d["median_ratio"]) for st, d in title_structure_stats.items() if d["count"] >= 3]
+    qualified_structures = [(st, d["median_ratio"]) for st, d in title_structure_stats.items() if d["count"] >= MIN_SAMPLE_FOR_STRUCTURE]
     top_structure = max(qualified_structures, key=lambda x: x[1])[0] if qualified_structures else (
         max(title_structure_stats.items(), key=lambda x: x[1]["avg_ratio"])[0]
         if title_structure_stats else "EGO_CHECK"
@@ -964,6 +1053,8 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         "TOP", "HER", "HIM", "HIS", "KILL", "KILLS", "GAME", "LANE",
         "LATE", "WHEN", "TIME", "AFTER", "WHO", "WHAT", "NEVER",
         "MASTER", "TIER", "LEAGUE", "LEGENDS",
+        # liczebniki i słowa-wypełniacze: trafiały do avoid/winning przypadkiem ("ONE", "FIVE", "TITLE")
+        "ONE", "TWO", "THREE", "FOUR", "FIVE", "TITLE", "JUST", "LIKE", "HOW", "WHY", "CAN", "DID",
     }
 
     word_perf: Dict[str, List[float]] = defaultdict(list)
@@ -980,7 +1071,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
     winning_words = []
     avoid_words = []
     for w_str, ratios in word_perf.items():
-        if len(ratios) >= 2:  # min 2 próbki
+        if len(ratios) >= MIN_SAMPLE_FOR_KEYWORD:
             med_r = statistics.median(ratios)
             if med_r >= 1.20:
                 winning_words.append((w_str, round(med_r, 2)))
@@ -1063,8 +1154,11 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         perf_log = _load_performance_log()
         scored_vids = [e for e in perf_log if e.get("quality_score") is not None and e.get("views") is not None]
         if scored_vids:
-            accurate = sum(1 for e in scored_vids if e.get("prediction_eval") in ("ACCURATE_HIGH", "ACCURATE_LOW", "NEUTRAL"))
-            acc_pct = round((accurate / len(scored_vids)) * 100, 1)
+            # NEUTRAL to brak prognozy, nie trafienie: dawniej podbijał "trafność" do 77 % przy korelacji 0.29
+            neutral = sum(1 for e in scored_vids if e.get("prediction_eval") == "NEUTRAL")
+            accurate = sum(1 for e in scored_vids if e.get("prediction_eval") in ("ACCURATE_HIGH", "ACCURATE_LOW"))
+            decided = len(scored_vids) - neutral
+            acc_pct = round((accurate / decided) * 100, 1) if decided else 0.0
             qs_list = [float(e["quality_score"]) for e in scored_vids]
             vw_list = [float(e["views"]) for e in scored_vids]
             if len(scored_vids) >= 3 and statistics.stdev(qs_list) > 0 and statistics.stdev(vw_list) > 0:
@@ -1077,6 +1171,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
             evaluator_accuracy = {
                 "total_evaluated": len(scored_vids),
                 "accurate_count": accurate,
+                "neutral_count": neutral,
                 "accuracy_pct": acc_pct,
                 "correlation_qs_views": corr,
             }
@@ -1115,6 +1210,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         "action_stats": action_stats,
         "duration_analysis": pacing_analysis,
         "retention_analysis": retention_summary,
+        "retention_robust": summarize_retention(retention_summary.get("videos", []) if isinstance(retention_summary, dict) else []),
         "retention_by_action": retention_by_action,
         "publication_cadence": cadence_analysis,
         "title_fatigue": title_fatigue,
@@ -1145,6 +1241,11 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
     _DIRECTIVE_CACHE["data"] = directive
 
     # Auto-tuning tuning_config.json (Closed Pacing Loop)
+    # Dawniej KAŻDY cykl nadpisywał pacing, zoom, slow-mo i głośności wynikiem z koszyka długości (często 6 filmów),
+    # kasując to, co użytkownik ustawił w panelu Styl & Feedback. Teraz:
+    #   1) klucze ustawione ręcznie ("userLocked": [...] w tuning_config.json albo wpisy w user_feedback_history.json) są nietykalne,
+    #   2) cykl pisze tylko przy wyraźnym zwycięzcy (clear_winner) i tylko wtedy, gdy coś się zmienia,
+    #   3) każda zmiana zostawia ślad: "autoTuned": {kiedy, z czego, co zmieniono}.
     try:
         if TUNING_FILE.exists():
             with open(TUNING_FILE, "r", encoding="utf-8") as tf:
@@ -1152,21 +1253,25 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         else:
             tuning_cfg = {}
 
-        tuning_cfg["pacing"] = rec_pacing
-        tuning_cfg["zoomAggression"] = pacing_analysis["zoom_aggression"]
-        tuning_cfg["slowmoDuration"] = pacing_analysis["slowmo_duration"]
-        tuning_cfg["musicBalance"] = pacing_analysis["music_balance"]
-        tuning_cfg["gameSoundBalance"] = pacing_analysis["game_sound_balance"]
-        tuning_cfg["titleTone"] = pacing_analysis["title_tone"]
-        tuning_cfg["userNotes"] = pacing_analysis["user_notes"]
-
-        with open(TUNING_FILE, "w", encoding="utf-8") as tf:
-            json.dump(tuning_cfg, tf, indent=2, ensure_ascii=False)
-        _safe_print(
-            f"[Learning] [TUNING] Auto-tuned {TUNING_FILE.name}: "
-            f"pacing={rec_pacing}, zoom={pacing_analysis['zoom_aggression']}x, "
-            f"slowmo={pacing_analysis['slowmo_duration']}s"
-        )
+        proposed = {
+            "pacing": rec_pacing,
+            "zoomAggression": pacing_analysis["zoom_aggression"],
+            "slowmoDuration": pacing_analysis["slowmo_duration"],
+            "musicBalance": pacing_analysis["music_balance"],
+            "gameSoundBalance": pacing_analysis["game_sound_balance"],
+            "titleTone": pacing_analysis["title_tone"],
+            "userNotes": pacing_analysis["user_notes"],
+        }
+        changes = plan_tuning_update(tuning_cfg, proposed, bool(pacing_analysis.get("clear_winner")), _user_locked_keys(tuning_cfg))
+        if changes:
+            tuning_cfg.update(changes)
+            tuning_cfg["autoTuned"] = {"at": datetime.now(timezone.utc).isoformat(), "from": pacing_analysis["best_bucket"],
+                                       "changed": sorted(changes.keys())}
+            with open(TUNING_FILE, "w", encoding="utf-8") as tf:
+                json.dump(tuning_cfg, tf, indent=2, ensure_ascii=False)
+            _safe_print(f"[Learning] [TUNING] Auto-tuned {TUNING_FILE.name}: {changes}")
+        else:
+            _safe_print("[Learning] [TUNING] Bez zmian w tuning_config.json (brak wyraźnego zwycięzcy albo ustawienia użytkownika).")
     except Exception as te:
         _safe_print(f"[Learning] [WARN] Warning tuning_config update: {te}")
 
@@ -1175,6 +1280,36 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         "directive": directive,
         "insights": insights,
     }
+
+
+_PARAM_TO_KEY = {"pacing": "pacing", "zoom": "zoomAggression", "zoom_aggression": "zoomAggression", "zoomaggression": "zoomAggression",
+                 "slowmo": "slowmoDuration", "slowmo_duration": "slowmoDuration", "slowmoduration": "slowmoDuration",
+                 "music": "musicBalance", "music_balance": "musicBalance", "musicbalance": "musicBalance",
+                 "game_sound": "gameSoundBalance", "game_sound_balance": "gameSoundBalance", "gamesoundbalance": "gameSoundBalance",
+                 "title_tone": "titleTone", "titletone": "titleTone"}
+
+
+def _user_locked_keys(tuning_cfg: Dict[str, Any]) -> set:
+    """Klucze tuningu, których cykl uczenia nie może ruszyć: lista "userLocked" + wszystko, co użytkownik zmieniał ręcznie."""
+    locked = set(tuning_cfg.get("userLocked") or [])
+    try:
+        mem = LEARNING_DIR / "user_feedback_history.json"
+        if mem.exists():
+            with open(mem, "r", encoding="utf-8") as f:
+                for entry in json.load(f).get("history", []):
+                    key = _PARAM_TO_KEY.get(str(entry.get("param", "")).lower().replace(" ", "_"))
+                    if key:
+                        locked.add(key)
+    except Exception:
+        pass
+    return locked
+
+
+def plan_tuning_update(current: Dict[str, Any], proposed: Dict[str, Any], clear_winner: bool, locked: set) -> Dict[str, Any]:
+    """Czysta funkcja: co cykl uczenia WOLNO zmienić w tuning_config. Pusty słownik = nie zapisuj nic."""
+    if not clear_winner:
+        return {}
+    return {k: v for k, v in proposed.items() if k not in locked and current.get(k) != v}
 
 
 def bucket_stats_reliable(bucket_stats: Dict[str, Any]) -> str:

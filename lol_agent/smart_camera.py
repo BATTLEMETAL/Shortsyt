@@ -846,6 +846,32 @@ def find_action_crop_x(video_path: str, clip_start: float, clip_end: float,
         return (source_w - crop_w) // 2
 
 
+# ── Parametry kamery: JEDNO miejsce. Te same liczby stoją w engine_rules.json ("camera") i pilnuje ich
+#    tests/test_rules.py: zmiana tutaj bez zmiany w regułach (i odwrotnie) wywala test, więc poprawka nie zniknie po cichu.
+CAMERA = {
+    "lerp_alpha": 0.45,          # doganianie gracza na próbkę
+    "max_pan_px": 80.0,          # maks. przesuw kadru na próbkę (w 1080p)
+    "snap_delta_px": 220.0,      # powyżej: natychmiastowy doskok (Flash, Shunpo). PROJECT_GUIDELINES podaje 280 — patrz reguły
+    "max_teleport_px": 700.0,    # powyżej: fałszywy wynik (wieża, HUD), ignoruj
+    "deadband_px": 30.0,         # mikro-ruchy nie ruszają kamery
+    "momentum_decay": 0.6,
+    "momentum_frames": 3,
+    "kill_window_sec": 0.8,      # okno wokół killa z blokadą kadru
+    "smooth_win": 5,             # średnia krocząca
+    "smooth_split_px": 180.0,    # skok większy niż to dzieli wygładzanie (cięcie, doskok)
+    "end_freeze_sec": 0.6,       # zamrożenie na końcu; nigdy > 0.8
+}
+
+
+def detect_player_bar_mode(green_hits: int, gold_hits: int) -> str:
+    """
+    Tryb paska gracza z pre-skanu klatek: "standard" (zielony) albo "colorblind" (złoty).
+    W trybie standard złoty jest WYŁĄCZONY z detekcji — inaczej kamera ucieka na złote efekty
+    (ult Swaina, tarcze, złote wieże): AWARIA 2 z dokumentacji. Remis = standard (domyślny tryb gry).
+    """
+    return "standard" if green_hits >= gold_hits else "colorblind"
+
+
 def simulate_player_trajectory(
     frames_data: list,
     duration: float,
@@ -911,13 +937,13 @@ def simulate_player_trajectory(
 
     # KROK 3: Płynne śledzenie gracza z Combat Centroid Framing (GOLDEN_BASELINE_PARAMS.json)
     # ── Parametry płynności ────────────────────────────────────────────────
-    LERP_ALPHA         = 0.45   # z GOLDEN_BASELINE_PARAMS.json: płynne, responsywne doganianie celu
-    MAX_PAN_PX         = 80.0 / analysis_scale   # max przesunięcie [px] na próbkę (80px w 1080p)
-    SNAP_DELTA         = 220.0 / analysis_scale  # snap na doskok Shunpo / sztylet / Flash (220px w 1080p)
-    MAX_TELEPORT_DELTA = 700.0 / analysis_scale  # powyżej → odrzuć jako fałszywy wynik (HUD leak / wieża)
-    DEADBAND_PX        = 30.0 / analysis_scale   # mikro-ruchy wewnątrz 30px nie ruszają kamery
-    MOMENTUM_DECAY     = 0.6    # zanik prędkości na klatkę gdy gracz niewidoczny
-    MOMENTUM_FRAMES    = 3      # max klatek kontynuacji momentum (potem hard freeze)
+    LERP_ALPHA         = CAMERA["lerp_alpha"]
+    MAX_PAN_PX         = CAMERA["max_pan_px"] / analysis_scale
+    SNAP_DELTA         = CAMERA["snap_delta_px"] / analysis_scale
+    MAX_TELEPORT_DELTA = CAMERA["max_teleport_px"] / analysis_scale
+    DEADBAND_PX        = CAMERA["deadband_px"] / analysis_scale
+    MOMENTUM_DECAY     = CAMERA["momentum_decay"]
+    MOMENTUM_FRAMES    = CAMERA["momentum_frames"]
     # ──────────────────────────────────────────────────────────────────────
 
     track_x = first_x
@@ -929,7 +955,7 @@ def simulate_player_trajectory(
 
     for f_idx, item in enumerate(frames_data):
         t_curr = float(t_points[f_idx])
-        is_kill_window = any(abs(t_curr - kt) <= 0.8 for kt in kill_timestamps)
+        is_kill_window = any(abs(t_curr - kt) <= CAMERA["kill_window_sec"] for kt in kill_timestamps)
 
         if isinstance(item, tuple):
             hp_b, enemy_cx = item
@@ -1007,14 +1033,14 @@ def simulate_player_trajectory(
     print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames_data)} klatek z graczem w kadrze")
 
     # KROK 4: Wygładzanie adaptacyjne — zachowuje ostre cięcia (snapy i jump-cuts > 180px)
-    SMOOTH_WIN = 5
+    SMOOTH_WIN = CAMERA["smooth_win"]
     raw_arr = np.array(crop_xs, dtype=float)
     smoothed = np.zeros_like(raw_arr)
 
     # Podziel na niezależne sekcje w miejscach gwałtownych przeskoków (jump-cut / Shunpo)
     cut_indices = [0]
     for idx in range(1, len(raw_arr)):
-        if abs(raw_arr[idx] - raw_arr[idx - 1]) > 180:
+        if abs(raw_arr[idx] - raw_arr[idx - 1]) > CAMERA["smooth_split_px"]:
             cut_indices.append(idx)
     cut_indices.append(len(raw_arr))
 
@@ -1028,7 +1054,7 @@ def simulate_player_trajectory(
             smoothed[s_start + local_i] = raw_arr[s_start:s_end][w_start:w_end].mean()
 
     # KROK 5: End Freeze — ostatnie 0.6s klipu (PROJECT_GUIDELINES.md) — brak zamrażania przed fragiem
-    end_freeze_sec = 0.6
+    end_freeze_sec = CAMERA["end_freeze_sec"]
     if duration > end_freeze_sec * 1.5:
         freeze_idx = int(len(smoothed) * (1.0 - end_freeze_sec / duration))
         freeze_idx = max(0, min(freeze_idx, len(smoothed) - 1))
@@ -1088,6 +1114,29 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
         # KROK 1: Wykrycie paska gracza (zielony - standardowy LoL, złoty - colorblind LoL) + centroid wrogów
         # W LoL tylko gracz ma pasek zielony (standard) lub złoty (colorblind). Sojusznicy są NIEBIESCY, wrogowie CZERWONI.
         # Miniony mają małe paski (cw <= 35px), które odrzucamy przez w_min >= 42px.
+        # Pre-skan (co 4. klatka): zielony czy złoty pasek gracza. W trybie standard złoty wypada z detekcji.
+        # Liczymy KLATKI, w których jest obiekt o kształcie paska bohatera, a nie piksele: duży złoty efekt czaru
+        # ma więcej pikseli niż mały zielony pasek i sama liczba pikseli przełączałaby tryb błędnie.
+        def _has_bar(mask) -> bool:
+            m = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE,
+                                 cv2.getStructuringElement(cv2.MORPH_RECT, (int(max(15, 25 * sw)), 1)))
+            n, _, st, _ = cv2.connectedComponentsWithStats(m)
+            for ci in range(1, n):
+                _, _, cw, ch, area = st[ci]
+                if (max(25, int(42 * sw)) <= cw <= max(60, int(155 * sw)) and max(2, int(4 * sh)) <= ch <= max(10, int(26 * sh))
+                        and 2.0 <= cw / max(ch, 1) <= 18.0 and area >= max(15, int(45 * sw * sh))):
+                    return True
+            return False
+
+        _green_hits = _gold_hits = 0
+        for i in range(0, len(frames), 4):
+            f = frames[i].astype(np.int16)
+            r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
+            _gold_hits += int(_has_bar(((r > 165) & (g > 130) & (b < 115) & ((r - b) > 50) & ((g - b) > 25)) & excl))
+            _green_hits += int(_has_bar(((g > 115) & (r < 110) & (b < 100) & ((g - r) > 35) & ((g - b) > 35)) & excl))
+        bar_mode = detect_player_bar_mode(_green_hits, _gold_hits)
+        print(f"   Pasek gracza: tryb {bar_mode} (klatki z zielonym paskiem: {_green_hits}, ze złotym: {_gold_hits})")
+
         frames_data = []
         for i in range(len(frames)):
             f = frames[i].astype(np.int16)
@@ -1102,7 +1151,7 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
             gold_mask = ((r > 165) & (g > 130) & (b < 115) & ((r - b) > 50) & ((g - b) > 25)) & frame_excl
             # 2. Zielony pasek gracza (Standardowy tryb LoL - najczęstszy)
             green_mask = ((g > 115) & (r < 110) & (b < 100) & ((g - r) > 35) & ((g - b) > 35)) & frame_excl
-            player_mask = (gold_mask | green_mask).astype(np.uint8)
+            player_mask = (green_mask if bar_mode == "standard" else (gold_mask | green_mask)).astype(np.uint8)
 
             # Bridging czarnych kresek 100 HP (notches): kernel 25px scala segmenty paska poziomu w jednolity pasek championa
             notch_k = cv2.getStructuringElement(cv2.MORPH_RECT, (int(max(15, 25 * sw)), 1))

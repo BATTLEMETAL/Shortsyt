@@ -1,0 +1,633 @@
+{
+ "_note": "Wycinek learning_directive.json z 11.11.2026 (retencja), do testu mediany.",
+ "retention_analysis": {
+  "status": "success",
+  "total_curves_analyzed": 15,
+  "channel_avg_swiped_away_pct": 14.7,
+  "channel_avg_hook_retention_pct": 85.3,
+  "channel_avg_view_pct": 122.9,
+  "videos": [
+   {
+    "video_id": "wfa8xs2gzIE",
+    "title": "3 Down, No Escape 💀 CHAOS #shorts #leagueoflegends #lol",
+    "action_type": "outplay",
+    "duration_s": 23.0,
+    "views": 1349,
+    "swiped_away_pct": 15.0,
+    "hook_retention_pct": 85.0,
+    "avg_view_pct": 46.1,
+    "diagnosis": "🎯 Stabilna retencja (46.1% AVD). Utrzymanie widza w normie kanału.",
+    "top_drop_offs": [
+     {
+      "time_s": 6.5,
+      "elapsed_pct": 31,
+      "drop_pct": 10.0,
+      "watch_pct_after": 58.8,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     },
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 3,
+      "drop_pct": 5.0,
+      "watch_pct_after": 111.8,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.8,
+      "elapsed_pct": 4,
+      "drop_pct": 5.0,
+      "watch_pct_after": 105.9,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 1.9,
+      "elapsed_pct": 9,
+      "drop_pct": 5.0,
+      "watch_pct_after": 100.0,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   },
+   {
+    "video_id": "crwEgV8GgFw",
+    "title": "They Tried To RUN 💀 SOLO BOLO #shorts #leagueoflegends #lol",
+    "action_type": "solo_bolo",
+    "duration_s": 15.0,
+    "views": 1472,
+    "swiped_away_pct": 19.6,
+    "hook_retention_pct": 80.4,
+    "avg_view_pct": 96.8,
+    "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 80.4% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.5,
+      "elapsed_pct": 4,
+      "drop_pct": 3.1,
+      "watch_pct_after": 145.0,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.8,
+      "elapsed_pct": 6,
+      "drop_pct": 3.1,
+      "watch_pct_after": 137.0,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 1.1,
+      "elapsed_pct": 8,
+      "drop_pct": 2.5,
+      "watch_pct_after": 131.0,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 9.0,
+      "elapsed_pct": 67,
+      "drop_pct": 2.4,
+      "watch_pct_after": 87.2,
+      "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
+     }
+    ]
+   },
+   {
+    "video_id": "IHxenMj6cHc",
+    "title": "Vanished Before They Could Run ⚡ #shorts #leagueoflegends #lol",
+    "action_type": "outplay",
+    "duration_s": 20.0,
+    "views": 2840,
+    "swiped_away_pct": 17.7,
+    "hook_retention_pct": 82.3,
+    "avg_view_pct": 109.5,
+    "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 82.3% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.7,
+      "elapsed_pct": 4,
+      "drop_pct": 3.5,
+      "watch_pct_after": 150.9,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 3,
+      "drop_pct": 3.2,
+      "watch_pct_after": 156.6,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.9,
+      "elapsed_pct": 5,
+      "drop_pct": 2.8,
+      "watch_pct_after": 146.4,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 17.9,
+      "elapsed_pct": 96,
+      "drop_pct": 2.3,
+      "watch_pct_after": 84.8,
+      "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+     }
+    ]
+   },
+   {
+    "video_id": "HhEAqRFYnTM",
+    "title": "Thinking 1v1 Was Safe 👑 SOLO BOLO #shorts #leagueoflegends #lol",
+    "action_type": "solo_bolo",
+    "duration_s": 15.0,
+    "views": 2066,
+    "swiped_away_pct": 19.8,
+    "hook_retention_pct": 80.2,
+    "avg_view_pct": 108.2,
+    "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 80.2% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 4,
+      "drop_pct": 3.1,
+      "watch_pct_after": 148.7,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.9,
+      "elapsed_pct": 6,
+      "drop_pct": 2.7,
+      "watch_pct_after": 140.7,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.8,
+      "elapsed_pct": 5,
+      "drop_pct": 2.4,
+      "watch_pct_after": 144.9,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 13.3,
+      "elapsed_pct": 89,
+      "drop_pct": 1.9,
+      "watch_pct_after": 81.8,
+      "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+     }
+    ]
+   },
+   {
+    "video_id": "HaFAzEfolhQ",
+    "title": "Disrespectful Mechanics 👑 CHECK #shorts #leagueoflegends #lol",
+    "action_type": "outplay",
+    "duration_s": 15.0,
+    "views": 0,
+    "swiped_away_pct": 28.2,
+    "hook_retention_pct": 71.8,
+    "avg_view_pct": 105.8,
+    "diagnosis": "🎯 Stabilna retencja (105.8% AVD). Utrzymanie widza w normie kanału.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.9,
+      "elapsed_pct": 6,
+      "drop_pct": 5.2,
+      "watch_pct_after": 152.0,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 4,
+      "drop_pct": 4.1,
+      "watch_pct_after": 167.4,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.8,
+      "elapsed_pct": 5,
+      "drop_pct": 3.4,
+      "watch_pct_after": 161.3,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 1.2,
+      "elapsed_pct": 8,
+      "drop_pct": 2.4,
+      "watch_pct_after": 144.1,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   },
+   {
+    "video_id": "3eOD1I3jV0w",
+    "title": "Relentless Triple Kill Chase 💀 CHECK #shorts #leagueoflegends #lol",
+    "action_type": "triple",
+    "duration_s": 15.0,
+    "views": 375,
+    "swiped_away_pct": 12.3,
+    "hook_retention_pct": 87.7,
+    "avg_view_pct": 71.3,
+    "diagnosis": "🎯 Stabilna retencja (71.3% AVD). Utrzymanie widza w normie kanału.",
+    "top_drop_offs": [
+     {
+      "time_s": 4.3,
+      "elapsed_pct": 28,
+      "drop_pct": 3.7,
+      "watch_pct_after": 100.7,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     },
+     {
+      "time_s": 4.2,
+      "elapsed_pct": 28,
+      "drop_pct": 2.7,
+      "watch_pct_after": 105.4,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     },
+     {
+      "time_s": 8.5,
+      "elapsed_pct": 56,
+      "drop_pct": 2.7,
+      "watch_pct_after": 62.8,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     },
+     {
+      "time_s": 9.3,
+      "elapsed_pct": 62,
+      "drop_pct": 2.7,
+      "watch_pct_after": 53.4,
+      "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
+     }
+    ]
+   },
+   {
+    "video_id": "-pDUfw6csgk",
+    "title": "River Chase And Easy Pickings 💀 #shorts #leagueoflegends #lol",
+    "action_type": "outplay",
+    "duration_s": 19.0,
+    "views": 215,
+    "swiped_away_pct": 4.0,
+    "hook_retention_pct": 96.0,
+    "avg_view_pct": 66.3,
+    "diagnosis": "🎯 Stabilna retencja (66.3% AVD). Utrzymanie widza w normie kanału.",
+    "top_drop_offs": [
+     {
+      "time_s": 6.3,
+      "elapsed_pct": 33,
+      "drop_pct": 6.0,
+      "watch_pct_after": 90.5,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     },
+     {
+      "time_s": 8.0,
+      "elapsed_pct": 42,
+      "drop_pct": 6.0,
+      "watch_pct_after": 69.0,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     },
+     {
+      "time_s": 10.5,
+      "elapsed_pct": 55,
+      "drop_pct": 6.0,
+      "watch_pct_after": 52.4,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     },
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 3,
+      "drop_pct": 4.0,
+      "watch_pct_after": 114.3,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   },
+   {
+    "video_id": "mg7bR7qcdCQ",
+    "title": "Walking Up Mid Is Crazy 💀 SOLO BOLO #shorts #leagueoflegends #lol",
+    "action_type": "solo_bolo",
+    "duration_s": 13.0,
+    "views": 1641,
+    "swiped_away_pct": 8.5,
+    "hook_retention_pct": 91.5,
+    "avg_view_pct": 474.7,
+    "diagnosis": "🔥 Perfekcyjna Retencja! Niski Swiped Away (8.5%) oraz średni czas 474.7% (widzowie zapętlają film). Parametry montażu idealne.",
+    "top_drop_offs": [
+     {
+      "time_s": 13.0,
+      "elapsed_pct": 100,
+      "drop_pct": 45.5,
+      "watch_pct_after": 175.6,
+      "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+     },
+     {
+      "time_s": 12.9,
+      "elapsed_pct": 99,
+      "drop_pct": 7.2,
+      "watch_pct_after": 436.3,
+      "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+     },
+     {
+      "time_s": 0.8,
+      "elapsed_pct": 6,
+      "drop_pct": 1.7,
+      "watch_pct_after": 552.5,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.9,
+      "elapsed_pct": 7,
+      "drop_pct": 1.2,
+      "watch_pct_after": 545.9,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   },
+   {
+    "video_id": "WX5B9yCEvNQ",
+    "title": "Bot Lane Hunt Turned Into CHAOS 💀 #shorts #leagueoflegends #lol",
+    "action_type": "outplay",
+    "duration_s": 12.0,
+    "views": 1508,
+    "swiped_away_pct": 20.3,
+    "hook_retention_pct": 79.7,
+    "avg_view_pct": 100.3,
+    "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 79.7% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.8,
+      "elapsed_pct": 7,
+      "drop_pct": 3.0,
+      "watch_pct_after": 135.5,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.7,
+      "elapsed_pct": 6,
+      "drop_pct": 2.7,
+      "watch_pct_after": 140.1,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 1.0,
+      "elapsed_pct": 8,
+      "drop_pct": 2.5,
+      "watch_pct_after": 131.6,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 5,
+      "drop_pct": 2.0,
+      "watch_pct_after": 144.2,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   },
+   {
+    "video_id": "cHEw2qs0TyI",
+    "title": "Katarina's Double Tap CHAOS 😈 #shorts #leagueoflegends #lol",
+    "action_type": "double",
+    "duration_s": 22.0,
+    "views": 2669,
+    "swiped_away_pct": 23.7,
+    "hook_retention_pct": 76.3,
+    "avg_view_pct": 95.5,
+    "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 76.3% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.9,
+      "elapsed_pct": 4,
+      "drop_pct": 6.5,
+      "watch_pct_after": 150.5,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 1.1,
+      "elapsed_pct": 5,
+      "drop_pct": 6.2,
+      "watch_pct_after": 140.1,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.7,
+      "elapsed_pct": 3,
+      "drop_pct": 3.0,
+      "watch_pct_after": 161.4,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 1.3,
+      "elapsed_pct": 6,
+      "drop_pct": 2.6,
+      "watch_pct_after": 135.8,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   },
+   {
+    "video_id": "wDhDPrN2Nfc",
+    "title": "Ego Check Accepted 💀 SOLO BOLO #shorts #leagueoflegends #lol",
+    "action_type": "solo_bolo",
+    "duration_s": 16.0,
+    "views": 2978,
+    "swiped_away_pct": 19.2,
+    "hook_retention_pct": 80.8,
+    "avg_view_pct": 99.1,
+    "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 80.8% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.5,
+      "elapsed_pct": 3,
+      "drop_pct": 3.0,
+      "watch_pct_after": 145.5,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.8,
+      "elapsed_pct": 5,
+      "drop_pct": 2.8,
+      "watch_pct_after": 137.7,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 4,
+      "drop_pct": 2.4,
+      "watch_pct_after": 141.9,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 1.0,
+      "elapsed_pct": 6,
+      "drop_pct": 2.1,
+      "watch_pct_after": 134.5,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   },
+   {
+    "video_id": "AsNMP4_LqXY",
+    "title": "They Thought It Was Easy Pickings 💀 #shorts #leagueoflegends #lol",
+    "action_type": "outplay",
+    "duration_s": 16.0,
+    "views": 1367,
+    "swiped_away_pct": 14.5,
+    "hook_retention_pct": 85.5,
+    "avg_view_pct": 74.2,
+    "diagnosis": "🎯 Stabilna retencja (74.2% AVD). Utrzymanie widza w normie kanału.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.8,
+      "elapsed_pct": 5,
+      "drop_pct": 2.8,
+      "watch_pct_after": 127.0,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 5.6,
+      "elapsed_pct": 35,
+      "drop_pct": 2.8,
+      "watch_pct_after": 87.8,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     },
+     {
+      "time_s": 4.3,
+      "elapsed_pct": 27,
+      "drop_pct": 2.3,
+      "watch_pct_after": 109.7,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     },
+     {
+      "time_s": 4.5,
+      "elapsed_pct": 28,
+      "drop_pct": 2.2,
+      "watch_pct_after": 106.8,
+      "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+     }
+    ]
+   },
+   {
+    "video_id": "0o-Cvlnq8CE",
+    "title": "River Hunting Grounds 💀 Bad Idea #shorts #leagueoflegends #lol",
+    "action_type": "outplay",
+    "duration_s": 5.0,
+    "views": 1424,
+    "swiped_away_pct": 0.0,
+    "hook_retention_pct": 100.0,
+    "avg_view_pct": 145.1,
+    "diagnosis": "🔥 Perfekcyjna Retencja! Niski Swiped Away (0.0%) oraz średni czas 145.1% (widzowie zapętlają film). Parametry montażu idealne.",
+    "top_drop_offs": [
+     {
+      "time_s": 4.1,
+      "elapsed_pct": 81,
+      "drop_pct": 10.5,
+      "watch_pct_after": 144.6,
+      "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
+     },
+     {
+      "time_s": 0.7,
+      "elapsed_pct": 14,
+      "drop_pct": 4.9,
+      "watch_pct_after": 211.9,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 11,
+      "drop_pct": 3.6,
+      "watch_pct_after": 221.5,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.9,
+      "elapsed_pct": 19,
+      "drop_pct": 2.6,
+      "watch_pct_after": 201.0,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   },
+   {
+    "video_id": "bJhLIalQ_TE",
+    "title": "Baron Pit Massacre 💀 Bad Idea #shorts #leagueoflegends #lol",
+    "action_type": "outplay",
+    "duration_s": 8.0,
+    "views": 222,
+    "swiped_away_pct": 0.0,
+    "hook_retention_pct": 100.0,
+    "avg_view_pct": 139.7,
+    "diagnosis": "🔥 Perfekcyjna Retencja! Niski Swiped Away (0.0%) oraz średni czas 139.7% (widzowie zapętlają film). Parametry montażu idealne.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.4,
+      "elapsed_pct": 5,
+      "drop_pct": 6.1,
+      "watch_pct_after": 182.6,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 8,
+      "drop_pct": 3.7,
+      "watch_pct_after": 176.8,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.7,
+      "elapsed_pct": 9,
+      "drop_pct": 3.7,
+      "watch_pct_after": 172.5,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.6,
+      "elapsed_pct": 7,
+      "drop_pct": 2.4,
+      "watch_pct_after": 181.2,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   },
+   {
+    "video_id": "Fmy_q57bQAE",
+    "title": "Master Reset Machine 🔥 Double Kill #shorts #leagueoflegends #lol",
+    "action_type": "double",
+    "duration_s": 15.0,
+    "views": 1355,
+    "swiped_away_pct": 17.8,
+    "hook_retention_pct": 82.2,
+    "avg_view_pct": 110.6,
+    "diagnosis": "🔥 Perfekcyjna Retencja! Niski Swiped Away (17.8%) oraz średni czas 110.6% (widzowie zapętlają film). Parametry montażu idealne.",
+    "top_drop_offs": [
+     {
+      "time_s": 0.8,
+      "elapsed_pct": 5,
+      "drop_pct": 3.9,
+      "watch_pct_after": 155.7,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 1.1,
+      "elapsed_pct": 7,
+      "drop_pct": 3.5,
+      "watch_pct_after": 145.8,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 0.9,
+      "elapsed_pct": 6,
+      "drop_pct": 2.5,
+      "watch_pct_after": 151.6,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     },
+     {
+      "time_s": 1.2,
+      "elapsed_pct": 8,
+      "drop_pct": 2.0,
+      "watch_pct_after": 142.5,
+      "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+     }
+    ]
+   }
+  ],
+  "insights": [
+   "Analiza YouTube Analytics API objęła 15 filmów z pełną krzywą retencji.",
+   "Średni wskaźnik Swiped Away na kanale: 14.7% (utrzymanie hooka: 85.3%).",
+   "Średnia retencja odtworzeń (AVD): 122.9%.",
+   "Filmy z czasem 10-13s wykazują o ~14% niższy Swiped Away niż filmy >18s."
+  ]
+ }
+}

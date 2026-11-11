@@ -43,7 +43,7 @@ def _save_cache(cache: dict):
         json.dump(cache, f, indent=2)
 
 
-def detect_beat_drop(music_path: str, manual_fallback: float = 30.0) -> float:
+def detect_beat_drop(music_path: str, manual_fallback: float = 0.0) -> float:
     """
     Detect the timestamp (seconds) of the beat drop in a music file.
 
@@ -112,15 +112,15 @@ def get_drop_time(music_path: str, manual_map: dict = None) -> float:
     """
     fname = os.path.basename(music_path)
 
-    # Try librosa first
+    known = float((manual_map or {}).get(fname, 0.0) or 0.0)
+
+    # librosa first; when it fails or lands out of range, the map's value for THIS track is the fallback
     if LIBROSA_OK:
-        return detect_beat_drop(music_path)
+        return detect_beat_drop(music_path, manual_fallback=known)
 
-    # Fall back to manual map
-    if manual_map and fname in manual_map:
-        return manual_map[fname]
-
-    return 30.0  # last resort default
+    # No librosa: the manual map, else 0.0 = "no drop known" (the editor then plays the track from its start).
+    # Before 11 Nov 2026 this returned 30.0 for any unknown track: a made-up drop that put the music off the hit.
+    return known
 
 
 # ─── CLI test ──────────────────────────────────────────────────────────────────

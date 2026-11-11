@@ -1,0 +1,61 @@
+{
+ "_about": "Reguły silnika Flikcut w jednym miejscu. tests/test_rules.py porównuje te liczby z kodem: zmiana w kodzie bez zmiany tutaj (albo odwrotnie) wywala test. Tak poprawka nie znika po cichu trzy zmiany później. Pola 'doc' i 'open' są dla ludzi.",
+ "version": "2026-11-11",
+ "edit_limits": {
+  "zoom_max": 1.12,
+  "zoom_window_max": 0.40,
+  "slowmo_window_max": 0.70,
+  "mini_slowmo_speed": 0.70,
+  "mini_slowmo_lead": 0.30,
+  "mini_slowmo_window": 0.70,
+  "ease_max": 0.15,
+  "doc": "lol_timeline.py. Reżyser i tuning mogą prosić o więcej (zoom 1.25, slow-mo 1.6 s); edytor przycina do tych wartości i wypisuje to w logu."
+ },
+ "frame": {
+  "source": [1920, 1080],
+  "crop_width": 608,
+  "output": [1080, 1920],
+  "doc": "Kadr 9:16 z 1080p ma 608 px (parzyście; 607 wywala NVENC). Źródła inne niż 1920x1080 są normalizowane przy wycinaniu (lol_editor.NORMALIZE_SOURCE)."
+ },
+ "camera": {
+  "lerp_alpha": 0.45,
+  "max_pan_px": 80.0,
+  "snap_delta_px": 220.0,
+  "max_teleport_px": 700.0,
+  "deadband_px": 30.0,
+  "momentum_decay": 0.6,
+  "momentum_frames": 3,
+  "kill_window_sec": 0.8,
+  "smooth_win": 5,
+  "smooth_split_px": 180.0,
+  "end_freeze_sec": 0.6,
+  "doc": "smart_camera.CAMERA. Wartości są takie, jakie stały w kodzie przekazanym 11.11.2026."
+ },
+ "camera_open": [
+  {"rule": "snap_delta_px", "code": 220, "guidelines": 280, "todo": "PROJECT_GUIDELINES mówi 280, kod 220. Rozstrzygnąć na klipie z Flashem i wpisać jedną liczbę w obu miejscach."},
+  {"rule": "górna maska HUD", "code": "cała szerokość, y < 140", "guidelines": "y < 95 tylko dla x 680..1240", "todo": "Dokumentacja opisuje to jako naprawioną AWARIĘ 3 (ślepota w rzece), a kod ma starą maskę z komentarzem 'zgodnie z backup a6ec349'. Poprawka zniknęła przy przywróceniu kopii. Sprawdzić na klipie z rzeki."},
+  {"rule": "dolny HUD", "code": "y > 815", "guidelines": "y > 864"},
+  {"rule": "marginesy", "code": "x < 85, x > 1720", "guidelines": "x < 45, x > 1740"},
+  {"rule": "portrety sojuszników", "code": "y < 550, x > 1450", "guidelines": "y < 450, x > 1540"},
+  {"rule": "geometria paska gracza", "code": "szer. 42..155, wys. 4..26, proporcja 2..18", "guidelines": "szer. 18..150, wys. 5..18, proporcja 2..12"},
+  {"rule": "złota maska", "code": "r>165, g>130, b<115", "guidelines": "r>175, g>140, b<95"}
+ ],
+ "duration_targets_open": {
+  "frag_detector_default": "10..13 s (target_min_dur, target_max_dur)",
+  "solo_bolo": "dokładnie 15.0 s",
+  "quality_validator": "100 pkt dopiero od 14 s (pre-flight) i 15..30 s (post-flight), krótsze tracą punkty",
+  "learning_engine": "koszyki <13.5, 13.5..17.5, >17.5 s",
+  "todo": "Trzy moduły ciągną długość w różne strony. Ustalić jeden cel (np. 13..17 s) i wpisać go tu jako regułę, z której czytają wszystkie trzy."
+ },
+ "learning": {
+  "min_sample_for_weight": 3,
+  "min_sample_for_bucket": 8,
+  "min_sample_for_slot": 5,
+  "min_sample_for_keyword": 4,
+  "min_sample_for_structure": 5,
+  "min_lead_to_win": 0.15,
+  "shrink_k": 10.0,
+  "zero_views_threshold": 50,
+  "doc": "learning_engine.py. Wniosek staje się ustawieniem dopiero przy tej liczbie filmów i przewadze 15 % nad drugim."
+ }
+}

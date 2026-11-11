@@ -28,6 +28,21 @@ except ImportError:
     )
 import json
 
+# Jedna oś czasu dla obrazu, napisów, muzyki i dźwięku gry (11.11.2026; patrz lol_timeline.py)
+try:
+    from lol_agent import lol_timeline as TL
+except ImportError:
+    import lol_timeline as TL
+
+# Dropy sprawdzone uchem. Tylko te wygrywają z automatyczną detekcją; reszta mapy to przybliżenia.
+MUSIC_DROP_VERIFIED = {"ncs_cartoon_on_and_on.mp3", "ncs_elektronomia_sky_high.mp3"}
+# Ostatnia synchronizacja muzyki (do przepisu shorta): wypełnia merge_music
+LAST_MUSIC_SYNC = {}
+# Dźwięk gry rozciągany razem z obrazem (False = stare zachowanie: dźwięk gry bez zwolnień)
+WARP_GAME_AUDIO = True
+# Źródło inne niż 1920x1080 jest przy wycinaniu sprowadzane do 1920x1080 (maski HUD i kamera są liczone dla 1080p)
+NORMALIZE_SOURCE = True
+
 def get_performance_insights() -> dict:
     """Wczytuje najnowsze wnioski z analizy wydajności (lol_pre_analysis.json)."""
     insights_path = os.path.join(os.path.dirname(__file__), "lol_pre_analysis.json")
@@ -261,6 +276,31 @@ def get_video_duration(path: str) -> float:
         return 0.0
 
 
+def get_video_size(path: str):
+    """Zwraca (szerokość, wysokość) pierwszego strumienia wideo albo (0, 0), gdy nie da się odczytać."""
+    try:
+        # celowo poza _run_ffmpeg: to tylko odczyt, nie krok montażu (testy liczą wywołania _run_ffmpeg)
+        r = subprocess.run([
+            "ffprobe", "-v", "quiet", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+            "-of", "csv=s=x:p=0", path
+        ], capture_output=True, timeout=15.0)
+        w, h = r.stdout.decode("utf-8", errors="replace").strip().split("x")[:2]
+        return int(w), int(h)
+    except Exception:
+        return 0, 0
+
+
+def _normalize_vf(input_path: str) -> str:
+    """Filtr sprowadzający źródło do 1920x1080 (z czarnymi pasami, gdy proporcje inne niż 16:9). Pusty dla 1080p."""
+    if not NORMALIZE_SOURCE:
+        return ""
+    w, h = get_video_size(input_path)
+    if (w, h) in ((0, 0), (1920, 1080)):
+        return ""
+    print(f"   📐 Źródło {w}x{h} → normalizuję do 1920x1080 (kamera i maski HUD liczą w 1080p)")
+    return ",scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"
+
+
 def cut_clip(input_path: str, start: float, end: float, output_path: str, smooth_seams: bool = False) -> str:
     """
     Wycina fragment klipu z zachowaniem dokładności klatkowej (Frame-Accurate Cut).
@@ -269,6 +309,7 @@ def cut_clip(input_path: str, start: float, end: float, output_path: str, smooth
     """
     duration = max(0.1, end - start)
     encoder_draft = get_optimal_encoder_args("draft")
+    norm_vf = _normalize_vf(input_path)
 
     af_args = []
     if smooth_seams and duration >= 0.15:
@@ -282,7 +323,7 @@ def cut_clip(input_path: str, start: float, end: float, output_path: str, smooth
         "-ss", f"{start:.3f}", "-i", input_path,
         "-t", f"{duration:.3f}",
         *encoder_draft,
-        "-vf", "setpts=PTS-STARTPTS",   # zeruje PTS — eliminuje offset AV po cięciu NVENC
+        "-vf", "setpts=PTS-STARTPTS" + norm_vf,   # zeruje PTS — eliminuje offset AV po cięciu NVENC
         "-c:a", "aac", "-b:a", "192k",
         *af_args,
         "-avoid_negative_ts", "make_zero",
@@ -297,7 +338,7 @@ def cut_clip(input_path: str, start: float, end: float, output_path: str, smooth
             "-ss", f"{start:.3f}", "-i", input_path,
             "-t", f"{duration:.3f}",
             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
-            "-vf", "setpts=PTS-STARTPTS",
+            "-vf", "setpts=PTS-STARTPTS" + norm_vf,
             "-c:a", "aac", "-b:a", "192k",
             *af_args,
             "-avoid_negative_ts", "make_zero",
@@ -328,7 +369,8 @@ def apply_editor_effects(input_path: str, output_path: str,
                          slowmo_speed: float = 0.75,
                          slowmo_duration: float = 1.5,
                          intermediate_peaks: list = None,
-                         use_easing: bool = True) -> float:
+                         use_easing: bool = True,
+                         timeline_out: Optional[dict] = None) -> float:
     """
     Stosuje pionowe kadrowanie, zoom-punch i spowolnienie (speed ramp)
     w jednym przebiegu za pomocą filter_complex w FFmpeg.
@@ -336,9 +378,11 @@ def apply_editor_effects(input_path: str, output_path: str,
     crop_x moze byc wyrazeniem (np. if(lt(t,5.0),...)) dla dynamicznego sledzenia.
     intermediate_peaks: czasy (rel. do klipu) killów PRZED glównym peak_moment.
     Gwarantuje idealna dokladnosc klatkowa i brak przyciec/desynchronizacji.
+    timeline_out: gdy podany słownik, dostaje "segments" (oś czasu), "output_duration" i "mapped_peak"
+                  (cios na osi gotowego filmu) — tego używają muzyka, napisy i dźwięk gry.
     """
     source_w, source_h = 1920, 1080
-    crop_w = int(source_h * 9 / 16)   # 607 ~= 608
+    crop_w = TL.vertical_crop_width(source_h)   # 608 (parzyste; 607 wywala NVENC)
     crop_h = source_h
 
     # Jeśli podano int/float, skonwertuj na str
@@ -348,89 +392,39 @@ def apply_editor_effects(input_path: str, output_path: str,
     else:
         crop_x_expr = crop_x
 
-    # Parametry zoomu (PENTA/ostatni kill) - bezpieczny zoom max 1.12x z centrowaniem w pionie
-    effective_zoom = min(zoom_level, 1.12)
+    # Parametry zoomu (PENTA/ostatni kill) - bezpieczny zoom max ZOOM_MAX z centrowaniem w pionie
+    effective_zoom = min(zoom_level, TL.ZOOM_MAX)
     crop_w_zoom = int(crop_w / effective_zoom)
     crop_h_zoom = int(crop_h / effective_zoom)
+    crop_w_zoom -= crop_w_zoom % 2
+    crop_h_zoom -= crop_h_zoom % 2
     crop_x_expr_zoom = f"({crop_x_expr})+{(crop_w - crop_w_zoom) // 2}"
     # Centrowanie w pionie chroni dolny obszar walki (sztylety, przeciwników pod postacią):
     crop_y_zoom = max(0, (crop_h - crop_h_zoom) // 2)
 
     out_w, out_h = 1080, 1920
 
-    t0 = 0.0
-    # Anticipation lead-in: zwolnienie zaczyna się 0.20s przed decydującym ciosem
-    lead_in = 0.20 if slowmo_speed >= 0.65 else 0.25
-    t1 = max(t0, peak_moment - lead_in)
-    t2 = peak_moment + min(zoom_duration, 0.40)
-    t3 = peak_moment + min(slowmo_duration, 0.70)
-    t4 = clip_duration
-
-    # Zabezpieczenia czasowe
-    t1 = max(t0, min(t1, t4))
-    t2 = max(t1, min(t2, t4))
-    t3 = max(t2, min(t3, t4))
-
-    # Mini slow-mo parametry (TRIPLE/QUADRA i inne kills przed PENTA)
-    MINI_SPEED = 0.6   # 60% tempa -- wyrazne zaznaczenie kill (sesja 15: 0.8→0.6)
-    MINI_DUR   = 1.0   # 1.0s -- TRIPLE/QUADRA musza "bic" (sesja 15: 0.5→1.0)
+    eff = TL.effective_edit_values(zoom_level, zoom_duration, slowmo_duration)
+    if eff["zoom_level"] < zoom_level - 1e-6 or eff["slowmo_window"] < slowmo_duration - 1e-6 or eff["zoom_window"] < zoom_duration - 1e-6:
+        print(f"   ℹ️  Limity montażu: zoom {zoom_level:.2f}x→{eff['zoom_level']:.2f}x, okno zoomu {zoom_duration:.2f}s→{eff['zoom_window']:.2f}s, "
+              f"slow-mo {slowmo_duration:.2f}s→{eff['slowmo_window']:.2f}s (lol_timeline.py)")
 
     normal_crop = f"crop={crop_w}:{crop_h}:'{crop_x_expr}':0"
+    zoom_crop = f"crop={crop_w_zoom}:{crop_h_zoom}:'{crop_x_expr_zoom}':{crop_y_zoom}"
 
-    segs = []
-    # Krzywa easing: eliminacja nagłych szarpnięć przy wejściu i wyjściu ze spowolnienia
-    ease_in_dur = min(0.15, max(0.0, (t1 - t0) * 0.35)) if (use_easing and slowmo_speed < 0.95) else 0.0
-    ease_out_dur = min(0.15, max(0.0, (t4 - t3) * 0.35)) if (use_easing and slowmo_speed < 0.95) else 0.0
-    ease_in_speed = round(1.0 - 0.5 * (1.0 - slowmo_speed), 3)
-    ease_out_speed = round(slowmo_speed + 0.5 * (1.0 - slowmo_speed), 3)
-
-    # Segmenty osi czasu
-    segs = []
-    curr_t = t0
-
-    # Mini slow-mo dla eliminacji pośrednich (Kill 1, Kill 2 przed kulminacją)
-    if intermediate_peaks and slowmo_speed < 0.95:
-        # Filtrujemy tylko kille które leżą przed oknem kulminacji t1
-        valid_inter = [p for p in sorted(intermediate_peaks) if (p > curr_t + 0.35 and p < (t1 - 0.50))]
-        for ip in valid_inter:
-            m_lead = 0.30   # bylo 0.15: slow-mo wchodzi wyraźniej przed kilem
-            m_dur = 0.70    # bylo 0.40: wystarczająco długie okno by napis był czytelny
-            m_start = max(curr_t, ip - m_lead)
-            m_end = min(t1 - 0.15, ip + (m_dur - m_lead))
-            if m_start > curr_t + 0.05:
-                segs.append({"start": curr_t, "end": m_start, "speed": 1.0, "crop": normal_crop})
-            if m_end > m_start + 0.05:
-                segs.append({"start": m_start, "end": m_end, "speed": 0.70, "crop": normal_crop})
-            curr_t = m_end
-
-    # Segment 1: Naturalny, dynamiczny przebieg walki (1.0x, 60 FPS) do wejścia w kulminację
-    t1_norm = t1 - ease_in_dur
-    if t1_norm > curr_t + 0.05:
-        segs.append({"start": curr_t, "end": t1_norm, "speed": 1.0, "crop": normal_crop})
-
-    # Segment 1-ease: Płynne wejście w kulminacyjne slowmo (ease-in ramp)
-    if ease_in_dur > 0.04 and t1 > t1_norm + 0.04:
-        segs.append({"start": t1_norm, "end": t1, "speed": ease_in_speed, "crop": normal_crop})
-
-    # Segment 2: Kulminacyjny decydujący cios (slow-mo + subtelny zoom-punch na gracza)
-    if t2 > t1 + 0.05:
-        segs.append({
-            "start": t1, "end": t2, "speed": slowmo_speed,
-            "crop": f"crop={crop_w_zoom}:{crop_h_zoom}:'{crop_x_expr_zoom}':{crop_y_zoom}"
-        })
-
-    # Segment 3: Płynne wyjście ze spowolnienia (slow-mo bez zoomu)
-    if t3 > t2 + 0.05:
-        segs.append({"start": t2, "end": t3, "speed": slowmo_speed, "crop": normal_crop})
-
-    # Segment 3-ease: Płynny powrót do tempa normalnego (ease-out ramp)
-    t3_ease_end = t3 + ease_out_dur
-    if ease_out_dur > 0.04:
-        segs.append({"start": t3, "end": t3_ease_end, "speed": ease_out_speed, "crop": normal_crop})
-
-    # Segment 4: Finisz i zakończenie akcji w tempie 1.0x
-    if t4 > t3_ease_end + 0.05:
-        segs.append({"start": t3_ease_end, "end": t4, "speed": 1.0, "crop": normal_crop})
+    # Oś czasu: JEDNO źródło prawdy (lol_timeline.build_speed_segments)
+    time_segments = TL.build_speed_segments(
+        clip_duration=clip_duration, peak_moment=peak_moment, slowmo_speed=slowmo_speed,
+        slowmo_duration=slowmo_duration, zoom_duration=zoom_duration,
+        intermediate_peaks=intermediate_peaks, use_easing=use_easing,
+    )
+    if not time_segments:
+        time_segments = [{"start": 0.0, "end": float(clip_duration), "speed": 1.0, "zoom": False}]
+    segs = [dict(ts, crop=(zoom_crop if ts["zoom"] else normal_crop)) for ts in time_segments]
+    if timeline_out is not None:
+        timeline_out["segments"] = time_segments
+        timeline_out["output_duration"] = TL.output_duration(time_segments)
+        timeline_out["mapped_peak"] = TL.warp_time(time_segments, peak_moment)
 
     filter_lines = []
     labels = []
@@ -693,9 +687,12 @@ def build_dynamic_captions_filters(
     slowmo_speed: float = 0.50,
     slowmo_duration: float = 1.5,
     action_type: str = "",
+    time_segments: Optional[list] = None,
 ) -> list[str]:
     """
     Buduje filtry FFmpeg dla dynamicznych napisów kill-by-kill, HUD oraz progress bara.
+    time_segments: oś czasu z apply_editor_effects. Gdy podana, czasy napisów liczy lol_timeline.warp_time
+                   (ta sama oś co obraz); bez niej działa stary, przybliżony model.
     """
     if not peaks:
         return []
@@ -733,6 +730,8 @@ def build_dynamic_captions_filters(
     }
 
     def _adjust_t(t_orig: float) -> float:
+        if time_segments:
+            return TL.warp_time(time_segments, float(t_orig))
         MINI_SPEED = 0.6
         MINI_DUR   = 1.0
         
@@ -1040,8 +1039,13 @@ def merge_music(video_path: str, music_path: Optional[str],
                 game_audio_path: Optional[str] = None,
                 kill_peaks: list = None,
                 music_volume: Optional[float] = None,
-                game_volume: Optional[float] = None) -> str:
+                game_volume: Optional[float] = None,
+                time_segments: Optional[list] = None) -> str:
     """Nakłada muzykę i miesza ją z oryginalnym dźwiękiem gry.
+
+    video_peak_time = moment ciosu NA OSI GOTOWEGO FILMU (po zwolnieniach), nie w surowym klipie.
+    kill_peaks      = (czas, etykieta) również na osi gotowego filmu.
+    time_segments   = oś czasu z apply_editor_effects: dźwięk gry jest rozciągany tak samo jak obraz.
 
     video_path      = wideo bez audio (step4 po apply_editor_effects)
     game_audio_path = źródłowy klip z dźwiękiem gry (step1 — wyciety raw clip)
@@ -1054,19 +1058,27 @@ def merge_music(video_path: str, music_path: Optional[str],
 
     fname = os.path.basename(music_path)
 
-    # Auto-detect beat drop with librosa (falls back to manual map)
-    if BEAT_DETECTOR_OK:
+    # Drop: 1) sprawdzony uchem (MUSIC_DROP_VERIFIED), 2) detekcja librosa, 3) przybliżona mapa, 4) brak synchronizacji
+    if fname in MUSIC_DROP_VERIFIED and fname in MUSIC_DROP_MAP:
+        drop_time = MUSIC_DROP_MAP[fname]
+    elif BEAT_DETECTOR_OK:
         drop_time = _get_drop_time(music_path, manual_map=MUSIC_DROP_MAP)
     else:
         drop_time = MUSIC_DROP_MAP.get(fname, 0.0)
 
     music_seek_args = []
     if drop_time > 0.0:
-        music_start = max(0.0, drop_time - video_peak_time)
-        print(f"🎵 Beat Sync: drop piosenki = {drop_time}s, szczyt wideo = {video_peak_time}s -> start piosenki = {music_start:.2f}s")
+        music_start, drop_early = TL.music_start_for_drop(drop_time, video_peak_time)
+        print(f"🎵 Beat Sync: drop piosenki = {drop_time}s, cios w gotowym filmie = {video_peak_time:.2f}s -> start piosenki = {music_start:.2f}s")
+        if drop_early > 0.05:
+            print(f"⚠️  Beat Sync: drop padnie {drop_early:.2f}s PRZED ciosem (drop utworu jest wcześniej niż cios w filmie) — wybierz utwór z późniejszym dropem")
         music_seek_args = ["-ss", f"{music_start:.3f}"]
+        LAST_MUSIC_SYNC.update(track=fname, drop_time=drop_time, music_start=music_start, drop_early_sec=drop_early,
+                               drop_verified=fname in MUSIC_DROP_VERIFIED, peak_in_output=round(video_peak_time, 3))
     else:
         print(f"🎵 Brak mapy dropu dla {fname} — puszczam od początku")
+        LAST_MUSIC_SYNC.update(track=fname, drop_time=0.0, music_start=0.0, drop_early_sec=0.0, drop_verified=False,
+                               peak_in_output=round(video_peak_time, 3))
 
     # Sprawdź źródło audio gry: preferuj game_audio_path (step1), fallback do video_path
     audio_source = game_audio_path if (game_audio_path and os.path.exists(game_audio_path)) else video_path
@@ -1118,8 +1130,12 @@ def merge_music(video_path: str, music_path: Optional[str],
         game_boost = _game_boost_expr(game_vol, kill_peaks)
         music_duck  = _music_duck_expr(music_vol, kill_peaks)
 
+        # Dźwięk gry na tej samej osi czasu co obraz (inaczej po pierwszym zwolnieniu uderzenia słychać przed obrazem)
+        warp_on = bool(WARP_GAME_AUDIO and time_segments and any(abs(sg["speed"] - 1.0) > 1e-6 for sg in time_segments))
+        game_in = "[gwarp]" if warp_on else "[2:a]"
+        warp_prefix = (TL.audio_warp_filter(time_segments, "2:a", "gwarp") + ";") if warp_on else ""
         filter_complex = (
-            f"[2:a]loudnorm=I=-14:TP=-1.5:LRA=11,"
+            f"{warp_prefix}{game_in}loudnorm=I=-14:TP=-1.5:LRA=11,"
             f"volume=eval=frame:volume='{game_boost}',"
             f"afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}[ga];"
             f"[1:a]loudnorm=I=-17:TP=-1.5:LRA=11,"
@@ -1161,6 +1177,12 @@ def merge_music(video_path: str, music_path: Optional[str],
         print(f"🎵 Tylko muzyka ({int(MUSIC_VOLUME*100)}%) — brak dźwięku gry w źródle")
 
     r = _run_ffmpeg(cmd, timeout=120.0, desc="merge_music")
+    if r.returncode != 0 and time_segments and "gwarp" in " ".join(str(c) for c in cmd):
+        # Bezpiecznik: gdyby rozciąganie dźwięku gry zawiodło, miks jak dawniej (dźwięk gry bez zwolnień), nie sama muzyka
+        print("⚠️  Rozciąganie dźwięku gry nie powiodło się — miksuję dźwięk gry bez zwolnień")
+        return merge_music(video_path, music_path, output_path, video_duration, video_peak_time,
+                           game_audio_path=game_audio_path, kill_peaks=kill_peaks,
+                           music_volume=music_volume, game_volume=game_volume, time_segments=None)
     if r.returncode != 0:
         err_msg = r.stderr.decode('utf-8', errors='replace')[:400]
         print(f"⚠️  Błąd zaawansowanego miksowania amix: {err_msg}")
@@ -1564,6 +1586,7 @@ def apply_overlays_unified(
     hook_text: str = "",
     cta_text: str = "",
     cta_duration: float = 1.8,
+    time_segments: Optional[list] = None,
 ) -> str:
     """
     Łączy dynamiczne napisy kill-by-kill, hook overlay oraz CTA overlay
@@ -1582,6 +1605,7 @@ def apply_overlays_unified(
             slowmo_speed=slowmo_speed,
             slowmo_duration=slowmo_duration,
             action_type=action_type,
+            time_segments=time_segments,
         )
         filters.extend(cap_filters)
 
@@ -1844,7 +1868,7 @@ def render_short(
                 step1,
                 0.0, clip_duration,
                 source_w=1920, source_h=1080,
-                crop_w=int(1080 * 9 / 16),
+                crop_w=TL.vertical_crop_width(1080),
                 peaks=peaks or []     # <- kill-snap: champion locked during kills
             )
             # Champion centering: BANNER_SHIFT is fixed at 0 to guarantee the player
@@ -1856,7 +1880,7 @@ def render_short(
                 step1,
                 0.0, clip_duration,
                 source_w=1920, source_h=1080,
-                crop_w=int(1080 * 9 / 16)
+                crop_w=TL.vertical_crop_width(1080)
             )
             crop_x_expr = f"{crop_x}"
 
@@ -1926,6 +1950,7 @@ def render_short(
     if _inter_peaks:
         print(f"   ⚡ Intermediate peaks (mini slow-mo): {[f'{p:.1f}s' for p in _inter_peaks]}")
 
+    _timeline = {}
     final_duration = apply_editor_effects(
         input_path=step1,
         output_path=step4,
@@ -1936,8 +1961,15 @@ def render_short(
         zoom_duration=_zoom_dur,
         slowmo_speed=_slowmo_speed if use_speed_ramp else 1.0,
         slowmo_duration=_slowmo_dur,
-        intermediate_peaks=_inter_peaks if use_speed_ramp else []
+        intermediate_peaks=_inter_peaks if use_speed_ramp else [],
+        timeline_out=_timeline,
     )
+    _segments = _timeline.get("segments") or []
+    # Cios na osi GOTOWEGO filmu (po zwolnieniach). Przed 11.11.2026 muzyka dostawała czas surowy
+    # i przy multikillach drop padał nawet ~0.8 s przed ciosem.
+    _mapped_peak = _timeline.get("mapped_peak", rel_peak_moment)
+    if abs(_mapped_peak - rel_peak_moment) > 0.02:
+        print(f"   🧭 Oś czasu: cios {rel_peak_moment:.2f}s (klip) → {_mapped_peak:.2f}s (gotowy film), długość {final_duration:.2f}s")
 
     # KROK 4: Muzyka dopasowana do akcji z beat-sync
     print("\n[4/7] Muzyka i synchronizacja beat-sync + miksowanie audio gry...")
@@ -1945,9 +1977,10 @@ def render_short(
     # Przekazuj step1 (surowy wycinek z audio gry) jako game_audio_path
     # step4 nie ma audio (apply_editor_effects mapuje tylko [v_final])
     _rel_kill_peaks = [((tk if (tk < clip_start or clip_start == 0.0) else (tk - clip_start)), lbl) for (tk, lbl) in (peaks or [])]
-    merge_music(step4, music, step5_music, final_duration, rel_peak_moment,
-                game_audio_path=step1, kill_peaks=_rel_kill_peaks,
-                music_volume=_music_vol, game_volume=_game_vol)
+    _out_kill_peaks = TL.warp_peaks(_segments, _rel_kill_peaks) if _segments else _rel_kill_peaks
+    merge_music(step4, music, step5_music, final_duration, _mapped_peak,
+                game_audio_path=step1, kill_peaks=_out_kill_peaks,
+                music_volume=_music_vol, game_volume=_game_vol, time_segments=_segments)
 
     # ── KROK 5+6+7: Zunifikowany montaż nakładek (Unified Overlays — Task B2) ──
     _hook = hook_text.strip() if hook_text else ""
@@ -1976,6 +2009,7 @@ def render_short(
         hook_text=_hook,
         cta_text=_end_cta,
         cta_duration=1.8,
+        time_segments=_segments,
     )
 
     # ── KROK 8: Freeze-frame hook na klatce 0.0s (P2 — Hook Frame Zero) ─────────
@@ -2020,6 +2054,35 @@ def render_short(
     # Całkowity czas akcji jest już kontrolowany na etapie compute_optimal_clip_window (14.5s).
     # ─────────────────────────────────────────────────────────────────────────
 
+
+    # ── PRZEPIS SHORTA ──────────────────────────────────────────────────────────
+    # Wszystko, co zrobiło ten film, obok niego (<plik>.recipe.json). Bez przepisu wynik (wyświetlenia, retencja)
+    # nie wskazuje przyczyny; z przepisem cykl uczenia może porównywać ustawienia, a nie tylko typ akcji.
+    try:
+        _eff = TL.effective_edit_values(_zoom_level if use_zoom_punch else 1.0, _zoom_dur, _slowmo_dur)
+        _recipe = {
+            "recipe_version": 1,
+            "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "source": os.path.basename(source_path),
+            "action_type": action_type, "champion": champion_name,
+            "clip_seconds_in": round(clip_duration, 3), "final_seconds": round(final_duration, 3),
+            "jump_cut_segments": [list(x) for x in combat_segments] if combat_segments else None,
+            "peaks_in_clip": [[round(float(tk), 3), lbl] for (tk, lbl) in (_rel_kill_peaks or [])],
+            "peak_in_clip": round(rel_peak_moment, 3), "peak_in_output": round(_mapped_peak, 3),
+            "director": ({"archetype": director_decision.archetype, "allow_jump_cut": director_decision.allow_jump_cut,
+                          "asked_zoom": director_decision.zoom_aggression, "asked_slowmo": director_decision.slowmo_duration}
+                         if director_decision else None),
+            "applied": {"zoom_level": _eff["zoom_level"], "zoom_window": _eff["zoom_window"], "slowmo_window": _eff["slowmo_window"],
+                        "slowmo_speed": _slowmo_speed if use_speed_ramp else 1.0, "smart_camera": bool(use_smart_camera and SMART_CAMERA_AVAILABLE),
+                        "music_volume": _music_vol, "game_volume": _game_vol, "game_audio_warped": bool(WARP_GAME_AUDIO and _segments)},
+            "time_segments": _segments,
+            "music": dict(LAST_MUSIC_SYNC) if music else None,
+            "hook_text": _hook, "cta_text": _end_cta,
+        }
+        with open(os.path.splitext(step5)[0] + ".recipe.json", "w", encoding="utf-8") as _rf:
+            json.dump(_recipe, _rf, indent=1, ensure_ascii=False)
+    except Exception as _re:
+        print(f"   [editor] Przepis shorta nie został zapisany: {_re}")
 
     # ── SPRZĄTANIE PLIKÓW TYMCZASOWYCH ──────────────────────────────────────────
     temp_intermediates = [step1, step4, step5_music]
