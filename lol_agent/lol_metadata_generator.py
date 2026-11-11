@@ -31,50 +31,117 @@ except ImportError:
 
 
 def _build_hashtags(champion: str = "Katarina", action_type: str = "outplay") -> str:
-    """Buduje bogaty zestaw viralowych hashtagów pod algorytm YouTube Shorts."""
-    clean = champion.replace(' ', '').replace("'", '') if champion else 'Katarina'
-    champion_tag = f"#{clean}"
-    
+    """Buduje bogaty zestaw viralowych hashtagów pod algorytm YouTube Shorts (kanoniczne małe litery)."""
+    clean = re.sub(r"[^a-zA-Z0-9]", "", champion).lower() if champion else "katarina"
+    act = (action_type or "outplay").lower().replace("_", "")
+
     action_map = {
-        "pentakill": "#Pentakill #Penta #PentaKill #LoLPentakill",
-        "quadrakill": "#Quadrakill #QuadraKill #LoLQuadra",
-        "triple": "#TripleKill #Triple #LoLTriple",
-        "double": "#DoubleKill #Double #LoLDouble",
-        "solo_bolo": "#SoloBolo #SoloKill #1v1 #Outplay #League1v1",
-        "solo": "#SoloBolo #1v1 #SoloKill",
-        "outplay": "#Outplay #LoLOutplay #MechanicalOutplay",
-        "clutch": "#Clutch #1PercentHP #Outplay",
-        "oneshot": "#OneShot",
+        "pentakill": "#pentakill #lolpentakill",
+        "quadrakill": "#quadrakill #lolquadra",
+        "triple": "#triplekill #loltriple",
+        "double": "#doublekill #loldouble",
+        "solobolo": "#solobolo #solokill #1v1 #outplay",
+        "solo": "#solobolo #1v1",
+        "outplay": "#outplay #loloutplay",
+        "clutch": "#clutch #outplay",
+        "oneshot": "#oneshot",
     }
-    action_tag = action_map.get(action_type.lower(), "#Outplay")
+    action_tag = action_map.get(act, "#outplay")
     tags = [
-        "#Shorts", "#LeagueOfLegends", "#LoL",
-        champion_tag, action_tag,
-        "#Gaming", "#LoLHighlights", "#lolgaming",
-        "#epicmoments", "#lolclips", f"#{clean}Plays",
-        "#LoLShorts", "#LeagueOfLegendsShorts", "#GamingShorts"
+        "#shorts", "#shortsfeed", "#leagueoflegends", "#lol",
+        f"#{clean}", f"#{clean}montage", action_tag,
+        "#lolhighlights", "#gaming", "#gamingclips"
     ]
     seen = set()
     unique_tags = []
     for t in " ".join(tags).split():
-        t_clean = t.strip()
-        if t_clean.lower() not in seen:
-            seen.add(t_clean.lower())
+        t_clean = t.strip().lower()
+        if t_clean not in seen:
+            seen.add(t_clean)
             unique_tags.append(t_clean)
     return " ".join(unique_tags)
 
 
+def build_rich_youtube_tags(champion: str = "Katarina", action_type: str = "outplay", rank: str = "Master") -> list:
+    """
+    Generuje bogaty zestaw słów kluczowych do pola 'Tagi' (max 500 znaków) na YouTube.
+    Zawiera frazy championa, akcji, elo oraz wyszukiwań broad bez przedrostka '#'.
+    """
+    champ = (champion or "Katarina").strip()
+    c_lower = champ.lower()
+    act = (action_type or "outplay").lower().replace("_", " ").strip()
+
+    candidate_tags = [
+        c_lower,
+        f"{c_lower} montage",
+        f"{c_lower} outplay",
+        f"{c_lower} gameplay",
+        f"lol {c_lower}",
+        f"{c_lower} lol",
+        f"{c_lower} best plays",
+        f"{c_lower} mechanics",
+        f"{c_lower} 1v1",
+        f"{c_lower} mid",
+        f"{c_lower} guide",
+        act,
+        f"{c_lower} {act}",
+        f"{act} lol",
+        f"{act} league of legends",
+        "triple kill",
+        "penta kill",
+        "pentakill",
+        "solo bolo",
+        "1v1 outplay",
+        "mechanical outplay",
+        "clutch",
+        "league of legends",
+        "lol",
+        "lol shorts",
+        "league shorts",
+        "lol highlights",
+        "league of legends highlights",
+        "lol montage",
+        "best lol plays",
+        "gaming",
+        "gaming shorts",
+        "pc gaming",
+        "riot games",
+        "challenger",
+        "master tier",
+        "high elo lol",
+        "dwannellenga",
+        "shorts feed",
+        "trending gaming",
+    ]
+
+    seen = set()
+    result = []
+    char_count = 0
+    for t in candidate_tags:
+        clean = re.sub(r"[#,\n,]", "", t).strip().lower()
+        if not clean or clean in seen:
+            continue
+        if char_count + len(clean) + 1 > 480:
+            continue
+        seen.add(clean)
+        result.append(clean)
+        char_count += len(clean) + 1
+
+    return result
+
+
 def _ensure_shorts_tag(text: str, champion: str = "Katarina", action_type: str = "outplay") -> str:
-    """Zapewnia obecność tagu #Shorts w opisie (do użytku w opisach i komentarzach)."""
+    """Zapewnia obecność tagu #shorts w opisie (do użytku w opisach i komentarzach)."""
     if not text:
-        return "#Shorts"
+        return "#shorts"
 
     t = text.strip()
+    t = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", t)
     if "#shorts" not in t.lower():
-        if len(t) + len(" #Shorts") <= 96:
-            t = f"{t} #Shorts"
+        if len(t) + len(" #shorts") <= 96:
+            t = f"{t} #shorts"
         else:
-            t = t[:96 - len(" #Shorts")].rstrip() + " #Shorts"
+            t = t[:96 - len(" #shorts")].rstrip() + " #shorts"
 
     return t
 
@@ -82,23 +149,24 @@ def _ensure_shorts_tag(text: str, champion: str = "Katarina", action_type: str =
 def _format_final_title(raw_title: str) -> str:
     """
     Wymusza końcowy format viralowego tytułu YouTube Shorts:
-    <hook> #Shorts #LeagueOfLegends #LoL
+    <hook> #shorts #leagueoflegends #lol
     
-    Usuwa duplikaty tagów, normalizuje kolejność i pilnuje limitu 96 znaków.
-    Zawsze gwarantuje obecność WSZYSTKICH trzech tagów — bez nich Short
-    traci zasięg organiczny w wyszukiwarce YouTube i algorytmie Shorts.
+    Usuwa duplikaty tagów, normalizuje wszystkie tagi do kanonicznych małych liter i pilnuje limitu 96 znaków.
+    Zawsze gwarantuje obecność WSZYSTKICH trzech tagów kanonicznych.
     """
     if not raw_title:
-        return "#Shorts #LeagueOfLegends #LoL"
+        return "#shorts #leagueoflegends #lol"
 
     t = raw_title.strip()
-    # Usuń wszystkie hashtagi z końca i środka — dodamy je na nowo w prawidłowej kolejności
+    # Usuń wszystkie hashtagi z końca i środka w dowolnej wielkości liter
     t = re.sub(r'\s*#Shorts\b', '', t, flags=re.IGNORECASE).strip()
     t = re.sub(r'\s*#LeagueOfLegends\b', '', t, flags=re.IGNORECASE).strip()
     t = re.sub(r'\s*#LoL\b', '', t, flags=re.IGNORECASE).strip()
+    # Konwertuj ewentualne inne hasztagi w tytule na małe litery
+    t = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", t)
     t = t.rstrip(" ,.")
 
-    suffix = " #Shorts #LeagueOfLegends #LoL"
+    suffix = " #shorts #leagueoflegends #lol"
     max_hook = 96 - len(suffix)
     if len(t) > max_hook:
         t = t[:max_hook].rstrip()
@@ -136,163 +204,128 @@ def generate_channel_title(
 
     if "penta" in act:
         templates = [
-            # STATEMENT / SPEED
             f"Entire Team Disappeared in 3 Seconds 💀 {champ} Penta #Shorts",
             f"Enemy Team Wiped Clean 💀 {champ} Pentakill #Shorts",
-            # DISRESPECT / EGO
             f"They Grouped For Free 💀 {champ} Pentakill #Shorts",
             f"They Tried to Contest... Complete Wipe 😈 {champ} #Shorts",
             f"Enemy Made the Wrong Call 💀 {champ} Pentakill #Shorts",
-            # CHASE & CLEANUP
             f"They Scattered. Didn't Matter. 💨 {champ} Penta #Shorts",
             f"Full Squad Execution 💀 {champ} Pentakill #Shorts",
-            # MECHANICAL FLEX
-            f"Perfect Reset Machine 🔥 {champ} Full Ace 😈 #Shorts",
             f"Zero Hesitation. Pure Execution. 💀 {champ} Penta #Shorts",
             f"They Challenged the Reset Queen 👑 Full Pentakill #Shorts",
-            # STORY / TURNAROUND
-            f"They Thought Grouping Was Safe... It Wasn't 😏 #Shorts",
-            f"They Tried to Turn the Fight... Terrible Idea 💀 {champ} #Shorts",
             f"Enemy Team Deleted in Seconds ⚡ {champ} Pentakill #Shorts",
-            f"Pure Reset Rampage 🔥 {champ} Clean Pentakill #Shorts",
+            f"From Full HP to Ace in Under 4 Seconds 💀🔥 #Shorts",
+            f"Vanished Before They Could Even Flash 💨 {champ} Ace #Shorts",
+            f"The Health Bars Just Vanished 💀 {champ} Pentakill #Shorts",
+            f"Every Reset Timed to the Millisecond ⚡ {champ} 💥 #Shorts",
             f"Absolute Teamfight Domination 💥 {champ} Pentakill #Shorts",
         ]
         if map_zone_label:
-            templates.insert(0, f"{map_zone_label} Ace 💀 {champ} Pentakill – Nobody Left Standing #Shorts")
+            templates.append(f"{map_zone_label} Ace 💀 {champ} Pentakill – Clean Wipe #Shorts")
     elif "quadra" in act:
         templates = [
-            # DISRESPECT / EGO
             f"They Thought 4v1 Was Safe... It Wasn't 😏 {champ} #Shorts",
             f"All Four Down. Just Like That. 💀 {champ} Quadra #Shorts",
             f"Enemy Squad Disassembled 💀 {champ} Quadra Kill #Shorts",
-            f"They Tried to Collapse... Wrong Move 😈 {champ} #Shorts",
+            f"They Tried to Collapse... Counter Wipe 😈 {champ} #Shorts",
             f"They Thought Numbers Would Win 😏 {champ} Quadra #Shorts",
-            # STATEMENT / SPEED
             f"Four Enemies Gone in Seconds ⚡ {champ} Quadra #Shorts",
             f"Four Down. Clean Execution. 💥 {champ} Quadra #Shorts",
             f"Clean Cleanup ⚡ {champ} Quadra Kill #Shorts",
-            # STORY
-            f"They Cornered {champ}... Wrong Decision. 💀 Quadra Kill #Shorts",
-            f"Enemy Team Tried to Fight Back 😈 Quadra Kill #Shorts",
-            f"They Tried to Overstay... Quadra Kill 🩸 #Shorts",
-            # MECHANICAL FLEX
-            f"Unstoppable Reset Chain 🔥 {champ} Quadra Kill #Shorts",
-            f"Disrespectful Quadra Kill 💀 {champ} Outplay #Shorts",
-            f"Pure Mechanical Dominance 💀 {champ} Quadra #Shorts",
-        ]
-    elif "triple" in act:
-        templates = [
-            # DISRESPECT / EGO
-            f"Enemy Tried to Engage... Wrong Move 💀 Triple Kill #Shorts",
-            f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts",
-            f"They Tried to 3v1 {champ}... Bad Idea 💀 Triple Kill #Shorts",
-            f"Disrespect Punished 🩸 {champ} Triple Kill #Shorts",
-            # STATEMENT
-            f"Three Down. Zero Chance. 💀 {champ} Triple Kill #Shorts",
-            f"Three Down. Clean Outplay. 💀 {champ} Triple Kill #Shorts",
-            f"Three Enemies Down in Seconds ⚡ {champ} Triple Kill #Shorts",
-            # STORY
-            f"Trash Talk Turned Into Silence 😈 {champ} Triple Kill #Shorts",
-            f"They Made Their Move... Wrong Choice. 💀 Triple Kill #Shorts",
-            f"Enemy Team Walked Right Into It 😈 Triple Kill #Shorts",
-            f"Enemy Flank Turned Into Disaster 💀 Triple Kill #Shorts",
-            # MECHANICAL FLEX
-            f"Back-to-Back-to-Back 🩸 {champ} Triple Kill Reset #Shorts",
-            f"Three Resets in Seconds ⚡ {champ} Triple Kill #Shorts",
-            f"Clean Reset Sequence 🔥 {champ} Triple Kill #Shorts",
-            f"Triple Kill Masterclass 😈 {champ} Outplay #Shorts",
+            f"All Four Down Before Cooldowns Returned ⚡ {champ} #Shorts",
+            f"Zero Hesitation 1v4 Execution 🔥 {champ} #Shorts",
+            f"Walking Into {champ} Like That Was Fatal 💀 #Shorts",
+            f"The Moment The Enemy Realized It Was Over 💀 Quadra #Shorts",
         ]
         if map_zone_label:
-            templates.insert(0, f"{map_zone_label} Triple Kill 💀 {champ} – Clean Reset #Shorts")
+            templates.append(f"{map_zone_label} Quadra Kill 💀 {champ} Clean 1v4 #Shorts")
+    elif "triple" in act:
+        templates = [
+            f"ADC Down… Mid Saved? Not Today! 💥 Triple Kill #Shorts",
+            f"Three Enemies Gone in 2 Seconds ⚡ {champ} Triple 🔥 #Shorts",
+            f"Clean Reset Sequence 🔥 {champ} Triple Kill 🩸 #Shorts",
+            f"Three Down in One Single Breath ⚡ {champ} #Shorts",
+            f"They Clustered Together... Total Destruction 💥 {champ} Triple #Shorts",
+            f"Disrespect Turned Into Silence 😈 {champ} Triple #Shorts",
+            f"They Walked Right Into The Daggers 💀 {champ} #Shorts",
+            f"Back-to-Back Resets Under Pressure 🩸 {champ} Triple #Shorts",
+            f"They Thought They Had The 3v1 Lock 💀 Clean Turnaround #Shorts",
+            f"One By One They Dropped ⚡ {champ} Triple Kill 🔥 #Shorts",
+            f"Frame-Perfect Reset Cascade 💀 {champ} Triple #Shorts",
+            f"Three Down. Clean Outplay. 💀 {champ} Triple Kill #Shorts",
+            f"Zero Hesitation. Three Down. 💥 {champ} Triple ⚡ #Shorts",
+        ]
+        if map_zone_label:
+            templates.append(f"{map_zone_label} Triple Kill 💀 {champ} – Clean Execution #Shorts")
     elif "clutch" in act or "1hp" in act or "1%" in act:
         templates = [
-            # CLUTCH / STAKES
             f"Surviving on 1% HP to Win 🩸 {champ} Clutch #Shorts",
             f"They Were 1 Second Too Late 😏 {champ} Clutch #Shorts",
             f"1 HP. Full Commitment. 💀 {champ} Outplay #Shorts",
             f"The Cleanest 1% HP Outplay You'll See Today 💀 #Shorts",
-            # STORY
             f"They Already Typed 'GG'... {champ} Didn't. 🔥 #Shorts",
             f"Dead or Alive? {champ} Answers With a Kill 🩸 #Shorts",
             f"They Tried to Finish Me... Impossible Outplay 🩸 #Shorts",
             f"Enemy Got Greedy 😏 1% HP Turnaround #Shorts",
             f"They Thought It Was Over 💀 {champ} Clutch Outplay #Shorts",
             f"Enemy Celebrated Too Early 😈 1 HP Clutch #Shorts",
-            # MECHANICAL FLEX
             f"Pure Calculation on 1 HP 🧠 {champ} Clutch #Shorts",
             f"Survived the Full Burst ⚡ {champ} Miracle Outplay #Shorts",
         ]
     elif "double" in act:
         templates = [
-            # DISRESPECT
-            f"They Came 2v1... Left 0v1. 💀 {champ} Double Kill #Shorts",
-            f"Never Fight {champ} 2v1. 😈 Lesson Learned. #Shorts",
-            f"They Thought Numbers Would Help 💀 {champ} Double Kill #Shorts",
-            f"Enemy Duo Tried to Collapse... Wrong Target 💀 #Shorts",
-            f"They Ganked the Wrong Champion 😈 {champ} Double Kill #Shorts",
-            f"They Tried to Pinch {champ}... Regret 💀 #Shorts",
-            # SPEED & STATEMENT
-            f"Two Enemies Down in a Blink ⚡ {champ} Double Kill #Shorts",
+            f"From Nowhere to Double Kill – and Gone! 💨 #Shorts",
+            f"They Came 2v1... Left in Graves 💀 {champ} Double 🔥 #Shorts",
+            f"They Ganked The Wrong Lane 😈 Clean Double Kill ⚡ #Shorts",
+            f"Two Down in a Blink 💥 {champ} 2v1 Turnaround 💀 #Shorts",
+            f"Two Resets in 1 Second ⚡ Clean Double Kill 🔥 #Shorts",
+            f"They Tried to Pinch {champ}... Instant 2v1 Reversal 💀 #Shorts",
+            f"Enemy Duo Deleted Before They Could Move ⚡ #Shorts",
+            f"Walking Into Her Zone Was Their Final Play 💀 Double Kill #Shorts",
+            f"Never Double Commit on {champ} 😈 Clean Double Kill #Shorts",
+            f"Both Health Bars Melted Simultaneously 💥 {champ} #Shorts",
             f"Back-to-Back Execution 🩸 {champ} Double Kill #Shorts",
             f"Two Down. Zero Hesitation. 🩸 {champ} Double Kill #Shorts",
-            f"Enemy Duo Deleted 💥 {champ} Double Kill #Shorts",
-            # MECHANICAL FLEX
-            f"2v1 Outplay Masterclass 🔥 {champ} Double Kill #Shorts",
-            f"Double Reset Precision ⚡ {champ} Double Kill #Shorts",
-            f"Clean 2v1 Turnaround 💀 {champ} Double Kill #Shorts",
         ]
         if map_zone_label:
-            templates.insert(0, f"{map_zone_label} 2v1 Outplay 💀 {champ} Double Kill – No Contest #Shorts")
+            templates.append(f"{map_zone_label} 2v1 Outplay 💀 {champ} Double Kill #Shorts")
     elif "solo" in act or "bolo" in act or "1v1" in act:
         templates = [
-            # DISRESPECT / EGO (top performer on channel)
-            f"They Ego Challenged {champ}... Clean SOLO BOLO 💀 #Shorts",
-            f"The Most Disrespectful 1v1 You'll See Today 😈 {champ} #Shorts",
+            f"Clean SOLO BOLO 👑 1v1 Masterclass 💀 #Shorts",
+            f"They Ego Challenged {champ}... Sent to Base 😈 #Shorts",
             f"Nobody Survives {champ} in a 1v1 👑 Clean SOLO BOLO #Shorts",
-            f"Enemy Ego Checked Hard 👑 {champ} SOLO BOLO #Shorts",
-            f"Enemy Walked Up With Too Much Confidence 😏 SOLO BOLO #Shorts",
-            f"Master Tier 1v1 Ego Check 😈 {champ} SOLO BOLO #Shorts",
-            # MECHANICAL FLEX
-            f"SOLO BOLO Masterclass 😈 {champ} Pure 1v1 Mechanics #Shorts",
-            f"Pixel-Perfect 1v1 Outplay 💀 {champ} SOLO BOLO #Shorts",
-            f"Pure Outplay in the 1v1 🔥 {champ} SOLO BOLO #Shorts",
-            f"Unforgiving 1v1 Mechanics 👑 {champ} SOLO BOLO #Shorts",
-            # STORY
-            f"They Called It… {champ} Answered. SOLO BOLO 🩸 #Shorts",
-            f"Duel Accepted. Duel Won. 💀 {champ} SOLO BOLO #Shorts",
-            f"They Tried to Trade With {champ}... Terrible Mistake 💀 #Shorts",
-            f"They Thought They Won the Duel 💀 Clean SOLO BOLO #Shorts",
-            f"Enemy Stepped Up... Sent Back to Base 💀 SOLO BOLO #Shorts",
-            # CLUTCH
-            f"1v1 at Full Risk 🩸 {champ} SOLO BOLO Clutch #Shorts",
+            f"Walking Up Like That Is Crazy 💀 {champ} 1v1 #Shorts",
+            f"They Tested {champ} and Found Out 💀 SOLO BOLO #Shorts",
+            f"Overconfidence Punished in 0.5 Seconds 👑 SOLO BOLO #Shorts",
+            f"Dodge Everything, Hit Everything 👑 {champ} 1v1 #Shorts",
+            f"They Really Thought They Could 1v1 This 💀 SOLO BOLO #Shorts",
+            f"Calculated to the Exact Millisecond 🧠 Clean 1v1 #Shorts",
+            f"Pixel-Perfect 1v1 Outplay 💀 {champ} SOLO BOLO 🔥 #Shorts",
+            f"Duel Accepted. Duel Won. 💀 Clean SOLO BOLO ⚡ #Shorts",
+            f"They Stepped Up... Instant Gray Screen 💀 SOLO BOLO #Shorts",
+            f"The Level of Disrespect in This 1v1 😈 {champ} #Shorts",
         ]
         if map_zone_label:
-            templates.insert(0, f"Clean {map_zone_label} SOLO BOLO! 👑 {champ} 1v1 No Contest #Shorts")
-            templates.append(f"They Challenged {champ} in {map_zone_label}... Clean SOLO BOLO 💀 #Shorts")
+            templates.append(f"Clean {map_zone_label} SOLO BOLO! 👑 {champ} 1v1 #Shorts")
+            templates.append(f"They Challenged {champ} in {map_zone_label}... Clean Duel 💀 #Shorts")
     else:  # outplay / general
         templates = [
-            # DISRESPECT
-            f"All-In On {champ}? Regret 💀 #Shorts",
-            f"They Thought They Were Safe... Big Mistake 😏 {champ} #Shorts",
-            f"Enemy Tried an Outplay... They Got Outplayed. 💀 #Shorts",
-            f"Underestimated {champ}? 😈 They Paid The Price 🩸 #Shorts",
-            f"Enemy Confidence Shattered 💀 {champ} Outplay #Shorts",
-            f"Disrespect Turned Into Disaster 🩸 {champ} Outplay #Shorts",
-            # SPEED & STATEMENT
+            f"No Escape 💀 Hunting Down The Entire Team 🔥 #Shorts",
+            f"Frame-Perfect Reaction 🔥 Clean Outplay 💀 #Shorts",
+            f"Zero Hesitation. Pure Execution. 💀 {champ} Outplay 🔥 #Shorts",
+            f"The Health Bars Just Disappeared 💀 {champ} #Shorts",
+            f"They Didn't Even Realize What Happened 💀 {champ} #Shorts",
+            f"The Level of Disrespect in This Play 😈 {champ} #Shorts",
+            f"They Thought They Had The Upper Hand 😏 Reversal ⚡ #Shorts",
+            f"One Ability Dodge Changed The Whole Fight 🧠 {champ} #Shorts",
+            f"Outplayed at Every Single Step 💀 {champ} Mechanics #Shorts",
+            f"They Flashed Into Their Own Doom 💀 {champ} Outplay #Shorts",
             f"Zero Hesitation. Pure Mechanics. 🔥 {champ} #Shorts",
             f"They Vanished in Seconds 💨 {champ} Outplay #Shorts",
-            f"Frame-Perfect Reaction 🔥 {champ} Outplay #Shorts",
-            # STORY / TURNAROUND
-            f"Enemy Tried to Engage... Walked Into a Trap 💀 #Shorts",
-            f"They Thought It Was Free Kills 😏 {champ} Outplay #Shorts",
             f"Enemy Team Miscalculated 💀 {champ} Clean Outplay #Shorts",
-            f"They Tried to Turn... Huge Mistake 😈 {champ} #Shorts",
-            f"They Tried Everything... Nothing Worked 😈 {champ} #Shorts",
-            # MECHANICAL FLEX
-            f"Outplayed at Every Step 🧠 {champ} Mechanical Flex #Shorts",
         ]
         if map_zone_label:
-            templates.insert(0, f"Clean {map_zone_label} Outplay 💀 {champ} – They Never Stood a Chance #Shorts")
+            templates.append(f"Clean {map_zone_label} Outplay 💀 {champ} #Shorts")
 
     # Dynamiczne punktowanie wg CTR (junk keywords odfiltrowywane przy ładowaniu dyrektywy)
     _JUNK_SCORE_KW = {"DIVE", "SHORTS", "LEAGUEOFLEGENDS", "LOL", "RIOTGAMES", "GAMING"}
@@ -309,25 +342,30 @@ def generate_channel_title(
     except Exception:
         pass
 
-    # Dedup — ładuje odciski (pierwsze 4 słowa) z ostatnich 15 opublikowanych tytułów
-    # i mocno obniża wagę szablonów które pasują do już użytej frazy
+    # Załaduj odciski (2-word, 3-word i 4-word) z ostatnich 30 opublikowanych tytułów
     _used_fingerprints: set = set()
+    _banned_recent_tropes: set = {
+        "BAD IDEA", "HUNTING GROUNDS", "MASSACRE", "RESET MACHINE",
+        "CHAOS", "BIG MISTAKE", "REGRET", "MISTAKE"
+    }
     try:
         _pub_log = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
         if os.path.exists(_pub_log):
             with open(_pub_log, "r", encoding="utf-8") as _pf:
                 _plines = [l.strip() for l in _pf if l.strip()]
-            for _pl in _plines[-15:]:
+            for _pl in _plines[-30:]:
                 try:
                     _pt = json.loads(_pl).get("title", "")
                     if _pt:
-                        # Usuń hashtagi, emoji i interpunkcję → pierwsze 4 słowa jako odcisk
                         _pt_clean = re.sub(r'#\S+', '', _pt)
                         _pt_clean = re.sub(r'[^\w\s]', '', _pt_clean).strip().upper()
                         _words = _pt_clean.split()
+                        if len(_words) >= 2:
+                            _used_fingerprints.add(" ".join(_words[:2]))
                         if len(_words) >= 3:
-                            _used_fingerprints.add(" ".join(_words[:4]))
                             _used_fingerprints.add(" ".join(_words[:3]))
+                        if len(_words) >= 4:
+                            _used_fingerprints.add(" ".join(_words[:4]))
                 except Exception:
                     pass
     except Exception:
@@ -340,26 +378,37 @@ def generate_channel_title(
         t_clean = re.sub(r'[^\w\s]', '', t_clean).strip()
         t_words = t_clean.split()
         score = 1.0
+
+        # Subtelny bonus za lokalizację (+0.3 zamiast agresywnego +6.0)
         if map_zone_label and map_zone_label.upper() in t_upper:
-            score += 6.0
-        for kw in winning_kw:
-            if kw in t_upper:
-                score += 1.8
-        for akw in avoid_kw:
-            if akw in t_upper:
-                score = max(0.05, score - 1.2)
-        # Penalizuj szablony dotknięte zmęczeniem materiałowym (title fatigue z YouTube)
-        for ffp in fatigued_fps:
-            ffp_words = ffp.split()
-            if len(ffp_words) >= 3 and all(w in t_clean for w in ffp_words[:3]):
-                score = max(0.01, score * 0.05)
+            score += 0.3
+
+        # Bezwzględny zakaz overused cliches
+        for trope in _banned_recent_tropes:
+            if trope in t_upper:
+                score = 0.0001
                 break
-        # Penalizuj szablony których frazy kluczowe były niedawno użyte
-        for fp in _used_fingerprints:
-            fp_words = fp.split()
-            if len(fp_words) >= 3 and all(w in t_clean for w in fp_words[:3]):
-                score = max(0.05, score * 0.15)  # -85% wagi przy trafieniu odcisku
-                break
+
+        if score > 0.001:
+            for kw in winning_kw:
+                if kw in t_upper:
+                    score += 0.8  # Umiarkowany bonus, by nie faworyzować stale tych samych słów
+            for akw in avoid_kw:
+                if akw in t_upper:
+                    score = max(0.05, score - 1.2)
+
+            # Penalizuj szablony dotknięte zmęczeniem materiałowym (title fatigue)
+            for ffp in fatigued_fps:
+                ffp_words = ffp.split()
+                if len(ffp_words) >= 2 and all(w in t_clean for w in ffp_words[:2]):
+                    score = 0.0001
+                    break
+
+            # Głęboka deduplikacja: jeśli szablon zaczyna się od tych samych 2 słów co niedawny film
+            if len(t_words) >= 2 and " ".join(t_words[:2]) in _used_fingerprints:
+                score = 0.0001
+            elif len(t_words) >= 3 and " ".join(t_words[:3]) in _used_fingerprints:
+                score = 0.0001
 
         # A/B Testing: wyklucz identyczny tytuł jeśli podano exclude_title
         if exclude_title:
@@ -367,12 +416,13 @@ def generate_channel_title(
             if t.split("#")[0].strip().upper() == clean_excl:
                 score = 0.0001
 
-        # A/B Testing: Wariant B promuje alternatywne kąty (pytania, prowokacje, narracje)
+        # A/B Testing: Wariant B promuje alternatywne kąty
         if str(variant).upper() == "B":
             if any(q in t for q in ["?", "They Thought", "Tried", "Safe", "Wrong", "Surviving", "Calculation", "Miracle", "Cleanest"]):
                 score *= 3.0
 
         weights.append(score)
+
     return _format_final_title(random.choices(templates, weights=weights, k=1)[0])
 
 
@@ -396,6 +446,10 @@ def build_channel_description(title: str, champion: str = "Katarina", action_typ
             f"👍 Drop a LIKE if this 1v1 was clean!\n"
             f"🔔 SUBSCRIBE to Dwannellenga so you never miss a clip!\n"
             f"💬 Rate this Solo Bolo 1-10 in the comments below! 👇\n\n"
+            f"🌐 Connect with us across platforms:\n"
+            f"📘 Facebook: https://www.facebook.com/Dwannellenga\n"
+            f"📸 Instagram: https://www.instagram.com/dwannellenga\n"
+            f"🎵 TikTok: https://www.tiktok.com/@dwannellenga\n\n"
             f"{hashtags}"
         )
 
@@ -407,6 +461,10 @@ def build_channel_description(title: str, champion: str = "Katarina", action_typ
         f"👍 Drop a LIKE if you enjoyed the outplay!\n"
         f"🔔 SUBSCRIBE to Dwannellenga so you never miss a clip!\n"
         f"💬 Rate this play 1-10 in the comments below! 👇\n\n"
+        f"🌐 Connect with us across platforms:\n"
+        f"📘 Facebook: https://www.facebook.com/Dwannellenga\n"
+        f"📸 Instagram: https://www.instagram.com/dwannellenga\n"
+        f"🎵 TikTok: https://www.tiktok.com/@dwannellenga\n\n"
         f"{hashtags}"
     )
 
@@ -457,7 +515,7 @@ def build_pinned_comment(champion: str = "Katarina", action_type: str = "outplay
         f"Rate the survival instinct 1-10! 🛡️ Would you have turned around or run? 👇 (Hit LIKE if clean!)",
         f"How tilted is the enemy team right now on a scale of 1-10? 💀👇 (Leave a LIKE to support the channel!)",
     ]
-    return random.choice(comments)
+    return f"{random.choice(comments)}\n\n👉 Catch daily League highlights & full clips on our Facebook: https://www.facebook.com/Dwannellenga\n📸 Insta: @dwannellenga | 🎵 TikTok: @dwannellenga"
 
 
 def generate_metadata(
@@ -502,7 +560,7 @@ def generate_metadata(
     viral_titles = [t for t in raw_viral if "dive" not in t.lower()]
     title_tone = tuning_params.get("title_tone", "hype")
 
-    # Załaduj ostatnie 20 tytułów — buduj odciski frazowe (pierwsze 4 słowa bez emoji/hashtag)
+    # Załaduj ostatnie 30 tytułów — buduj odciski frazowe (2, 3 i 4 słowa bez emoji/hashtag)
     _recent_titles = []
     _recent_fingerprints = []
     try:
@@ -510,7 +568,7 @@ def generate_metadata(
         if os.path.exists(_pub_log):
             with open(_pub_log, "r", encoding="utf-8") as _f:
                 _lines = [l.strip() for l in _f if l.strip()]
-            for _line in _lines[-20:]:
+            for _line in _lines[-30:]:
                 try:
                     _t = json.loads(_line).get("title", "")
                     if _t:
@@ -518,7 +576,11 @@ def generate_metadata(
                         _fp = re.sub(r'#\S+', '', _t)
                         _fp = re.sub(r'[^\w\s]', '', _fp).strip().upper()
                         _fp_words = _fp.split()
+                        if len(_fp_words) >= 2:
+                            _recent_fingerprints.append(" ".join(_fp_words[:2]))
                         if len(_fp_words) >= 3:
+                            _recent_fingerprints.append(" ".join(_fp_words[:3]))
+                        if len(_fp_words) >= 4:
                             _recent_fingerprints.append(" ".join(_fp_words[:4]))
                 except Exception:
                     pass
@@ -615,6 +677,8 @@ ACTION-SPECIFIC TITLE RULES (follow STRICTLY based on action_type):
 
 NARRATIVE & COMBAT INITIATIVE MANDATE (CRITICAL — PREVENT HALLUCINATIONS):
 - CHAMPION IS THE AGGRESSOR / HUNTER: In high-elo League of Legends, mobile assassins like {champ} engage, flank, chase down, and execute retreating targets.
+- STRICTLY FORBIDDEN RANK PREFIX:
+  * NEVER prepend the rank to champion name as a title prefix (e.g. DO NOT write "Master Katarina", "Diamond Katarina"). Rank is purely context for play quality, NOT a title hook!
 - STRICTLY FORBIDDEN DEFENSIVE CLAIMS:
   * NEVER claim or hallucinate that the enemy "tried to dive me", "tower dived", "ganked me", or "jumped me" unless the context above explicitly describes a tower dive defense.
   * If the clip is an aggressive chase or hunt, emphasize the relentless pursuit: e.g. "They Thought They Could Run 💀", "No Escape From {champ} 💥", "Chasing Down the Entire Team 😈", "Hunting Them Down 🔥".
@@ -629,31 +693,41 @@ CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
 3. STRICTLY FORBIDDEN / LOW-CTR WORDS (DO NOT USE): {', '.join(avoid_kw[:6])}
 4. CHANNEL BENCHMARK VIRAL TITLES (Model your style after these top hits):
 {viral_examples_str}
-5. FORMATTING: Hook phrase first (max 45 visible chars before hashtags), then MUST end with viral hashtags: #Shorts #LeagueOfLegends #LoL. 1-2 emojis max.
+5. FORMATTING: Hook phrase first (max 45 visible chars before hashtags), then MUST end with viral hashtags: #shorts #leagueoflegends #lol. 1-2 emojis max.
 6. TITLE ARCHETYPE ROTATION — choose ONE archetype that fits this clip best, DO NOT default to questions:
-   - DISRESPECT / EGO: "They Grouped For Free 💀", "All-In On Katarina? Instant Regret 💀"
-   - STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "One Reset. Five Graves. 🩸"
-   - STORY / RETRIBUTION: "Trash Talk Turned Into Silence 😈", "They Cornered Her. Bad Idea. 💥"
-   - MECHANICAL FLEX: "Perfect Reset Machine 🔥 Full Domination 😈", "Zero Hesitation. Pure Execution. 💀"
-   - CLUTCH / STAKES: "Surviving on 1 HP to Win 🩸", "They Were 1 Second Too Late 😏"
-   - HUNT / CHASE: "No Escape 💀 Hunting Down The Entire Team 🔥", "They Tried to Run. Nowhere to Go."
-   QUESTIONS ("Rate 1-10", "Clean or Luck?") are ALLOWED but MUST be used sparingly — max 20% of output. Never two in a row.
+   - DISRESPECT / EGO: "They Grouped For Free 💀", "They Thought 1v1 Was Safe 😏", "Walking Up Like That Is Crazy 💀"
+   - STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "Vanished Before They Could Even Flash 💨"
+   - STORY / TURNAROUND: "Duel Accepted. Duel Won. 💀", "They Already Typed 'GG' 🔥", "They Flashed Into Their Own Doom 💀"
+   - MECHANICAL FLEX: "Pixel-Perfect Reaction 🔥", "Calculated to the Exact Millisecond 🧠", "Dodge Everything, Hit Everything 👑"
+   - CLUTCH / STAKES: "Surviving on 1 HP to Win 🩸", "The Cleanest 1% HP Clutch 💀"
+   - HUNT / CHASE: "No Escape 💀 Hunting Down The Squad 🔥", "Chasing Down Every Single Reset ⚡"
+   QUESTIONS ("Rate 1-10", "Clean or Luck?") are ALLOWED but MUST be used sparingly — max 15% of output. Never two in a row.
+7. STRICTLY FORBIDDEN CLICHES & TROPE WORDS (DO NOT USE UNDER ANY CIRCUMSTANCES):
+   - "Bad Idea", "Hunting Grounds", "Massacre", "Reset Machine", "Mistake", "Regret"
+   - Never prepend rank or champion as prefix like "Master Katarina", "Master Reset".
 7. PINNED COMMENT: Ask one direct question to trigger comments (e.g. "Would you have survived that? Drop 💀 if not!")
 {_recent_titles_block}
 
 GENERATE JSON ONLY (no markdown fences, raw json):
 {{
-  "title": "Strong punchy hook (max 45 chars) + #Shorts #LeagueOfLegends #LoL at end.",
+  "title": "Strong punchy hook (max 45 chars) + #shorts #leagueoflegends #lol at end.",
   "hook_text": "3-4 words punchy overlay in ALL CAPS (e.g. CLEAN OUTPLAY)",
-  "description": "Engaging 2-3 sentence description encouraging likes and comments with hashtags #LeagueOfLegends #LoL #{champ.replace(' ', '')} #Shorts",
+  "description": "Engaging 2-3 sentence description encouraging likes and comments. ENGLISH ONLY.",
   "pinned_comment": "Direct question that triggers comments + like trigger",
   "tags": ["{champ.lower()}", "lol {champ.lower()}", "league of legends", "shorts", "gaming", "outplay"]
 }}"""
 
 
+            gen_config = None
+            try:
+                from google.genai import types as _genai_types
+                gen_config = _genai_types.GenerateContentConfig(temperature=0.85)
+            except Exception:
+                pass
+
             for model_name in models_to_try:
                 try:
-                    resp = client.models.generate_content(model=model_name, contents=prompt)
+                    resp = client.models.generate_content(model=model_name, contents=prompt, config=gen_config) if gen_config else client.models.generate_content(model=model_name, contents=prompt)
                     raw_text = resp.text.strip()
                     if "```json" in raw_text:
                         raw_text = raw_text.split("```json")[1].split("```")[0].strip()
@@ -676,35 +750,77 @@ GENERATE JSON ONLY (no markdown fences, raw json):
                         print(f"   [Gemini AI] ⚠️ Wykryto polskie słowa w tytule/opisie ({_detected_pl}) — ponawiam...")
                         continue
 
+                    # Usuń niechciane prefixy rangowe (np. "Master Katarina ...")
+                    _raw_title = re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', _raw_title, flags=re.IGNORECASE).strip()
+
                     # Wymuś pełny zestaw viralowych tagów: #Shorts #LeagueOfLegends #LoL
                     gen_title = _format_final_title(_raw_title)
 
-                    # Sprawdź czy wygenerowany tytuł nie wpada w wykryte zmęczenie materiałowe (title fatigue)
+                    # Sprawdź bezwzględnie zakazane klisze
+                    BANNED_TROPES = ["bad idea", "hunting grounds", "massacre", "reset machine", "mistake", "regret"]
+                    if any(bt in gen_title.lower() for bt in BANNED_TROPES):
+                        print(f"   [Gemini AI] ⚠️ Tytuł '{gen_title}' zawiera zakazaną kliszę — odrzucam i ponawiam...")
+                        continue
+
+                    # Sprawdź czy wygenerowany tytuł nie wpada w wykryte zmęczenie materiałowe (title fatigue) i duplikaty
                     _t_clean = re.sub(r'#\S+', '', gen_title.upper())
                     _t_clean = re.sub(r'[^\w\s]', '', _t_clean).strip()
                     _t_words = _t_clean.split()
-                    if len(_t_words) >= 3 and fatigued_phrases:
-                        _gen_fp = " ".join(_t_words[:3])
-                        if any(_gen_fp == fp or _gen_fp.startswith(fp) for fp in fatigued_phrases):
-                            print(f"   [Gemini AI] ⚠️ Tytuł '{gen_title}' narusza title fatigue (fraza '{_gen_fp}') — odrzucam i ponawiam...")
+                    if len(_t_words) >= 2:
+                        _gen_fp2 = " ".join(_t_words[:2])
+                        _gen_fp3 = " ".join(_t_words[:3]) if len(_t_words) >= 3 else _gen_fp2
+                        _gen_fp4 = " ".join(_t_words[:4]) if len(_t_words) >= 4 else _gen_fp3
+
+                        # Sprawdź powtórzenie otwierających słów z ostatnich filmów
+                        if any(_gen_fp2 == fp for fp in _recent_fingerprints if len(fp.split()) == 2):
+                            print(f"   [Gemini AI] ⚠️ Tytuł '{gen_title}' powtarza pierwsze 2 słowa niedawnego filmu ('{_gen_fp2}') — odrzucam i ponawiam...")
+                            continue
+
+                        # Sprawdź zmęczenie materiałowe (title fatigue)
+                        if fatigued_phrases and any(_gen_fp3 == fp or _gen_fp3.startswith(fp) for fp in fatigued_phrases):
+                            print(f"   [Gemini AI] ⚠️ Tytuł '{gen_title}' narusza title fatigue (fraza '{_gen_fp3}') — odrzucam i ponawiam...")
+                            continue
+                        # Sprawdź duplikację z ostatnimi opublikowanymi filmami
+                        if _recent_fingerprints and any(_gen_fp3 == fp or _gen_fp4 == fp or fp.startswith(_gen_fp3) for fp in _recent_fingerprints):
+                            print(f"   [Gemini AI] ⚠️ Tytuł '{gen_title}' powtarza niedawny motyw kanału ('{_gen_fp3}') — odrzucam i ponawiam...")
                             continue
 
                     hashtags = _build_hashtags(champ, action_type)
                     raw_desc = (data.get("description") or "").strip()
+                    social_block = (
+                        "\n\n🌐 Connect with us across platforms:\n"
+                        "📘 Facebook: https://www.facebook.com/Dwannellenga\n"
+                        "📸 Instagram: https://www.instagram.com/dwannellenga\n"
+                        "🎵 TikTok: https://www.tiktok.com/@dwannellenga"
+                    )
                     if raw_desc:
-                        # Jeśli strefa mapy została zweryfikowana a opis o niej nie wspomina — dodaj znacznik lokalizacji
-                        if valid_zone and valid_zone.lower() not in raw_desc.lower():
-                            raw_desc = f"{raw_desc}\n\n📍 Location: {valid_zone}"
-                        if "#leagueoflegends" not in raw_desc.lower() or raw_desc.count("#") < 3:
-                            gen_desc = f"{raw_desc}\n\n{hashtags}"
-                        else:
-                            gen_desc = raw_desc
+                        # Usuń wszelkie wplecione hashtagi z surowego tekstu — wstawiamy czysty blok kanoniczny na końcu
+                        clean_desc_body = re.sub(r'#\S+', '', raw_desc).strip()
+                        clean_desc_body = re.sub(r'\n\s*\n+', '\n\n', clean_desc_body).strip()
+                        if valid_zone and valid_zone.lower() not in clean_desc_body.lower():
+                            clean_desc_body = f"{clean_desc_body}\n\n📍 Location: {valid_zone}"
+                        gen_desc = f"{clean_desc_body}\n\n{hashtags}{social_block}"
                     else:
                         gen_desc = build_channel_description(gen_title, champ, action_type, map_zone_label=valid_zone)
-                    gen_pin = data.get("pinned_comment") or build_pinned_comment(champ, action_type)
+
+                    gen_pin = (data.get("pinned_comment") or build_pinned_comment(champ, action_type)).strip()
+                    if "facebook.com" not in gen_pin:
+                        gen_pin = (
+                            f"{gen_pin}\n\n"
+                            f"👉 Catch daily League highlights & full clips on our Facebook: https://www.facebook.com/Dwannellenga\n"
+                            f"📸 Insta: @dwannellenga | 🎵 TikTok: @dwannellenga"
+                        )
                     gen_hook = data.get("hook_text") or f"{action_type.upper()}! 💥"
-                    raw_tags = [t.lstrip("#").strip() for t in data.get("tags", []) if t.strip()]
-                    all_tags = list(dict.fromkeys(raw_tags + YT_BASE_TAGS))[:30]
+                    rich_base = build_rich_youtube_tags(champ, action_type, rank)
+                    raw_tags = [t.lstrip("#").strip().lower() for t in data.get("tags", []) if t.strip()]
+                    all_tags = list(dict.fromkeys(rich_base + raw_tags))
+                    pruned_tags = []
+                    t_len = 0
+                    for tag in all_tags:
+                        if t_len + len(tag) + 1 <= 480:
+                            pruned_tags.append(tag)
+                            t_len += len(tag) + 1
+                    all_tags = pruned_tags
 
                     gen_title_b = generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone, variant="B", exclude_title=gen_title)
                     print(f"   [Gemini AI] Wygenerowano wzmocniony tytuł ({model_name}): {gen_title}")
@@ -735,14 +851,7 @@ GENERATE JSON ONLY (no markdown fences, raw json):
     description = build_channel_description(title, champ, action_type, map_zone_label=valid_zone)
     pinned_comment = build_pinned_comment(champ, action_type)
     
-    all_tags = [
-        champ, champ.lower(), f"lol {champ.lower()}",
-        f"{champ.lower()} outplay", f"{champ.lower()} montage",
-        action_type.lower(), f"{action_type.lower()} lol",
-        "league of legends", "lol", "lol shorts", "shorts", "gaming",
-        "lol gameplay", "lol highlights", "best lol plays"
-    ] + YT_BASE_TAGS
-    all_tags = list(dict.fromkeys(all_tags))[:30]
+    all_tags = build_rich_youtube_tags(champ, action_type, rank)
 
     return {
         "title": title,

@@ -15,6 +15,25 @@ os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 import socket
 from google.oauth2.credentials import Credentials
+import sys
+import types
+
+# Compatibility shim for older pickled Google Auth tokens
+try:
+    import google.auth._regional_access_boundary_utils
+except ImportError:
+    class DummyRAB:
+        def __init__(self, *args, **kwargs): pass
+        def __setstate__(self, state):
+            if isinstance(state, dict): self.__dict__.update(state)
+        def apply_headers(self, headers): pass
+
+    _rab_mod = types.ModuleType("google.auth._regional_access_boundary_utils")
+    _rab_mod.DummyRAB = DummyRAB
+    _rab_mod._RegionalAccessBoundaryManager = DummyRAB
+    _rab_mod._RegionalAccessBoundaryData = DummyRAB
+    _rab_mod._RegionalAccessBoundaryRefreshManager = DummyRAB
+    sys.modules["google.auth._regional_access_boundary_utils"] = _rab_mod
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -43,10 +62,18 @@ def _load_credentials() -> Optional[Credentials]:
 
 
 def _save_credentials(creds: Credentials):
-    """Zapisz credentials do pickle."""
+    """Zapisz credentials do pickle w sposób atomowy i bezpieczny."""
     ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
-    with open(YT_TOKEN_PATH, "wb") as f:
+    if hasattr(creds, "_rab_manager"):
+        try:
+            delattr(creds, "_rab_manager")
+        except Exception:
+            pass
+    tmp_path = YT_TOKEN_PATH.with_suffix(".tmp")
+    with open(tmp_path, "wb") as f:
         pickle.dump(creds, f)
+    import os
+    os.replace(tmp_path, YT_TOKEN_PATH)
 
 
 def get_token_status() -> Dict[str, Any]:
@@ -269,7 +296,9 @@ def _exchange_code_direct(code: str, flow_path_str: str, port: int) -> bool:
         print("[OAuth] SUCCESS: YouTube token saved successfully!", flush=True)
         return True
     except Exception as e:
+        import traceback
         print(f"[OAuth] ERROR: Token exchange failed: {repr(e)}", flush=True)
+        traceback.print_exc()
         return False
 
 
@@ -322,148 +351,178 @@ def infer_frag_type_from_title(title: str) -> str:
     return "outplay"
 
 
+def _safe_print(msg: str) -> None:
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        try:
+            print(msg.encode("ascii", errors="replace").decode("ascii"))
+        except Exception:
+            pass
+
+
 _PERF_CACHE: Dict[str, Any] = {"timestamp": 0.0, "data": None}
+_YT_API_RAW_CACHE: Dict[str, Any] = {"timestamp": 0.0, "scheduled": {}, "published": [], "views_list": []}
+
+
+def invalidate_publish_cache():
+    """Wymusza wyczyszczenie pamięci podręcznej publikacji i harmonogramu."""
+    global _PERF_CACHE, _YT_API_RAW_CACHE
+    _PERF_CACHE["data"] = None
+    _PERF_CACHE["timestamp"] = 0.0
+    _YT_API_RAW_CACHE["timestamp"] = 0.0
+    _YT_API_RAW_CACHE["scheduled"] = {}
+    _YT_API_RAW_CACHE["published"] = []
+    _YT_API_RAW_CACHE["views_list"] = []
 
 
 def get_channel_videos_and_performance(max_results: int = 50, force_refresh: bool = False) -> Dict[str, Any]:
     """
-    Pobiera z YouTube API:
+    Pobiera z YouTube API oraz lokalnych baz (published_videos.jsonl, publishing_calendar.json, *.meta.json):
     1. Zaplanowane filmy (do obsadzenia w przyszłych slotach ze statusem 'scheduled')
     2. Opublikowane filmy z historycznymi statystykami (wyświetlenia, polubienia, komentarze)
     3. Wskaźnik skuteczności (Performance Score) każdego opublikowanego Shorta w relacji do średniej kanału.
-    Zoptymalizowane: 60s TTL cache chroni limit quota i gwarantuje czas odpowiedzi < 1ms.
+    Zoptymalizowane: Odpowiedzi YouTube API są buforowane przez 60s, a lokalne bazy rezerwacji czytane są ZAWSZE na żywo.
     """
-    global _PERF_CACHE
-    now_ts = time.time()
-    if not force_refresh and _PERF_CACHE["data"] is not None and (now_ts - _PERF_CACHE["timestamp"] < 3600.0):
-        return _PERF_CACHE["data"]
+    global _PERF_CACHE, _YT_API_RAW_CACHE
 
     try:
         from zoneinfo import ZoneInfo
-
         tz_cet = ZoneInfo("Europe/Warsaw")
     except Exception:
         tz_cet = timezone(timedelta(hours=2))
 
+    now_ts = time.time()
     scheduled: Dict[str, Dict[str, Any]] = {}
     published: List[Dict[str, Any]] = []
     views_list: List[int] = []
 
-    try:
-        creds = _load_credentials()
-        if creds:
-            if creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                    _save_credentials(creds)
-                except Exception:
-                    pass
-            youtube = build("youtube", "v3", credentials=creds)
-            ch = youtube.channels().list(part="contentDetails", mine=True).execute()
-            uploads_id = ch["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
-            pl = youtube.playlistItems().list(part="snippet,status", playlistId=uploads_id, maxResults=max_results).execute()
-            vids = [item["snippet"]["resourceId"]["videoId"] for item in pl.get("items", [])]
-            if vids:
-                v_res = youtube.videos().list(part="snippet,status,statistics,contentDetails", id=",".join(vids)).execute()
-                raw_published = []
-                import re as _re
+    # ── 1. YouTube Data API (cache 60s) ──
+    if not force_refresh and (now_ts - _YT_API_RAW_CACHE["timestamp"] < 60.0) and _YT_API_RAW_CACHE["timestamp"] > 0:
+        scheduled = dict(_YT_API_RAW_CACHE["scheduled"])
+        published = list(_YT_API_RAW_CACHE["published"])
+        views_list = list(_YT_API_RAW_CACHE["views_list"])
+    else:
+        try:
+            creds = _load_credentials()
+            if creds:
+                if creds.expired and creds.refresh_token:
+                    try:
+                        creds.refresh(Request())
+                        _save_credentials(creds)
+                    except Exception:
+                        pass
+                youtube = build("youtube", "v3", credentials=creds)
+                ch = youtube.channels().list(part="contentDetails", mine=True).execute()
+                uploads_id = ch["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+                pl = youtube.playlistItems().list(part="snippet,status", playlistId=uploads_id, maxResults=max_results).execute()
+                vids = [item["snippet"]["resourceId"]["videoId"] for item in pl.get("items", [])]
+                if vids:
+                    v_res = youtube.videos().list(part="snippet,status,statistics,contentDetails", id=",".join(vids)).execute()
+                    raw_published = []
+                    import re as _re
 
-                def _parse_iso_dur(d_str: str) -> float:
-                    if not d_str:
-                        return 0.0
-                    m = _re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", d_str)
-                    if not m:
-                        return 0.0
-                    h = int(m.group(1) or 0)
-                    m_ = int(m.group(2) or 0)
-                    s = int(m.group(3) or 0)
-                    return float(h * 3600 + m_ * 60 + s)
+                    def _parse_iso_dur(d_str: str) -> float:
+                        if not d_str:
+                            return 0.0
+                        m = _re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", d_str)
+                        if not m:
+                            return 0.0
+                        h = int(m.group(1) or 0)
+                        m_ = int(m.group(2) or 0)
+                        s = int(m.group(3) or 0)
+                        return float(h * 3600 + m_ * 60 + s)
 
-                for v in v_res.get("items", []):
-                    st = v.get("status", {})
-                    sn = v.get("snippet", {})
-                    stats = v.get("statistics", {})
-                    cd = v.get("contentDetails", {})
-                    vid = v["id"]
-                    title = sn.get("title", "")
-                    thumb = sn.get("thumbnails", {}).get("medium", {}).get("url") or sn.get("thumbnails", {}).get("default", {}).get("url", "")
-                    dur_s = _parse_iso_dur(cd.get("duration", ""))
+                    for v in v_res.get("items", []):
+                        st = v.get("status", {})
+                        sn = v.get("snippet", {})
+                        stats = v.get("statistics", {})
+                        cd = v.get("contentDetails", {})
+                        vid = v["id"]
+                        title = sn.get("title", "")
+                        thumb = sn.get("thumbnails", {}).get("medium", {}).get("url") or sn.get("thumbnails", {}).get("default", {}).get("url", "")
+                        dur_s = _parse_iso_dur(cd.get("duration", ""))
 
-                    pub_at = st.get("publishAt")
-                    if pub_at:
-                        dt_utc = datetime.fromisoformat(pub_at.replace("Z", "+00:00"))
-                        dt_cet = dt_utc.astimezone(tz_cet)
-                        key = dt_cet.strftime("%Y-%m-%d %H:%M")
-                        scheduled[key] = {
-                            "video_id": vid,
-                            "title": title,
-                            "thumbnail_url": thumb,
-                            "source": "youtube_scheduled",
-                            "publish_at": pub_at,
-                            "duration_s": dur_s,
-                        }
-                    elif st.get("privacyStatus") == "public":
-                        pub_dt_raw = sn.get("publishedAt")
-                        if pub_dt_raw:
-                            dt_utc = datetime.fromisoformat(pub_dt_raw.replace("Z", "+00:00"))
+                        pub_at = st.get("publishAt")
+                        if pub_at:
+                            dt_utc = datetime.fromisoformat(pub_at.replace("Z", "+00:00"))
                             dt_cet = dt_utc.astimezone(tz_cet)
-                            vw = int(stats.get("viewCount", 0))
-                            lk = int(stats.get("likeCount", 0))
-                            cm = int(stats.get("commentCount", 0))
-                            eng_rate = round(((lk + cm) / vw * 100), 2) if vw > 0 else 0.0
-                            if vw > 0:
-                                views_list.append(vw)
-                            raw_published.append({
+                            key = dt_cet.strftime("%Y-%m-%d %H:%M")
+                            scheduled[key] = {
                                 "video_id": vid,
                                 "title": title,
                                 "thumbnail_url": thumb,
-                                "date": dt_cet.strftime("%Y-%m-%d"),
-                                "time": dt_cet.strftime("%H:%M"),
-                                "datetime_local": dt_cet.strftime("%Y-%m-%d %H:%M CET"),
-                                "datetime_utc": pub_dt_raw,
-                                "views": vw,
-                                "likes": lk,
-                                "comments": cm,
-                                "engagement_rate": eng_rate,
+                                "source": "youtube_scheduled",
+                                "publish_at": pub_at,
                                 "duration_s": dur_s,
-                                "champion": "Katarina",
-                                "frag_type": infer_frag_type_from_title(title),
-                            })
+                            }
+                        elif st.get("privacyStatus") == "public":
+                            pub_dt_raw = sn.get("publishedAt")
+                            if pub_dt_raw:
+                                dt_utc = datetime.fromisoformat(pub_dt_raw.replace("Z", "+00:00"))
+                                dt_cet = dt_utc.astimezone(tz_cet)
+                                vw = int(stats.get("viewCount", 0))
+                                lk = int(stats.get("likeCount", 0))
+                                cm = int(stats.get("commentCount", 0))
+                                eng_rate = round(((lk + cm) / vw * 100), 2) if vw > 0 else 0.0
+                                if vw > 0:
+                                    views_list.append(vw)
+                                raw_published.append({
+                                    "video_id": vid,
+                                    "title": title,
+                                    "thumbnail_url": thumb,
+                                    "date": dt_cet.strftime("%Y-%m-%d"),
+                                    "time": dt_cet.strftime("%H:%M"),
+                                    "datetime_local": dt_cet.strftime("%Y-%m-%d %H:%M CET"),
+                                    "datetime_utc": pub_dt_raw,
+                                    "views": vw,
+                                    "likes": lk,
+                                    "comments": cm,
+                                    "engagement_rate": eng_rate,
+                                    "duration_s": dur_s,
+                                    "champion": "Katarina",
+                                    "frag_type": infer_frag_type_from_title(title),
+                                })
 
-                # Oblicz benchmark średniej kanału
-                avg_views = sum(views_list) / len(views_list) if views_list else 1
+                    # Oblicz benchmark średniej kanału
+                    avg_views = sum(views_list) / len(views_list) if views_list else 1
 
-                for item in raw_published:
-                    vw = item["views"]
-                    ratio = vw / avg_views if avg_views > 0 else 1.0
-                    diff_pct = int((ratio - 1.0) * 100)
-                    diff_str = f"+{diff_pct}%" if diff_pct >= 0 else f"{diff_pct}%"
+                    for item in raw_published:
+                        vw = item["views"]
+                        ratio = vw / avg_views if avg_views > 0 else 1.0
+                        diff_pct = int((ratio - 1.0) * 100)
+                        diff_str = f"+{diff_pct}%" if diff_pct >= 0 else f"{diff_pct}%"
 
-                    if ratio >= 1.25:
-                        tier = "viral_hit"
-                        label = f"🔥 VIRAL HIT ({diff_str})"
-                        score_val = min(10.0, round(7.5 + (ratio - 1.0) * 5, 1))
-                    elif ratio >= 1.0:
-                        tier = "above_avg"
-                        label = f"⚡ PONAD ŚREDNIĄ ({diff_str})"
-                        score_val = min(9.4, round(7.0 + (ratio - 1.0) * 4, 1))
-                    elif ratio >= 0.75:
-                        tier = "average"
-                        label = f"🎯 W NORMIE ({diff_str})"
-                        score_val = max(5.0, round(5.0 + (ratio - 0.75) * 8, 1))
-                    else:
-                        tier = "below_avg"
-                        label = f"⚠️ PONIŻEJ ŚR. ({diff_str})"
-                        score_val = max(1.0, round(ratio * 6.5, 1))
+                        if ratio >= 1.25:
+                            tier = "viral_hit"
+                            label = f"🔥 VIRAL HIT ({diff_str})"
+                            score_val = min(10.0, round(7.5 + (ratio - 1.0) * 5, 1))
+                        elif ratio >= 1.0:
+                            tier = "above_avg"
+                            label = f"⚡ PONAD ŚREDNIĄ ({diff_str})"
+                            score_val = min(9.4, round(7.0 + (ratio - 1.0) * 4, 1))
+                        elif ratio >= 0.75:
+                            tier = "average"
+                            label = f"🎯 W NORMIE ({diff_str})"
+                            score_val = max(5.0, round(5.0 + (ratio - 0.75) * 8, 1))
+                        else:
+                            tier = "below_avg"
+                            label = f"⚠️ PONIŻEJ ŚR. ({diff_str})"
+                            score_val = max(1.0, round(ratio * 6.5, 1))
 
-                    item["performance_score"] = f"{score_val:.1f} / 10"
-                    item["performance_ratio"] = round(ratio, 2)
-                    item["performance_tier"] = tier
-                    item["performance_label"] = label
-                    item["performance_diff"] = diff_str
-                    published.append(item)
-    except Exception as ye:
-        print(f"[Scheduling] Warning fetching YouTube channel data: {ye}")
+                        item["performance_score"] = f"{score_val:.1f} / 10"
+                        item["performance_ratio"] = round(ratio, 2)
+                        item["performance_tier"] = tier
+                        item["performance_label"] = label
+                        item["performance_diff"] = diff_str
+                        published.append(item)
+
+            _YT_API_RAW_CACHE["timestamp"] = now_ts
+            _YT_API_RAW_CACHE["scheduled"] = dict(scheduled)
+            _YT_API_RAW_CACHE["published"] = list(published)
+            _YT_API_RAW_CACHE["views_list"] = list(views_list)
+        except Exception as ye:
+            print(f"[Scheduling] Warning fetching YouTube channel data: {ye}")
 
     # Połącz z lokalnymi wpisami
     pub_log_path = LOL_AGENT_DIR / "published_videos.jsonl"
@@ -477,6 +536,14 @@ def get_channel_videos_and_performance(max_results: int = 50, force_refresh: boo
                     try:
                         item = _json.loads(line.strip())
                         sched = item.get("scheduled_publish_at")
+                        if not sched:
+                            multi = item.get("multi_results", {})
+                            if isinstance(multi, dict):
+                                sched = (
+                                    multi.get("youtube", {}).get("publish_at")
+                                    or multi.get("instagram", {}).get("publish_at")
+                                    or multi.get("facebook", {}).get("publish_at")
+                                )
                         if sched:
                             dt_utc = datetime.fromisoformat(sched.replace("Z", "+00:00"))
                             dt_cet = dt_utc.astimezone(tz_cet)
@@ -491,6 +558,30 @@ def get_channel_videos_and_performance(max_results: int = 50, force_refresh: boo
                         pass
         except Exception as pe:
             print(f"[Scheduling] Warning checking published_videos.jsonl: {pe}")
+
+    # Połącz z bazą kalendarza rezerwacji (publishing_calendar.json)
+    cal_path = LOL_AGENT_DIR / "publishing_calendar.json"
+    if cal_path.exists():
+        import json as _json
+        try:
+            with open(cal_path, "r", encoding="utf-8") as f:
+                cal_db = _json.load(f)
+                if isinstance(cal_db, dict):
+                    for slot_id, slot in cal_db.items():
+                        if isinstance(slot, dict) and slot.get("status") in ("scheduled", "reserved"):
+                            dt_utc_str = slot.get("datetime_utc") or slot.get("scheduled_publish_at")
+                            if dt_utc_str:
+                                dt_utc = datetime.fromisoformat(dt_utc_str.replace("Z", "+00:00"))
+                                dt_cet = dt_utc.astimezone(tz_cet)
+                                key = dt_cet.strftime("%Y-%m-%d %H:%M")
+                                if key not in scheduled:
+                                    scheduled[key] = {
+                                        "title": slot.get("title", f"Slot {slot_id}"),
+                                        "video_id": slot.get("yt_video_id"),
+                                        "source": "publishing_calendar",
+                                    }
+        except Exception as ce:
+            print(f"[Scheduling] Warning checking publishing_calendar.json: {ce}")
 
     # Sprawdź lokalne pliki .meta.json w LOL_TEMP_DIR i LOL_OUTPUT_DIR
     import json as _json
@@ -526,11 +617,12 @@ def get_channel_videos_and_performance(max_results: int = 50, force_refresh: boo
 
 
 
-def get_occupied_publish_slots() -> Dict[str, Dict[str, Any]]:
+def get_occupied_publish_slots(force_refresh: bool = True) -> Dict[str, Dict[str, Any]]:
     """
     Sprawdza, które sloty publikacji (format 'YYYY-MM-DD HH:MM' CET) są już zajęte.
+    Zapewnia pełną świeżość rezerwacji (force_refresh=True).
     """
-    sync = get_channel_videos_and_performance(max_results=35)
+    sync = get_channel_videos_and_performance(max_results=35, force_refresh=force_refresh)
     return sync["scheduled"]
 
 
@@ -555,8 +647,8 @@ def get_next_optimal_publish_time() -> Dict[str, Any]:
     min_lead_time = timedelta(minutes=30)
     cutoff = now_cet + min_lead_time
 
-    # Pobierz aktualne zajęte sloty
-    occupied = get_occupied_publish_slots()
+    # Pobierz aktualne zajęte sloty na żywo
+    occupied = get_occupied_publish_slots(force_refresh=True)
 
     # Szukaj najbliższego wolnego slotu przez kolejne 14 dni
     for day_offset in range(14):
@@ -590,7 +682,7 @@ def get_next_optimal_publish_time() -> Dict[str, Any]:
                 weekday = days_pl[slot_dt_cet.weekday()]
                 label = f"{weekday}, {slot_dt_cet.strftime('%d.%m')} o {slot} CET ({slot_type})"
 
-            print(f"[Scheduling] 🎯 Najbliższy wolny slot (2x/dzień): {label} ({slot_key} CET) | Zajętych slotów: {len(occupied)}")
+            _safe_print(f"[Scheduling] 🎯 Najbliższy wolny slot (2x/dzień): {label} ({slot_key} CET) | Zajętych slotów: {len(occupied)}")
 
             return {
                 "publish_at": iso_utc,
@@ -656,21 +748,31 @@ def upload_video(
     else:
         status_body["privacyStatus"] = privacy
 
-    # Gwarancja viralowych hashtagów w tytule: #Shorts #LeagueOfLegends #LoL
+    # Gwarancja viralowych hashtagów w tytule: #shorts #leagueoflegends #lol
     try:
         from lol_agent.lol_metadata_generator import _format_final_title
     except ImportError:
         from lol_metadata_generator import _format_final_title
     title = _format_final_title(title)
 
-    # Gwarancja obecności bogatych hashtagów w opisie YouTube Shorts
+    # Gwarancja obecności bogatych hashtagów w opisie YouTube Shorts (wyłącznie małe litery)
+    import re
+    description = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", description)
     if "#leagueoflegends" not in description.lower() or description.count("#") < 3:
         try:
             from lol_agent.lol_metadata_generator import _build_hashtags
             extra_tags = _build_hashtags()
         except Exception:
-            extra_tags = "#Shorts #LeagueOfLegends #LoL #Gaming #LoLHighlights #LoLShorts"
+            extra_tags = "#shorts #shortsfeed #leagueoflegends #lol #gaming #lolhighlights"
         description = f"{description.strip()}\n\n{extra_tags}"
+
+    # Gwarancja pełnego zestawu bogatych tagów (max 500 znaków)
+    if not tags or len(tags) < 10:
+        try:
+            from lol_agent.lol_metadata_generator import build_rich_youtube_tags
+            tags = build_rich_youtube_tags()
+        except Exception:
+            pass
 
     body = {
         "snippet": {
@@ -770,6 +872,8 @@ def upload_video(
             comment_pending = True
             _save_pending_comment(video_id, clean_comment)
             print(f"[YouTube] 📝 Komentarz zapisany do kolejki (film zaplanowany/prywatny) — zostanie opublikowany po upublicznieniu: '{clean_comment[:60]}'")
+
+    invalidate_publish_cache()
 
     return {
         "video_id": video_id,

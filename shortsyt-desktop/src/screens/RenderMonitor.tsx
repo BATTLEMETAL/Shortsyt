@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import {
   apiGetStatus, apiStopPipeline, PipelineStateResponse,
   apiGetOutputUrl, apiGetThumbnailUrl, apiDeleteOutput, apiUploadToYt,
-  apiGetNextPeakSlot, PeakSlotInfo
+  apiGetNextPeakSlot, PeakSlotInfo, apiPublishMulti
 } from '../lib/api';
 import StatusBadge, { PipelineStatusType } from '../components/StatusBadge';
 import {
   Cpu, Square, Terminal, RefreshCw, Layers, CheckCircle2, Trash2,
   ArrowLeft, Upload, Play, Film, MessageSquare, Sparkles, FolderOpen, Video, ExternalLink,
-  Clock, Calendar, Zap, ShieldCheck, Globe, Lock, AlertCircle
+  Clock, Calendar, Zap, ShieldCheck, Globe, Lock, AlertCircle,
+  Youtube, Instagram, Share2
 } from 'lucide-react';
 
 export default function RenderMonitor() {
@@ -39,6 +40,25 @@ export default function RenderMonitor() {
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
   const [publishResult, setPublishResult] = useState<{ ok: boolean; url?: string; error?: string; scheduledFor?: string; privacy?: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [selYt, setSelYt] = useState<boolean>(true);
+  const [selTt, setSelTt] = useState<boolean>(true);
+  const [selIg, setSelIg] = useState<boolean>(true);
+  const [selFb, setSelFb] = useState<boolean>(true);
+  const [multiResults, setMultiResults] = useState<Record<string, any> | null>(null);
+
+  const handleSelectPlatformPreset = (preset: 'yt' | 'tt' | 'ig' | 'fb' | 'all') => {
+    if (preset === 'yt') {
+      setSelYt(true); setSelTt(false); setSelIg(false); setSelFb(false);
+    } else if (preset === 'tt') {
+      setSelYt(false); setSelTt(true); setSelIg(false); setSelFb(false);
+    } else if (preset === 'ig') {
+      setSelYt(false); setSelTt(false); setSelIg(true); setSelFb(false);
+    } else if (preset === 'fb') {
+      setSelYt(false); setSelTt(false); setSelIg(false); setSelFb(true);
+    } else if (preset === 'all') {
+      setSelYt(true); setSelTt(true); setSelIg(true); setSelFb(true);
+    }
+  };
 
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -110,11 +130,10 @@ export default function RenderMonitor() {
     if (!pipelineState.output_path) return;
     setIsPublishing(true);
     setPublishResult(null);
+    setMultiResults(null);
 
     const filename = pipelineState.output_path.split('\\').pop() || pipelineState.output_path;
     try {
-      const tags = ['league of legends', 'katarina', 'lol', 'shorts', 'gaming', 'montage'];
-      
       let finalPrivacy = 'public';
       let finalPublishAt: string | undefined = undefined;
       let scheduledLabel: string | undefined = undefined;
@@ -133,27 +152,50 @@ export default function RenderMonitor() {
         finalPrivacy = 'public';
       }
 
-      const res = await apiUploadToYt(
-        filename,
-        title || `Katarina ${pipelineState.action_type || 'Outplay'} #Shorts`,
-        description || 'Watch till the end 🔥 #Shorts #LeagueOfLegends',
-        tags,
-        finalPrivacy,
-        pinnedComment || undefined,
-        pipelineState.thumbnail_path || undefined,
-        finalPublishAt
-      );
+      const platforms: string[] = [];
+      if (selYt) platforms.push('youtube');
+      if (selTt) platforms.push('tiktok');
+      if (selIg) platforms.push('instagram');
+      if (selFb) platforms.push('facebook');
+
+      if (platforms.length === 0) {
+        alert('Zaznacz co najmniej jedną platformę do publikacji!');
+        setIsPublishing(false);
+        return;
+      }
+
+      const res = await apiPublishMulti(filename, {
+        title: title || `Katarina ${pipelineState.action_type || 'Outplay'} #shorts`,
+        description: description || 'Watch till the end 🔥 #shorts #leagueoflegends',
+        platforms,
+        privacy_yt: finalPrivacy,
+        privacy_tiktok: 'PUBLIC_TO_EVERYONE',
+        share_to_ig_feed: true,
+        thumbnail_path: pipelineState.thumbnail_path || undefined,
+        publish_at: finalPublishAt,
+        pinned_comment: pipelineState.pinned_comment || undefined,
+        champion_name: pipelineState.champion_name || undefined,
+        action_type: pipelineState.action_type || undefined,
+        rank: pipelineState.rank || undefined,
+      });
+
+      const results = res.results || {};
+      setMultiResults(results);
+
+      const anySuccess = Object.values(results).some((r: any) => r?.success);
+      const mainUrl = results.youtube?.url || results.instagram?.url || results.facebook?.url;
 
       setPublishResult({
-        ok: true,
-        url: res.url || `https://youtube.com/shorts/${res.video_id}`,
+        ok: anySuccess,
+        url: mainUrl,
         scheduledFor: scheduledLabel,
         privacy: finalPrivacy,
+        error: anySuccess ? undefined : 'Wszystkie wybrane platformy zgłosiły błąd publikacji'
       });
     } catch (err: any) {
       setPublishResult({
         ok: false,
-        error: err.response?.data?.detail || err.message || 'Błąd uploadu na YouTube',
+        error: err.response?.data?.detail || err.message || 'Błąd uploadu multi-platform',
       });
     } finally {
       setIsPublishing(false);
@@ -509,6 +551,130 @@ export default function RenderMonitor() {
                     />
                   </div>
 
+                  {/* Multi-Platform Publish Selector Grid */}
+                  <div className="pt-2 border-t border-[#1E2438] space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#E4D6B5] flex items-center gap-1.5">
+                        <Share2 className="w-3.5 h-3.5 text-[#C89B3C]" />
+                        Gdzie wrzucać (Wybierz platformę lub Wszystko):
+                      </label>
+                      <span className="text-[10px] text-[#C89B3C] font-mono font-bold">
+                        Wybrano ({[selYt, selTt, selIg, selFb].filter(Boolean).length}/4): {[selYt && 'YT', selTt && 'TikTok', selIg && 'IG', selFb && 'FB'].filter(Boolean).join(' + ') || 'Brak'}
+                      </span>
+                    </div>
+
+                    {/* 5 Dedykowanych Przycisków Wyboru Celu */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectPlatformPreset('yt')}
+                        className={`p-2.5 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer select-none ${
+                          selYt && !selTt && !selIg && !selFb
+                            ? 'bg-[#FF0000]/25 border-[#FF0000] text-white shadow-lg shadow-[#FF0000]/20 scale-[1.02]'
+                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#FF0000]/60 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 text-xs font-bold">
+                          <Youtube className="w-4 h-4 text-[#FF0000]" />
+                          <span>1. YouTube</span>
+                        </div>
+                        <span className="text-[10px] text-[#8B8FA8]">Tylko YT Shorts</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSelectPlatformPreset('tt')}
+                        className={`p-2.5 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer select-none ${
+                          !selYt && selTt && !selIg && !selFb
+                            ? 'bg-[#00F2FE]/25 border-[#00F2FE] text-white shadow-lg shadow-[#00F2FE]/20 scale-[1.02]'
+                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#00F2FE]/60 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 text-xs font-bold">
+                          <Video className="w-4 h-4 text-[#00F2FE]" />
+                          <span>2. TikTok</span>
+                        </div>
+                        <span className="text-[10px] text-[#8B8FA8]">Tylko TikTok</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSelectPlatformPreset('ig')}
+                        className={`p-2.5 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer select-none ${
+                          !selYt && !selTt && selIg && !selFb
+                            ? 'bg-[#E1306C]/25 border-[#E1306C] text-white shadow-lg shadow-[#E1306C]/20 scale-[1.02]'
+                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#E1306C]/60 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 text-xs font-bold">
+                          <Instagram className="w-4 h-4 text-[#E1306C]" />
+                          <span>3. Instagram</span>
+                        </div>
+                        <span className="text-[10px] text-[#8B8FA8]">Tylko Reels</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSelectPlatformPreset('fb')}
+                        className={`p-2.5 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer select-none ${
+                          !selYt && !selTt && !selIg && selFb
+                            ? 'bg-[#1877F2]/25 border-[#1877F2] text-white shadow-lg shadow-[#1877F2]/20 scale-[1.02]'
+                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#1877F2]/60 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 text-xs font-bold">
+                          <Share2 className="w-4 h-4 text-[#1877F2]" />
+                          <span>4. Facebook</span>
+                        </div>
+                        <span className="text-[10px] text-[#8B8FA8]">Tylko Fanpage</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSelectPlatformPreset('all')}
+                        className={`col-span-2 sm:col-span-1 p-2.5 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer select-none ${
+                          selYt && selTt && selIg && selFb
+                            ? 'bg-gradient-to-br from-[#C89B3C]/35 to-[#F1A80A]/20 border-[#C89B3C] text-[#E4D6B5] shadow-lg shadow-[#C89B3C]/25 scale-[1.02]'
+                            : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#C89B3C]/60 hover:text-[#E4D6B5]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 text-xs font-black text-[#C89B3C]">
+                          <Zap className="w-4 h-4" />
+                          <span>5. WSZYSTKO</span>
+                        </div>
+                        <span className="text-[10px] text-[#C89B3C] font-semibold">Wszystkie 4 na raz</span>
+                      </button>
+                    </div>
+
+                    {/* Precyzyjne checkboxy do indywidualnego włączania / wyłączania */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                      <label className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer select-none transition-all ${
+                        selYt ? 'bg-[#FF0000]/15 border-[#FF0000] text-[#E4D6B5]' : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] opacity-60'
+                      }`}>
+                        <input type="checkbox" checked={selYt} onChange={e => setSelYt(e.target.checked)} className="accent-[#FF0000]" />
+                        <span className="text-xs font-bold flex items-center gap-1"><Youtube className="w-3.5 h-3.5 text-[#FF0000]" /> YouTube</span>
+                      </label>
+                      <label className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer select-none transition-all ${
+                        selTt ? 'bg-[#00F2FE]/15 border-[#00F2FE] text-[#E4D6B5]' : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] opacity-60'
+                      }`}>
+                        <input type="checkbox" checked={selTt} onChange={e => setSelTt(e.target.checked)} className="accent-[#00F2FE]" />
+                        <span className="text-xs font-bold flex items-center gap-1"><Video className="w-3.5 h-3.5 text-[#00F2FE]" /> TikTok</span>
+                      </label>
+                      <label className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer select-none transition-all ${
+                        selIg ? 'bg-[#E1306C]/15 border-[#E1306C] text-[#E4D6B5]' : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] opacity-60'
+                      }`}>
+                        <input type="checkbox" checked={selIg} onChange={e => setSelIg(e.target.checked)} className="accent-[#E1306C]" />
+                        <span className="text-xs font-bold flex items-center gap-1"><Instagram className="w-3.5 h-3.5 text-[#E1306C]" /> Reels</span>
+                      </label>
+                      <label className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer select-none transition-all ${
+                        selFb ? 'bg-[#1877F2]/15 border-[#1877F2] text-[#E4D6B5]' : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] opacity-60'
+                      }`}>
+                        <input type="checkbox" checked={selFb} onChange={e => setSelFb(e.target.checked)} className="accent-[#1877F2]" />
+                        <span className="text-xs font-bold flex items-center gap-1"><Share2 className="w-3.5 h-3.5 text-[#1877F2]" /> Facebook</span>
+                      </label>
+                    </div>
+                  </div>
+
                   {/* Publication Timing & Scheduling Engine */}
                   <div className="pt-2 border-t border-[#1E2438] space-y-2.5">
                     <label className="text-xs font-bold text-[#C89B3C] flex items-center gap-1.5">
@@ -666,12 +832,37 @@ export default function RenderMonitor() {
 
                           {publishResult.privacy === 'public' ? (
                             <p className="text-[11px] text-[#A0E8B5] font-medium">
-                              ✅ Film jest od razu publiczny i widoczny dla wszystkich na Twoim kanale YouTube.
+                              ✅ Film opublikowany na wybranych platformach.
                             </p>
                           ) : (
                             <p className="text-[11px] text-[#E4D6B5] font-medium">
                               🔒 Film jest obecnie <b>prywatny</b>. Zostanie automatycznie upubliczniony: <b>{publishResult.scheduledFor || 'o zaplanowanej godzinie'}</b>.
                             </p>
+                          )}
+
+                          {multiResults && (
+                            <div className="pt-2 mt-2 border-t border-[#1E2438] space-y-1 text-[11px]">
+                              {multiResults.youtube && (
+                                <div className={multiResults.youtube.success ? "text-[#55E88D]" : "text-[#FF6060]"}>
+                                  YouTube: {multiResults.youtube.success ? `✅ Opublikowano (${multiResults.youtube.url || "OK"})` : `❌ ${multiResults.youtube.error}`}
+                                </div>
+                              )}
+                              {multiResults.tiktok && (
+                                <div className={multiResults.tiktok.success ? "text-[#55E88D]" : "text-[#FFB347]"}>
+                                  TikTok: {multiResults.tiktok.success ? `✅ Opublikowano (${multiResults.tiktok.publish_id || "OK"})` : `⚠️ ${multiResults.tiktok.error}`}
+                                </div>
+                              )}
+                              {multiResults.instagram && (
+                                <div className={multiResults.instagram.success ? "text-[#55E88D]" : "text-[#FF6060]"}>
+                                  Instagram Reels: {multiResults.instagram.success ? `✅ Reel opublikowany (${multiResults.instagram.url || "OK"})` : `❌ ${multiResults.instagram.error}`}
+                                </div>
+                              )}
+                              {multiResults.facebook && (
+                                <div className={multiResults.facebook.success ? "text-[#55E88D]" : "text-[#FF6060]"}>
+                                  Facebook Page: {multiResults.facebook.success ? `✅ Post opublikowany (${multiResults.facebook.url || "OK"})` : `❌ ${multiResults.facebook.error}`}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </>
                       ) : (
@@ -715,27 +906,47 @@ export default function RenderMonitor() {
                     {isPublishing ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Publikowanie na YouTube...</span>
+                        <span>Publikowanie na wybrane platformy...</span>
                       </>
                     ) : publishMode === 'now' ? (
                       <>
                         <Globe className="w-4 h-4" />
-                        <span>🚀 Opublikuj TERAZ na YouTube (Publiczny — widoczny od razu)</span>
+                        <span>
+                          {selYt && selTt && selIg && selFb
+                            ? '🚀 Opublikuj na WSZYSTKIE 4 platformy (YouTube + TikTok + IG + FB)'
+                            : !selYt && !selTt && !selIg && !selFb
+                            ? '⚠️ Zaznacz co najmniej jedną platformę'
+                            : selYt && !selTt && !selIg && !selFb
+                            ? '🚀 Opublikuj na YouTube Shorts'
+                            : !selYt && selTt && !selIg && !selFb
+                            ? '🚀 Opublikuj na TikTok'
+                            : !selYt && !selTt && selIg && !selFb
+                            ? '🚀 Opublikuj na Instagram Reels'
+                            : !selYt && !selTt && !selIg && selFb
+                            ? '🚀 Opublikuj na Facebook Page / Reels'
+                            : `🚀 Opublikuj na: ${[selYt && 'YouTube', selTt && 'TikTok', selIg && 'Instagram', selFb && 'Facebook'].filter(Boolean).join(' + ')}`}
+                        </span>
                       </>
                     ) : publishMode === 'peak' ? (
                       <>
                         <Zap className="w-4 h-4" />
-                        <span>⏰ Zaplanuj na {peakSlot?.label || '18:30 CET'} (AI Peak Slot)</span>
+                        <span>
+                          ⏰ Zaplanuj na {peakSlot?.label || '18:30 CET'} ({[selYt && 'YT', selTt && 'TT', selIg && 'IG', selFb && 'FB'].filter(Boolean).join('+') || 'Wybierz'})
+                        </span>
                       </>
                     ) : publishMode === 'private' ? (
                       <>
                         <Lock className="w-4 h-4" />
-                        <span>🔒 Wgraj jako PRYWATNY (Niewidoczny dla widzów)</span>
+                        <span>
+                          🔒 Wgraj jako PRYWATNY ({[selYt && 'YT', selTt && 'TT', selIg && 'IG', selFb && 'FB'].filter(Boolean).join('+') || 'Wybierz'})
+                        </span>
                       </>
                     ) : (
                       <>
                         <Calendar className="w-4 h-4" />
-                        <span>🗓️ Zaplanuj na {customPublishTime || 'wybraną datę'}</span>
+                        <span>
+                          🗓️ Zaplanuj na {customPublishTime || 'wybraną datę'} ({[selYt && 'YT', selTt && 'TT', selIg && 'IG', selFb && 'FB'].filter(Boolean).join('+') || 'Wybierz'})
+                        </span>
                       </>
                     )}
                   </button>

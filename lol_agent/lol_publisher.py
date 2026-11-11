@@ -54,7 +54,9 @@ except ImportError:
 SCOPES = [
     'https://www.googleapis.com/auth/youtube.upload',
     'https://www.googleapis.com/auth/youtube.force-ssl',
+    'https://www.googleapis.com/auth/youtube.readonly',
     'https://www.googleapis.com/auth/youtube',
+    'https://www.googleapis.com/auth/yt-analytics.readonly',
 ]
 
 
@@ -79,75 +81,100 @@ def _limit_tags(tags: list) -> list:
     return result
 
 
-def get_lol_youtube_service():
+_LAST_AUTH_PROMPT_TIME = 0.0
+_AUTH_PROMPT_COOLDOWN_SEC = 60.0  # Max 1 próba autoryzacji / otwarcie przeglądarki na 60s per proces
+
+
+def get_lol_youtube_service(allow_interactive: bool = True):
     """
     Autoryzuje i zwraca serwis YouTube API dla kanału LoL (Dwannellenga).
-    Jeśli token nie istnieje — otwiera przeglądarkę do logowania.
+    - allow_interactive=False: tryb cichy (background worker, tracker, watcher) —
+      jeśli brak tokenu, natychmiast zwraca None bez otwierania przeglądarki.
+    - allow_interactive=True: w interaktywnej konsoli z TTY odpala lokalny serwer OAuth
+      (maksymalnie 1 próba na 60s).
     """
+    global _LAST_AUTH_PROMPT_TIME
     credentials = None
 
     if os.path.exists(TOKEN_PATH):
-        with open(TOKEN_PATH, 'rb') as f:
-            credentials = pickle.load(f)
+        try:
+            with open(TOKEN_PATH, 'rb') as f:
+                credentials = pickle.load(f)
+        except Exception as load_err:
+            print(f"⚠️  Błąd odczytu tokenu LoL ({load_err}) — usuwam uszkodzony plik...")
+            if os.path.exists(TOKEN_PATH):
+                try:
+                    os.remove(TOKEN_PATH)
+                except OSError:
+                    pass
+            credentials = None
 
-    if not credentials or not credentials.valid:
-        if credentials and credentials.expired and credentials.refresh_token:
+    if credentials and not credentials.valid:
+        if credentials.expired and credentials.refresh_token:
             print("🔄 Odświeżam token LoL...")
             try:
                 credentials.refresh(Request())
+                os.makedirs(ACCOUNTS_DIR, exist_ok=True)
+                with open(TOKEN_PATH, 'wb') as f:
+                    pickle.dump(credentials, f)
+                print(f"✅ Token LoL odświeżony pomyślnie: {TOKEN_PATH}", flush=True)
             except Exception as refresh_err:
-                # invalid_grant = token całkowicie umarł — potrzebna nowa autoryzacja
-                print(f"⚠️  Token nieważny ({refresh_err}) — usuwam i otwieram przeglądarkę...")
+                print(f"⚠️  Token nieważny ({refresh_err}) — wymagana nowa autoryzacja.")
                 if os.path.exists(TOKEN_PATH):
-                    os.remove(TOKEN_PATH)
+                    try:
+                        os.remove(TOKEN_PATH)
+                    except OSError:
+                        pass
                 credentials = None
+        else:
+            credentials = None
 
-        if not credentials or not credentials.valid:
-            print(f"🌐 Generuję URL autoryzacji YouTube...", flush=True)
-            if not os.path.exists(CLIENT_SECRET_PATH):
-                raise FileNotFoundError(
-                    f"Brak pliku client_secret.json: {CLIENT_SECRET_PATH}\n"
-                    "Pobierz go z Google Cloud Console."
-                )
-            os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+    if not credentials or not credentials.valid:
+        # 1. Guard trybu nieinteraktywnego (background tracker, scheduler, watcher, API loop)
+        if not allow_interactive:
+            return None
+
+        # 2. Guard środowiska tty (nie można autoryzować interaktywnie w procesach w tle / GUI)
+        import sys
+        if not (sys.stdin and sys.stdin.isatty()):
+            print("⚠️  [OAuth] Wymagana autoryzacja YouTube, ale proces działa w trybie nieinteraktywnym (brak TTY).", flush=True)
+            print("    Uruchom w terminalu: python run_lol_agent.py --authorize lub autoryzuj w Shortsyt Studio Desktop.", flush=True)
+            return None
+
+        # 3. Guard częstotliwości (Antispam: max 1 otwarcie przeglądarki na 60 sekund w całym procesie)
+        now = time.time()
+        if (now - _LAST_AUTH_PROMPT_TIME) < _AUTH_PROMPT_COOLDOWN_SEC:
+            print(f"⚠️  [OAuth] Przeglądarka została już otwarta w ciągu ostatnich {_AUTH_PROMPT_COOLDOWN_SEC:.0f}s. Pomijam ponowne otwieranie.", flush=True)
+            return None
+
+        _LAST_AUTH_PROMPT_TIME = now
+
+        print(f"🌐 Inicjalizuję autoryzację YouTube OAuth...", flush=True)
+        if not os.path.exists(CLIENT_SECRET_PATH):
+            raise FileNotFoundError(
+                f"Brak pliku client_secret.json: {CLIENT_SECRET_PATH}\n"
+                "Pobierz go z Google Cloud Console."
+            )
+
+        os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+        try:
             flow = InstalledAppFlow.from_client_secrets_file(
-                CLIENT_SECRET_PATH, SCOPES,
-                redirect_uri="urn:ietf:wg:oauth:2.0:oob"
+                CLIENT_SECRET_PATH, SCOPES
             )
-            auth_url, _ = flow.authorization_url(
-                prompt="consent",
-                access_type="offline",
-                include_granted_scopes="true",
-            )
+            print("🌐 Otwieram przeglądarkę do logowania OAuth (port localhost)...", flush=True)
+            credentials = flow.run_local_server(port=0, prompt='consent select_account')
+        except Exception as flow_err:
+            print(f"❌ [OAuth] Błąd autoryzacji: {flow_err}", flush=True)
+            return None
 
-            # Próbuj otworzyć przeglądarkę automatycznie
-            try:
-                import webbrowser
-                opened = webbrowser.open(auth_url)
-                if opened:
-                    print("✅ Przeglądarka otwarta automatycznie!", flush=True)
-                else:
-                    print("⚠️  Nie można otworzyć przeglądarki automatycznie.", flush=True)
-            except Exception:
-                pass
+        if credentials:
+            os.makedirs(ACCOUNTS_DIR, exist_ok=True)
+            with open(TOKEN_PATH, 'wb') as f:
+                pickle.dump(credentials, f)
+            print(f"✅ Token LoL zapisany: {TOKEN_PATH}", flush=True)
 
-            print("\n" + "="*60)
-            print("🔗 OTWÓRZ TEN LINK W PRZEGLĄDARCE (jeśli nie otworzył się sam):")
-            print("="*60)
-            print(auth_url)
-            print("="*60)
-            print("\nINSTRUKCJA:")
-            print("  1. Zaloguj się na konto Google DWANNELLENGA")
-            print("  2. Zaakceptuj wszystkie uprawnienia")
-            print("  3. Skopiuj kod który pojawi się na stronie Google")
-            code = input("\n📋 Wklej tutaj kod autoryzacji: ").strip()
-            flow.fetch_token(code=code)
-            credentials = flow.credentials
-
-        os.makedirs(ACCOUNTS_DIR, exist_ok=True)
-        with open(TOKEN_PATH, 'wb') as f:
-            pickle.dump(credentials, f)
-        print(f"✅ Token LoL zapisany: {TOKEN_PATH}", flush=True)
+    if not credentials or not credentials.valid:
+        return None
 
     return build('youtube', 'v3', credentials=credentials)
 
@@ -212,6 +239,7 @@ def upload_lol_short(
     thumbnail_path: str = None,
     category_id: str = YT_CATEGORY_ID,
     publish_at: Optional[str] = None,
+    pinned_comment: Optional[str] = None,
 ) -> dict:
     """
     Uploaduje Shorta LoL na YouTube.
@@ -226,12 +254,24 @@ def upload_lol_short(
 
     youtube = get_lol_youtube_service()
 
-    # Gwarantuj pełny zestaw viralowych tagów w tytule przed wysłaniem do YouTube API
+    # Gwarantuj pełny zestaw viralowych tagów w tytule przed wysłaniem do YouTube API (wyłącznie małe litery)
     try:
         from lol_agent.lol_metadata_generator import _format_final_title
     except ImportError:
         from lol_metadata_generator import _format_final_title
     title = _format_final_title(title)
+
+    # Normalizuj wszystkie hasztagi w opisie do małych liter
+    import re
+    description = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", description)
+
+    # Gwarantuj bogate tagi (max 500 znaków) jeśli lista jest zbyt krótka
+    if not tags or len(tags) < 10:
+        try:
+            from lol_agent.lol_metadata_generator import build_rich_youtube_tags
+            tags = build_rich_youtube_tags()
+        except Exception:
+            pass
 
     status_dict = {
         "selfDeclaredMadeForKids": False,
@@ -356,6 +396,13 @@ def upload_lol_short(
 
         if not thumb_uploaded:
             print(f"   ❌ Nie udało się automatycznie wgrać miniaturki po 3 próbach. Plik lokalny: {dest_thumb}")
+
+    if pinned_comment and video_id:
+        try:
+            print(f"   💬 Dodawanie i przypinanie komentarza na YouTube...")
+            post_pinned_comment(youtube, video_id, pinned_comment)
+        except Exception as comment_err:
+            print(f"   ⚠️ Nie udało się dodać przypiętego komentarza: {comment_err}")
 
     return {
         "video_id": video_id,

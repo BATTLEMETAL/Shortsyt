@@ -506,6 +506,127 @@
     .gallery-item img { width: 100%; height: auto; display: block; }
     .gallery-caption { padding: 12px; font-size: 0.8rem; color: var(--text-muted); font-weight: 600; text-align: center; }
 
+    /* ── CLIENT SHOWCASE / WIZYTÓWKI ── */
+    .showcase-section {
+      padding: 85px 0;
+      background: radial-gradient(circle at 50% 10%, rgba(200, 155, 60, 0.08) 0%, rgba(10, 14, 26, 0.95) 70%);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .showcase-badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(200, 155, 60, 0.15);
+      border: 1px solid rgba(200, 155, 60, 0.4);
+      color: var(--gold-light);
+      padding: 6px 16px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+    .client-hub-box {
+      background: var(--card-bg);
+      border: 1px solid rgba(200, 155, 60, 0.35);
+      border-radius: 20px;
+      padding: 36px;
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px rgba(200, 155, 60, 0.08);
+      margin-top: 20px;
+    }
+    .client-header-strip {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 24px;
+    }
+    .client-share-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 14px;
+      background: #0A0E1A;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 20px;
+      margin-bottom: 30px;
+    }
+    .share-url-text {
+      font-family: 'JetBrains Mono', monospace, sans-serif;
+      font-size: 0.88rem;
+      color: var(--cyan);
+      word-break: break-all;
+    }
+    .copy-url-btn {
+      background: var(--card-hover);
+      border: 1px solid var(--border);
+      color: var(--text-white);
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .copy-url-btn:hover {
+      background: var(--gold);
+      color: #0A0E1A;
+      border-color: var(--gold);
+    }
+    .showcase-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+    }
+    .variant-card {
+      background: #0A0E1A;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 26px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+    .variant-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--gold);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+    }
+    .variant-tag {
+      font-size: 0.7rem;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .btn-variant-open {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-weight: 800;
+      font-size: 0.85rem;
+      text-decoration: none;
+      transition: all 0.2s;
+      margin-top: 20px;
+    }
+
     /* Footer */
     footer {
       border-top: 1px solid var(--border);
@@ -551,6 +672,7 @@
       <nav>
         <a href="#telemetry">Live Telemetry</a>
         <a href="#features">Features</a>
+        <a href="#wizytowki" style="color: var(--gold-light); font-weight: 700;">★ Wizytówki Klientów</a>
         <a href="#tiktok">TikTok API</a>
         <a href="#screenshots">Screenshots</a>
         <a href="privacy.html">Privacy Policy</a>
@@ -578,6 +700,7 @@
 
       <div class="hero-btns">
         <a href="#telemetry" class="btn-primary">View Real-Time Telemetry &darr;</a>
+        <a href="#wizytowki" class="btn-secondary" style="border-color: var(--gold); color: var(--gold-light);">★ Wizytówki dla Klienta (Demo)</a>
         <a href="privacy.html" class="btn-secondary">Privacy & Data Policy</a>
       </div>
 
@@ -773,6 +896,147 @@
     </div>
   </section>
 
+  <!-- ── CLIENT SHOWCASE & BUSINESS LANDING PAGES ── -->
+  <section class="showcase-section" id="wizytowki">
+    <div class="container">
+      <div class="section-title">
+        <div class="showcase-badge-pill">
+          <span>★</span> DEDYKOWANE WIZYTÓWKI & PROTOTYPY WWW DLA KLIENTÓW
+        </div>
+        <h2>Interaktywne Wizytówki Internetowe dla Biznesu</h2>
+        <p>
+          Projektujemy i wdrażamy bezszablonowe, ultra-szybkie strony wizytówkowe dla lokalnych przedsiębiorstw, zoptymalizowane pod konwersję mobilną i bezpośrednie pozyskiwanie klientów.
+        </p>
+      </div>
+
+      <div class="client-hub-box">
+        
+        <!-- Client Identity Header -->
+        <div class="client-header-strip">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap;">
+              <span style="font-size: 1.35rem;">🚗</span>
+              <h3 style="font-size: 1.35rem; color: #FFF; font-weight: 800;">
+                Klient: Sochacki — Serwis Ogumienia & Mechanika Pojazdowa
+              </h3>
+              <span class="brand-badge" style="background: rgba(46, 204, 113, 0.15); border-color: rgba(46, 204, 113, 0.4); color: var(--green);">3 WARIANTY GOTOWE</span>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">
+              Lokalizacja: <strong style="color: var(--text-white);">ul. Robotnicza 72A, 53-607 Wrocław</strong> • Partner Euromaster • Hunter 3D • Wulkanizacja & Mechanika
+            </p>
+          </div>
+
+          <a href="./wizytowka-sochacki/" target="_blank" class="btn-primary" style="padding: 10px 22px; font-size: 0.85rem;">
+            Otwórz Główny Podgląd &rarr;
+          </a>
+        </div>
+
+        <!-- Direct Shareable Link Box -->
+        <div class="client-share-bar">
+          <div>
+            <span style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); display: block; font-weight: 700; margin-bottom: 4px;">
+              Bezpośredni link do przesłania dla klienta:
+            </span>
+            <span class="share-url-text" id="clientDirectUrl">https://shortsyt.salon-prettywoman.pl/wizytowka-sochacki/</span>
+          </div>
+          <button class="copy-url-btn" onclick="copyClientUrl()">
+            <span id="copyIcon">📋</span> <span id="copyBtnText">Kopiuj Link dla Klienta</span>
+          </button>
+        </div>
+
+        <!-- 3 Variant Cards Grid -->
+        <div class="showcase-grid">
+
+          <!-- Wariant 1 Card -->
+          <div class="variant-card" style="border-top: 3px solid #f97316;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span class="variant-tag" style="background: rgba(249, 115, 22, 0.2); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.4);">
+                  WARIANT 1 • SPORT & CARBON
+                </span>
+                <span style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">wariant-1.html</span>
+              </div>
+              <h4 style="font-size: 1.2rem; color: #FFF; font-weight: 800; margin-bottom: 10px;">
+                Aplikacyjny Split-Screen Dashboard
+              </h4>
+              <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 14px;">
+                Nowoczesny układ web-aplikacji: stały boczny panel dyspozytorski (linie tel., godziny, GPS) oraz <strong>interaktywny selektor stanowisk (ST-01..03)</strong> z wbudowanym <strong>diagnostykiem problemów z kołami</strong> dla kierowcy.
+              </p>
+              <ul style="list-style: none; font-size: 0.8rem; color: var(--text);">
+                <li style="margin-bottom: 6px;">✓ Dwukolumnowy układ aplikacji warsztatowej</li>
+                <li style="margin-bottom: 6px;">✓ Interaktywny selektor stanowisk maszynowych</li>
+                <li style="margin-bottom: 6px;">✓ Inteligentny diagnostyk objawów kół</li>
+              </ul>
+            </div>
+            <div>
+              <a href="./wizytowka-sochacki/wariant-1.html" target="_blank" class="btn-variant-open" style="background: linear-gradient(135deg, #f97316, #c2410c); color: #FFF;">
+                Otwórz Wariant 1 (Sport) &rarr;
+              </a>
+            </div>
+          </div>
+
+          <!-- Wariant 2 Card -->
+          <div class="variant-card" style="border-top: 3px solid #2563eb;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span class="variant-tag" style="background: rgba(37, 99, 235, 0.2); color: #60a5fa; border: 1px solid rgba(37, 99, 235, 0.4);">
+                  WARIANT 2 • PRESTIGE LIGHT
+                </span>
+                <span style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">wariant-2.html</span>
+              </div>
+              <h4 style="font-size: 1.2rem; color: #FFF; font-weight: 800; margin-bottom: 10px;">
+                Szwajcarski Magazyn & Manifest Rzemiosła
+              </h4>
+              <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 14px;">
+                Prestiżowy layout w papierowej bieli i butelkowej zieleni. Zero schematycznych siatek ikon. Zawiera <strong>oś czasu wizyty minuta po minucie (00:00 - 00:35)</strong>, manifest jakości oraz dedykowany moduł obsługi flot B2B.
+              </p>
+              <ul style="list-style: none; font-size: 0.8rem; color: var(--text);">
+                <li style="margin-bottom: 6px;">✓ Elegancki styl magazynu motoryzacyjnego</li>
+                <li style="margin-bottom: 6px;">✓ Przebieg procedury serwisowej minuta po minucie</li>
+                <li style="margin-bottom: 6px;">✓ Dedykowana strefa flot firmowych i B2B</li>
+              </ul>
+            </div>
+            <div>
+              <a href="./wizytowka-sochacki/wariant-2.html" target="_blank" class="btn-variant-open" style="background: linear-gradient(135deg, #1d4ed8, #1e3a8a); color: #FFF;">
+                Otwórz Wariant 2 (Prestige) &rarr;
+              </a>
+            </div>
+          </div>
+
+          <!-- Wariant 3 Card -->
+          <div class="variant-card" style="border-top: 3px solid #facc15;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span class="variant-tag" style="background: rgba(250, 204, 21, 0.2); color: #fde047; border: 1px solid rgba(250, 204, 21, 0.4);">
+                  WARIANT 3 • HEAVY-DUTY BRUTALIST
+                </span>
+                <span style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">wariant-3.html</span>
+              </div>
+              <h4 style="font-size: 1.2rem; color: #FFF; font-weight: 800; margin-bottom: 10px;">
+                Ekspresowy Mobilny Terminal Kierowcy
+              </h4>
+              <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 14px;">
+                Zwarta, pionowa konsola stworzona pod kciuk kierowcy w trasie. <strong>3 wielkie kafelki natychmiastowej akcji</strong> (telefon biuro, komórka, nawigacja GPS jednym kliknięciem) oraz tabowany cennik bez scrollowania.
+              </p>
+              <ul style="list-style: none; font-size: 0.8rem; color: var(--text);">
+                <li style="margin-bottom: 6px;">✓ 100% Mobile-First / Zero lania wody</li>
+                <li style="margin-bottom: 6px;">✓ Gigantyczne przyciski natychmiastowego połączenia</li>
+                <li style="margin-bottom: 6px;">✓ Kompaktowy tabowany cennik ekspresowy</li>
+              </ul>
+            </div>
+            <div>
+              <a href="./wizytowka-sochacki/wariant-3.html" target="_blank" class="btn-variant-open" style="background: linear-gradient(135deg, #facc15, #eab308); color: #000;">
+                Otwórz Wariant 3 (Industrial) &rarr;
+              </a>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </section>
+
   <!-- ── TIKTOK DEVELOPER TRANSPARENCY ── -->
   <section class="section" id="tiktok" style="background: rgba(18, 22, 36, 0.3);">
     <div class="container">
@@ -897,8 +1161,12 @@
         </div>
 
         <div class="footer-col">
-          <h4>Product</h4>
+          <h4>Product & Demos</h4>
           <ul>
+            <li><a href="#wizytowki" style="color: var(--gold-light); font-weight: 700;">★ Wizytówki Klientów</a></li>
+            <li><a href="./wizytowka-sochacki/wariant-1.html" target="_blank">Sochacki Serwis (Wariant 1)</a></li>
+            <li><a href="./wizytowka-sochacki/wariant-2.html" target="_blank">Sochacki Serwis (Wariant 2)</a></li>
+            <li><a href="./wizytowka-sochacki/wariant-3.html" target="_blank">Sochacki Serwis (Wariant 3)</a></li>
             <li><a href="#telemetry">Live Telemetry</a></li>
             <li><a href="#features">Features</a></li>
             <li><a href="#how-it-works">How It Works</a></li>
@@ -1046,6 +1314,23 @@
       fetchLiveTelemetry();
       setInterval(() => { fetchLiveTelemetry(false); }, 15000);
     });
+    function copyClientUrl() {
+      const url = document.getElementById('clientDirectUrl').textContent.trim();
+      navigator.clipboard.writeText(url).then(() => {
+        const btn = document.getElementById('copyBtnText');
+        const icon = document.getElementById('copyIcon');
+        const oldText = btn.textContent;
+        btn.textContent = 'Skopiowano do schowka!';
+        icon.textContent = '✓';
+        setTimeout(() => {
+          btn.textContent = oldText;
+          icon.textContent = '📋';
+        }, 2500);
+      }).catch(err => {
+        alert('Skopiuj adres: ' + url);
+      });
+    }
+
   </script>
 
 </body>

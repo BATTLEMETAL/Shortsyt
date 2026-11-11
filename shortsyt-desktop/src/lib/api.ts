@@ -109,7 +109,7 @@ export async function createClient(): Promise<AxiosInstance> {
     }
   }
 
-  return axios.create({
+  const instance = axios.create({
     baseURL,
     timeout: 60000,
     headers: {
@@ -117,6 +117,33 @@ export async function createClient(): Promise<AxiosInstance> {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+
+  instance.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const originalRequest = error.config;
+      if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+        originalRequest._retry = true;
+        try {
+          const storedPwd = await getStoreValue<string>('api_password');
+          const password = storedPwd || 'shortsyt2026';
+          const res = await axios.post(`${baseURL}/auth/login`, { password }, { timeout: 4000 });
+          if (res.data?.access_token) {
+            const newToken = res.data.access_token;
+            await setJwtToken(newToken);
+            originalRequest.headers = originalRequest.headers || {};
+            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+            return axios(originalRequest);
+          }
+        } catch {
+          await clearJwtToken();
+        }
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return instance;
 }
 
 export function parseError(err: unknown): string {
@@ -275,6 +302,9 @@ export interface OutputMetadata {
   title: string;
   description: string;
   tags: string[];
+  hashtags?: string[];
+  pinned_comment?: string;
+  rank?: string;
   champion_name: string;
   action_type: string;
   hook_text: string;
@@ -785,6 +815,142 @@ export async function apiGetChannelRetention(): Promise<{ ok: boolean; data: Cha
   return res.data;
 }
 
+// ── Social & Multi-Platform Publishing (TikTok & YouTube) ────────────────────
 
+export interface TikTokStatus {
+  connected: boolean;
+  valid: boolean;
+  open_id?: string;
+  scope?: string;
+  expires_in_hours?: number;
+  refresh_expires_in_days?: number;
+  message: string;
+}
 
+export interface InstagramStatus {
+  connected: boolean;
+  valid: boolean;
+  username?: string;
+  instagram_account_id?: string;
+  page_id?: string;
+  message: string;
+}
+
+export interface SocialOverview {
+  youtube: any;
+  tiktok: TikTokStatus;
+  instagram: InstagramStatus;
+}
+
+export async function apiGetSocialOverview(): Promise<SocialOverview> {
+  const client = await createClient();
+  const res = await client.get('/social/status');
+  return res.data;
+}
+
+export async function apiGetTikTokStatus(): Promise<TikTokStatus> {
+  const client = await createClient();
+  const res = await client.get('/social/tiktok/token-status');
+  return res.data;
+}
+
+export async function apiGetTikTokAuthUrl(): Promise<string> {
+  const client = await createClient();
+  const res = await client.get('/social/tiktok/auth-url');
+  return res.data.auth_url;
+}
+
+export async function apiExchangeTikTokCode(code: string): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/social/tiktok/auth-code', { code });
+  return res.data;
+}
+
+export async function apiGetInstagramStatus(): Promise<InstagramStatus> {
+  const client = await createClient();
+  const res = await client.get('/social/instagram/token-status');
+  return res.data;
+}
+
+export interface FacebookStatus {
+  connected: boolean;
+  valid: boolean;
+  can_publish: boolean;
+  page_id?: string;
+  page_name?: string;
+  fan_count?: number;
+  message?: string;
+  error?: string;
+}
+
+export async function apiGetFacebookStatus(): Promise<FacebookStatus> {
+  const client = await createClient();
+  const res = await client.get('/social/facebook/token-status');
+  return res.data;
+}
+
+export async function apiSetupMetaToken(userToken: string): Promise<{ success: boolean; username?: string; page_id?: string; message: string }> {
+  const client = await createClient();
+  const res = await client.post('/social/meta/setup-token', { user_token: userToken });
+  return res.data;
+}
+
+export interface InstagramUploadRequest {
+  caption: string;
+  share_to_feed?: boolean;
+}
+
+export async function apiUploadToInstagram(
+  filename: string,
+  req: InstagramUploadRequest
+): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/social/instagram/upload/' + encodeURIComponent(filename), req);
+  return res.data;
+}
+
+export interface MultiPublishRequest {
+  title: string;
+  description?: string;
+  tags?: string[];
+  hashtags?: string[];
+  platforms?: string[];
+  privacy_yt?: string;
+  privacy_tiktok?: string;
+  share_to_ig_feed?: boolean;
+  thumbnail_path?: string;
+  publish_at?: string;
+  pinned_comment?: string;
+  champion_name?: string;
+  action_type?: string;
+  rank?: string;
+}
+
+export async function apiPublishMulti(
+  filename: string,
+  req: MultiPublishRequest
+): Promise<{ filename: string; results: Record<string, any> }> {
+  const baseURL = await getServerUrl();
+  const token = await getJwtToken();
+  const uploadClient = axios.create({
+    baseURL,
+    timeout: 600000,
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    }
+  });
+  const res = await uploadClient.post('/social/publish/' + encodeURIComponent(filename), req);
+  return res.data;
+}
+
+export async function apiGetSocialAnalytics(
+  platform: 'all' | 'youtube' | 'instagram' | 'facebook' | 'tiktok' = 'all',
+  refresh: boolean = false
+): Promise<any> {
+  const client = await createClient();
+  const query = "/social/analytics?platform=" + encodeURIComponent(platform) + (refresh ? "&refresh=true" : "");
+  const res = await client.get(query);
+  return res.data;
+}
 

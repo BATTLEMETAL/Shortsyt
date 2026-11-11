@@ -78,5 +78,21 @@
     "output_video": "",
     "notes": "Auto-rezerwacja AI: DOUBLE (Pre-analiza)",
     "created_at": "2026-09-04T16:45:32.388935+00:00"
+  },
+  "slot_2026-10-12_18-30": {
+    "slot_id": "slot_2026-10-12_18-30",
+    "date": "2026-10-12",
+    "time": "18:30",
+    "datetime_local": "2026-10-12 18:30 CET",
+    "datetime_utc": "2026-10-12T16:30:00Z",
+    "is_peak": true,
+    "status": "reserved",
+    "title": "Enemy Made the Wrong Call 💀 Katarina Pentakill #Shorts #LeagueOfLegends #LoL",
+    "champion": "Katarina",
+    "frag_type": "pentakill",
+    "source_clip": "c:/mock/clip1.mp4",
+    "output_video": "",
+    "notes": "Auto-rezerwacja AI: PENTAKILL (Pre-analiza)",
+    "created_at": "2026-10-12T15:20:37.510135+00:00"
   }
 }

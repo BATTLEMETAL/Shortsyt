@@ -78,6 +78,14 @@ def test_tuning_config_endpoint(client, auth_headers):
     assert "pacing" in data
 
 
+def test_tuning_config_endpoint_without_auth(client):
+    """Lokalny panel desktopowy musi mieć możliwość odczytu tuningu bez autoryzacji tokenem."""
+    res = client.get("/config/tuning")
+    assert res.status_code == 200
+    data = res.json()
+    assert "pacing" in data
+
+
 def test_clips_list_endpoint(client, auth_headers):
     res = client.get("/clips", headers=auth_headers)
     assert res.status_code == 200

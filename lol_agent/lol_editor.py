@@ -348,20 +348,22 @@ def apply_editor_effects(input_path: str, output_path: str,
     else:
         crop_x_expr = crop_x
 
-    # Parametry zoomu (PENTA/ostatni kill)
-    crop_w_zoom = int(crop_w / zoom_level)
-    crop_h_zoom = int(crop_h / zoom_level)
+    # Parametry zoomu (PENTA/ostatni kill) - bezpieczny zoom max 1.12x z centrowaniem w pionie
+    effective_zoom = min(zoom_level, 1.12)
+    crop_w_zoom = int(crop_w / effective_zoom)
+    crop_h_zoom = int(crop_h / effective_zoom)
     crop_x_expr_zoom = f"({crop_x_expr})+{(crop_w - crop_w_zoom) // 2}"
-    crop_y_zoom = (source_h - crop_h_zoom) // 2
+    # Centrowanie w pionie chroni dolny obszar walki (sztylety, przeciwników pod postacią):
+    crop_y_zoom = max(0, (crop_h - crop_h_zoom) // 2)
 
     out_w, out_h = 1080, 1920
 
     t0 = 0.0
-    # Anticipation lead-in: zwolnienie zaczyna się 0.25s-0.4s przed decydującym ciosem
-    lead_in = 0.25 if slowmo_speed >= 0.65 else 0.40
+    # Anticipation lead-in: zwolnienie zaczyna się 0.20s przed decydującym ciosem
+    lead_in = 0.20 if slowmo_speed >= 0.65 else 0.25
     t1 = max(t0, peak_moment - lead_in)
-    t2 = peak_moment + zoom_duration
-    t3 = peak_moment + slowmo_duration
+    t2 = peak_moment + min(zoom_duration, 0.40)
+    t3 = peak_moment + min(slowmo_duration, 0.70)
     t4 = clip_duration
 
     # Zabezpieczenia czasowe
@@ -382,13 +384,32 @@ def apply_editor_effects(input_path: str, output_path: str,
     ease_in_speed = round(1.0 - 0.5 * (1.0 - slowmo_speed), 3)
     ease_out_speed = round(slowmo_speed + 0.5 * (1.0 - slowmo_speed), 3)
 
-    # Segment 1: Naturalny, dynamiczny przebieg walki (1.0x, 60 FPS)
-    t1_norm = t1 - ease_in_dur
-    if t1_norm > t0 + 0.05:
-        segs.append({"start": t0, "end": t1_norm, "speed": 1.0, "crop": normal_crop})
+    # Segmenty osi czasu
+    segs = []
+    curr_t = t0
 
-    # Segment 1-ease: Płynne wejście w slowmo (ease-in ramp)
-    if ease_in_dur > 0.04:
+    # Mini slow-mo dla eliminacji pośrednich (Kill 1, Kill 2 przed kulminacją)
+    if intermediate_peaks and slowmo_speed < 0.95:
+        # Filtrujemy tylko kille które leżą przed oknem kulminacji t1
+        valid_inter = [p for p in sorted(intermediate_peaks) if (p > curr_t + 0.35 and p < (t1 - 0.50))]
+        for ip in valid_inter:
+            m_lead = 0.30   # bylo 0.15: slow-mo wchodzi wyraźniej przed kilem
+            m_dur = 0.70    # bylo 0.40: wystarczająco długie okno by napis był czytelny
+            m_start = max(curr_t, ip - m_lead)
+            m_end = min(t1 - 0.15, ip + (m_dur - m_lead))
+            if m_start > curr_t + 0.05:
+                segs.append({"start": curr_t, "end": m_start, "speed": 1.0, "crop": normal_crop})
+            if m_end > m_start + 0.05:
+                segs.append({"start": m_start, "end": m_end, "speed": 0.70, "crop": normal_crop})
+            curr_t = m_end
+
+    # Segment 1: Naturalny, dynamiczny przebieg walki (1.0x, 60 FPS) do wejścia w kulminację
+    t1_norm = t1 - ease_in_dur
+    if t1_norm > curr_t + 0.05:
+        segs.append({"start": curr_t, "end": t1_norm, "speed": 1.0, "crop": normal_crop})
+
+    # Segment 1-ease: Płynne wejście w kulminacyjne slowmo (ease-in ramp)
+    if ease_in_dur > 0.04 and t1 > t1_norm + 0.04:
         segs.append({"start": t1_norm, "end": t1, "speed": ease_in_speed, "crop": normal_crop})
 
     # Segment 2: Kulminacyjny decydujący cios (slow-mo + subtelny zoom-punch na gracza)
@@ -584,11 +605,10 @@ def build_text_overlay_filters(
     if not clean_text:
         return []
 
-    if peak_moment <= 0.5:
-        t_start = 0.0
-    else:
-        t_start = max(0.0, peak_moment - 0.2)
-    t_end = min(video_duration, t_start + show_duration)
+    # Hook zawsze zaczyna się od klatki 0.0s — to kluczowe dla retencji w pierwszych 2 sekundach
+    # oraz gwarantuje, że klatka 0.0 (miniatura na TikTok) ma czytelny napis i okładkę.
+    t_start = 0.0
+    t_end = min(video_duration, max(1.5, show_duration))
 
     hook_color = "0xFFD700" if any(w in clean_text.upper() for w in ("SOLO", "PENTA", "CLUTCH", "1V1", "1%")) else "white"
     approx_w = min(max(int(len(clean_text) * 58) + 80, 480), 1020)
@@ -680,6 +700,12 @@ def build_dynamic_captions_filters(
     if not peaks:
         return []
 
+    # Normalizuj peak_moment do video_duration
+    if trim_start > 0.0 and peak_moment >= trim_start:
+        peak_moment = peak_moment - trim_start
+    elif peak_moment > video_duration and video_duration > 0.0:
+        peak_moment = min(video_duration * 0.70, max(1.0, peak_moment % video_duration))
+
     font = _get_font_path()
     if not font:
         print("⚠️  Brak czcionki — pomijam dynamiczne napisy")
@@ -757,40 +783,70 @@ def build_dynamic_captions_filters(
 
         return mapped_t
 
-    is_solo = bool(action_type and action_type.lower() in ("solo_bolo", "solo", "1v1"))
+    act_lower = (action_type or "").lower().strip()
+    is_solo = act_lower in ("solo_bolo", "solo", "1v1", "first_blood", "first blood")
 
     caption_items = []
     if is_solo:
+        # NON-MULTIKILL (Solo Bolo, Outplay, Clutch, First Blood, 1v1):
+        # BEZWZGLĘDNY ZAKAZ wyświetlania Double/Triple/Quadra/Pentakill!
+        # Renderujemy dokładnie JEDEN napis w punkcie kulminacyjnym.
+        single_label = "SOLO BOLO" if act_lower in ("solo_bolo", "solo", "1v1") else (
+            "FIRST BLOOD" if "first" in act_lower else (
+                "1% HP CLUTCH" if "clutch" in act_lower else (
+                    "OUTPLAY" if "outplay" in act_lower else "SOLO BOLO"
+                )
+            )
+        )
         if peaks:
             best_p = min(peaks, key=lambda p: abs((p[0] if p[0] < trim_start or trim_start == 0.0 else p[0] - trim_start) - peak_moment))
             t_abs, _ = best_p
             t_raw = t_abs if (t_abs < trim_start or trim_start == 0.0) else (t_abs - trim_start)
             t_in_clip = _adjust_t(t_raw)
             if 0 <= t_in_clip <= video_duration:
-                style = KILL_STYLES.get("SOLO BOLO", {"size": 115, "color": "0xFF3333", "duration": 2.2})
-                t_start = max(0.0, t_in_clip - 0.5)
+                style = KILL_STYLES.get(single_label, {"size": 115, "color": "0xFF3333", "duration": 2.2})
+                t_start = max(0.0, t_in_clip + 0.15)
                 t_end = min(video_duration, t_start + style["duration"])
+                clean_single = re.sub(r"[^\x00-\x7F]+", "", single_label).strip().replace("'", "\\'")
                 caption_items.append({
                     "start": t_start,
                     "end": t_end,
-                    "label": "SOLO BOLO",
+                    "label": clean_single,
                     "style": style,
                     "t_in_clip": t_in_clip,
                 })
     else:
+        # Multikill: clamp banner tier to the maximum tier achieved (e.g. Double can never show Triple or Penta)
+        MAX_TIER_MAP = {
+            "double": "DOUBLE KILL",
+            "triple": "TRIPLE KILL",
+            "quadra": "QUADRAKILL",
+            "quadrakill": "QUADRAKILL",
+            "penta": "PENTAKILL",
+            "pentakill": "PENTAKILL",
+        }
+        max_allowed_banner = MAX_TIER_MAP.get(act_lower, "PENTAKILL")
+        TIER_ORDER = ["KILL", "DOUBLE KILL", "TRIPLE KILL", "QUADRAKILL", "PENTAKILL"]
+        max_tier_idx = TIER_ORDER.index(max_allowed_banner) if max_allowed_banner in TIER_ORDER else len(TIER_ORDER) - 1
+
         for (t_abs, label) in peaks:
             t_raw = t_abs if (t_abs < trim_start or trim_start == 0.0) else (t_abs - trim_start)
             t_in_clip = _adjust_t(t_raw)
             if t_in_clip < 0 or t_in_clip > video_duration:
                 continue
 
-            style = KILL_STYLES.get(str(label).upper().strip(), {"size": 90, "color": "white", "duration": 2.0})
-            t_start = max(0.0, t_in_clip - 0.6)
+            clean_lbl = str(label).upper().strip()
+            if clean_lbl in TIER_ORDER:
+                curr_tier_idx = TIER_ORDER.index(clean_lbl)
+                if curr_tier_idx > max_tier_idx:
+                    clean_lbl = TIER_ORDER[max_tier_idx]
+
+            style = KILL_STYLES.get(clean_lbl, {"size": 90, "color": "white", "duration": 2.0})
+            t_start = max(0.0, t_in_clip + 0.15)
             t_end   = min(video_duration, t_start + style["duration"])
 
-            clean_label = re.sub(r'[^\x00-\x7F]+', '', label).strip()
-            clean_label = clean_label.replace("'", "\\\\\'")
-
+            clean_label = re.sub(r"[^\x00-\x7F]+", "", clean_lbl).strip()
+            clean_label = clean_label.replace("'", "\\'")
             caption_items.append({
                 "start": t_start,
                 "end": t_end,
@@ -799,11 +855,36 @@ def build_dynamic_captions_filters(
                 "t_in_clip": t_in_clip,
             })
 
+    # Deduplikacja napisów: eliminacja nakładania się napisów z tej samej eliminacji (<1.4s)
+    TIER_RANK = {
+        "PENTAKILL": 10, "QUADRAKILL": 9, "TRIPLE KILL": 8, "DOUBLE KILL": 7,
+        "SOLO BOLO": 6, "1% HP CLUTCH": 5, "CLUTCH": 5, "SHUTDOWN": 4,
+        "GODLIKE": 4, "LEGENDARY": 4, "UNSTOPPABLE": 3, "KILLING SPREE": 3,
+        "ONESHOT": 3, "OUTPLAY": 2, "KILL": 1
+    }
     caption_items.sort(key=lambda x: x["start"])
+    deduped_items = []
+    for item in caption_items:
+        if not deduped_items:
+            deduped_items.append(item)
+        else:
+            prev = deduped_items[-1]
+            if abs(item["start"] - prev["start"]) < 1.4:
+                # Kolizja czasowa: wybierz napis o wyższej randze
+                p_rank = TIER_RANK.get(prev["label"].upper(), 1)
+                c_rank = TIER_RANK.get(item["label"].upper(), 1)
+                if c_rank > p_rank:
+                    deduped_items[-1] = item
+            else:
+                deduped_items.append(item)
+    caption_items = deduped_items
+
     for i in range(len(caption_items) - 1):
         next_start = caption_items[i+1]["start"]
         if caption_items[i]["end"] > next_start:
-            caption_items[i]["end"] = max(caption_items[i]["start"] + 0.3, next_start - 0.05)
+            # Minimum: 60% normalnej długości stylu, aby napis zdążył się pokazać i był czytelny
+            min_show = caption_items[i]["style"]["duration"] * 0.60
+            caption_items[i]["end"] = max(caption_items[i]["start"] + min_show, next_start - 0.05)
 
     drawtext_filters = []
     total_kills = len(caption_items)
@@ -814,7 +895,8 @@ def build_dynamic_captions_filters(
         clean_label = item["label"]
         style = item["style"]
 
-        if total_kills >= 2 and not is_solo:
+        is_multikill = bool(action_type and action_type.lower() in ("double", "triple", "quadrakill", "quadra", "pentakill", "penta"))
+        if is_multikill and total_kills >= 2 and not is_solo:
             is_final_kill = (idx == total_kills - 1)
             hud_text = f"KILL {idx + 1}/{total_kills}" if not is_final_kill else f"FINAL KILL {idx + 1}/{total_kills}"
             hud_color = "0xFFD700" if is_final_kill else ("0xFFA500" if idx > 0 else "white")
@@ -1245,6 +1327,120 @@ def prepend_freeze_hook(
     return output_path
 
 
+def get_engagement_cta(action_type: str = "", champion: str = "", hook_text: str = "") -> str:
+    """
+    Zwraca wysoce konwertujące wezwanie do zaangażowania (Like Rate & Comment Rate)
+    dopasowane do typu akcji i postaci.
+    Zastępuje konfundujące 'AND THIS IS WHY IT WAS A...' bezpośrednim sygnałem
+    zwiększającym Like Rate (z 0.2% do 3%+), co podbija algorytm Shorts do wyższych tierów.
+    """
+    act = (action_type or "").lower().strip()
+    champ = (champion or "").upper().strip()
+
+    cta_map = {
+        "solo_bolo": [
+            "LIKE IF THAT WAS CLEAN!",
+            "WOULD YOU WIN THIS 1v1?",
+            "CLEAN OR DISRESPECTFUL?",
+            "DROP A LIKE FOR THE DUEL!",
+            "1 TO 10: RATE THIS 1v1",
+        ],
+        "pentakill": [
+            "LIKE FOR THE PENTA RESET!",
+            "CAN YOUR MAIN DO THIS?",
+            "1 TO 10: RATE THIS PENTA",
+            "WOULD YOU SURVIVE THIS? COMMENT 👇",
+            "DROP A LIKE FOR THE ACE!",
+        ],
+        "quadrakill": [
+            "LIKE IF HE DESERVED PENTA!",
+            "DROP A LIKE FOR THE CHASE!",
+            "CLEAN QUADRA OR ENEMY THROW?",
+            "CLEAN OR ENEMY INT? DROP A LIKE! 🔥",
+        ],
+        "triple": [
+            "LIKE IF THAT RESET WAS CLEAN!",
+            "CLEAN OR ENEMY DIFF? COMMENT BELOW",
+            "WOULD YOU SURVIVE THIS?",
+            f"DROP A LIKE FOR {champ}!" if champ else "DROP A LIKE FOR THE TRIPLE!",
+            "DROP A SUB IF YOU WOULD FLASH! 💀",
+        ],
+        "double": [
+            "LIKE IF THAT 2v1 WAS CLEAN!",
+            "CLEAN OUTPLAY OR LUCKY?",
+            "DROP A LIKE IF YOU WOULD FLASH!",
+            f"DROP A LIKE FOR {champ}!" if champ else "DROP A LIKE FOR THE PLAY!",
+        ],
+        "clutch": [
+            "HOW DID HE SURVIVE THIS?",
+            "LIKE IF YOU WOULD PANIC HERE!",
+            "DROP A LIKE FOR THE 1% HP!",
+            "CLEAN OR PURE LUCK? COMMENT BELOW",
+        ],
+        "outplay": [
+            "CLEAN OR LUCKY? COMMENT BELOW",
+            "LIKE IF YOU WOULD PANIC HERE!",
+            "RATE THIS OUTPLAY: 1 TO 10?",
+            f"DROP A LIKE FOR {champ}!" if champ else "DROP A LIKE FOR THE OUTPLAY!",
+            "RATE THIS OUTPLAY: 1 TO 10? 👇",
+        ],
+    }
+
+    candidates = cta_map.get(act)
+    if not candidates:
+        if "solo" in act or "1v1" in act:
+            candidates = cta_map["solo_bolo"]
+        elif "penta" in act:
+            candidates = cta_map["pentakill"]
+        elif "quadra" in act:
+            candidates = cta_map["quadrakill"]
+        elif "triple" in act:
+            candidates = cta_map["triple"]
+        elif "double" in act:
+            candidates = cta_map["double"]
+        elif "clutch" in act or "1hp" in act:
+            candidates = cta_map["clutch"]
+        else:
+            candidates = cta_map["outplay"]
+
+    seed_val = sum(ord(c) for c in (hook_text or act or "lol"))
+    return candidates[seed_val % len(candidates)]
+
+
+def get_seamless_loop_cta(hook_text: str, action_type: str = "") -> str:
+    """
+    Generuje wezwanie / hook końcowy, który płynnie i gramatycznie
+    zapętla się z początkowym tekstem hooka (Infinite Retention Loop).
+    Gdy widz ogląda końcówkę Shorts, tekst CTA wprowadza myśl,
+    która zostaje natychmiast dokończona przez pierwszą klatkę wideo (t=0s).
+    """
+    hook_upper = (hook_text or "").upper().strip()
+    act_lower = (action_type or "").lower().strip()
+
+    if "WRONG MOVE" in hook_upper or "WATCH WHAT HAPPENS" in hook_upper:
+        return "AND THIS IS WHY IT WAS A..."
+    elif "CAN HE WIN" in hook_upper or "CAN HE SURVIVE" in hook_upper:
+        return "REWATCH TO SEE HOW HE WINS A..."
+    elif "DIDNT EXPECT" in hook_upper or "DIDN'T EXPECT" in hook_upper:
+        return "AND THIS IS WHY THE..."
+    elif "SOLO BOLO" in hook_upper or "SOLO" in hook_upper or "1V1" in hook_upper:
+        return "AND THAT'S HOW YOU PLAY A..."
+    elif "PENTA" in hook_upper or "PENTAKILL" in hook_upper or "penta" in act_lower:
+        return "AND THAT'S HOW YOU GET A..."
+    elif "QUADRA" in hook_upper or "quadra" in act_lower:
+        return "AND THAT'S HOW YOU GET A..."
+    elif "TRIPLE" in hook_upper or "triple" in act_lower:
+        return "AND THAT'S HOW YOU SECURE A..."
+    elif "DOUBLE" in hook_upper or "double" in act_lower:
+        return "AND THAT'S HOW YOU PULL OFF A..."
+    elif "1HP" in hook_upper or "CLUTCH" in hook_upper or "clutch" in act_lower:
+        return "REWATCH TO SEE HOW HE SURVIVED..."
+    elif "OUTPLAY" in hook_upper or "outplay" in act_lower:
+        return "AND THIS IS WHY IT WAS AN..."
+    else:
+        return "AND THIS IS WHY IT WAS A..."
+
+
 def build_cta_overlay_filters(
     video_duration: float,
     cta_text: str = "SUBSCRIBE FOR MORE!",
@@ -1284,7 +1480,7 @@ def build_cta_overlay_filters(
     cta_box = (
         f"drawbox="
         f"x=0"
-        f":y=ih*0.74"
+        f":y=ih*0.68"
         f":w=iw"
         f":h=ih*0.08"
         f":color=black@0.50"
@@ -1296,7 +1492,7 @@ def build_cta_overlay_filters(
         f"fontfile='{font_safe}'"
         f":text='{clean_cta}'"
         f":x=(w-text_w)/2"
-        f":y=h*0.76"
+        f":y=h*0.70"
         f":fontsize={fsize}"
         f":fontcolor=0xFFD700"
         f":borderw=4"
@@ -1494,11 +1690,37 @@ def render_short(
     # ── KROK 1: Wycięcie fragmentu / segmentów ────────────────────────────────
     print("\n[1/4] Wycinanie fragmentu...")
 
+    # ── ADAPTIVE MONTAGE DIRECTOR (AI Decyzja scenariuszowa) ───────────────────
+    director_decision = None
+    try:
+        try:
+            from lol_agent.lol_montage_director import direct_clip_montage
+        except ImportError:
+            from lol_montage_director import direct_clip_montage
+        director_decision = direct_clip_montage(
+            action_type=action_type,
+            champion_name=champion_name,
+            duration=clip_duration,
+            peaks=peaks or []
+        )
+        if director_decision:
+            print(f"🎬  Reżyser AI [{director_decision.archetype}]: Jump-Cut={director_decision.allow_jump_cut}, Zoom={director_decision.zoom_aggression:.2f}x, Slowmo={director_decision.slowmo_duration:.1f}s")
+            print(f"    Uzasadnienie: {director_decision.rationale}")
+    except Exception as _dir_err:
+        print(f"    [editor] Montage director fallback: {_dir_err}")
+
     # Dla SOLO BOLO wykluczamy jakiekolwiek cięcia jump-cut — cała walka ma być płynna od wejścia do finału
     if action_type.lower() in ("solo_bolo", "solo", "1v1"):
         combat_segments = None
+    elif director_decision and not director_decision.allow_jump_cut:
+        print(f"   🛡️  Director Lock: Archetyp {director_decision.archetype} zabrania jump-cutów — zachowuję pełną ciągłość walki!")
+        combat_segments = None
 
     if combat_segments and len(combat_segments) > 1:
+        tot_seg_dur = sum(e - s for s, e in combat_segments)
+        if tot_seg_dur < 10.0:
+            print(f"   🛡️  Jump-Cut Abort: Łączny czas segmentów ({tot_seg_dur:.1f}s) < 10s — montaż ciągły zachowuje pełną walkę!")
+            combat_segments = None
         # Safeguard: Sprawdź czy przerwa między segmentami nie zawiera aktywnej walki
         # (np. zabójstwo Jhina przykryte powiadomieniem zniszczenia wieży)
         try:
@@ -1591,15 +1813,24 @@ def render_short(
         cut_clip(source_path, clip_start, clip_end, step1)
         # Remapuj peaks do czasu lokalnego step1 (0.0 -> clip_duration)
         if peaks:
-            is_relative = (peaks[0][0] < orig_clip_start) if orig_clip_start > 0 else True
-            if not is_relative:
-                peaks = [(round(t_k - orig_clip_start, 3), lbl) for (t_k, lbl) in peaks]
+            # Jeśli którykolwiek znacznik przekracza długość wycinka, peaks są w osi czasu całego źródła
+            is_source_timeline = any(t_k > clip_duration for (t_k, _) in peaks)
+            if is_source_timeline and orig_clip_start > 0:
+                peaks = [
+                    (round(t_k - orig_clip_start, 3), lbl)
+                    for (t_k, lbl) in peaks
+                    if (orig_clip_start - 0.5) <= t_k <= (clip_end + 0.5)
+                ]
             else:
-                peaks = [(round(t_k, 3), lbl) for (t_k, lbl) in peaks]
-        if peak_moment > clip_duration and peak_moment >= orig_clip_start:
+                peaks = [(round(t_k, 3), lbl) for (t_k, lbl) in peaks if 0.0 <= t_k <= clip_duration]
+
+        if peak_moment > clip_duration and orig_clip_start > 0:
             peak_moment = max(0.5, min(clip_duration - 0.5, peak_moment - orig_clip_start))
         elif peaks and (peak_moment <= 0.0 or peak_moment > clip_duration):
-            peak_moment = max(0.5, min(clip_duration - 0.5, peaks[-1][0]))
+            banner_latency = 1.0
+            peak_moment = max(0.5, min(clip_duration - 0.5, peaks[-1][0] - banner_latency))
+        elif peak_moment <= 0.0 or peak_moment > clip_duration:
+            peak_moment = max(0.5, min(clip_duration - 0.5, clip_duration * 0.75))
         clip_start = 0.0
         clip_end = clip_duration
 
@@ -1646,25 +1877,52 @@ def render_short(
 
     if is_solo_fight:
         # SOLO BOLO: Walka 1v1 ma być dynamiczna i płynna (60 FPS) od 1-ego tradu do zabójstwa.
-        # Krótkie, punktowe uderzenie na śmiertelny cios zamiast 4 sekund powolnego trupa.
-        _zoom_level   = 1.15
-        _zoom_dur     = 0.45
+        # Bezpieczny zoom 1.10x gwarantuje pełną widoczność obu postaci w kadrze.
+        _zoom_level   = 1.10
+        _zoom_dur     = 0.40
         _slowmo_dur   = 0.55
         _slowmo_speed = 0.70
+    elif director_decision:
+        _zoom_level   = director_decision.zoom_aggression
+        _zoom_dur     = 0.55
+        _slowmo_dur   = director_decision.slowmo_duration
+        _slowmo_speed = 0.55
     else:
-        _zoom_level   = float(tuning_p.get("zoom_aggression", 1.20))
-        _zoom_dur     = 0.80
-        _slowmo_dur   = float(tuning_p.get("slowmo_duration", 1.4))
-        _slowmo_speed = 0.50
+        _zoom_level   = min(1.12, float(tuning_p.get("zoom_aggression", 1.15)))
+        _zoom_dur     = 0.60
+        _slowmo_dur   = float(tuning_p.get("slowmo_duration", 1.2))
+        _slowmo_speed = 0.55
 
     _music_vol    = float(tuning_p.get("music_balance", 0.85))
     _game_vol     = float(tuning_p.get("game_sound_balance", 0.65))
 
     print(f"   ⚙️  Profil montażu ({'SOLO BOLO' if is_solo_fight else tuning_p.get('id', 'default')}): zoom={_zoom_level:.2f}x, slowmo={_slowmo_dur:.1f}s ({_slowmo_speed}x), muzyka={int(_music_vol*100)}%, gra={int(_game_vol*100)}%")
 
-    # Intermediate peaks: wszystkie kille PRZED ostatnim (PENTA) -> mini slow-mo 0.8x/0.5s
+    # Normalizacja peak_moment do lokalnej osi czasu wyciętego klipu (0.0 -> clip_duration):
+    rel_peak_moment = peak_moment
+    if clip_start > 0.0 and peak_moment >= clip_start:
+        rel_peak_moment = peak_moment - clip_start
+    elif peak_moment > clip_duration and clip_duration > 0.0:
+        rel_peak_moment = min(clip_duration * 0.70, max(1.0, peak_moment % clip_duration))
+
+    # Guard pustych peaks: jeśli detektor CV/OCR nie wychwycił zabójstw, ZAWSZE tworzymy punkt kulminacji!
+    if not peaks:
+        fallback_label = {
+            "pentakill": "PENTAKILL",
+            "quadrakill": "QUADRAKILL",
+            "triple": "TRIPLE KILL",
+            "double": "DOUBLE KILL",
+            "solo_bolo": "SOLO BOLO",
+            "clutch": "CLUTCH",
+            "outplay": "OUTPLAY",
+        }.get(action_type.lower(), "OUTPLAY")
+        default_t = rel_peak_moment if (0.5 < rel_peak_moment < clip_duration - 0.5) else round(clip_duration * 0.70, 1)
+        peaks = [(round(clip_start + default_t, 2), fallback_label)]
+        print(f"   🎯 [Editor Guard] Brak detekcji zabójstw w CV — ustawiam punkt kulminacji: {default_t:.1f}s ({fallback_label})")
+
+    # Intermediate peaks: wszystkie kille PRZED ostatnim -> mini slow-mo na moment uderzenia (last-hit)
     _all_kill_rel = sorted([(t_k if (t_k < clip_start or clip_start == 0.0) else (t_k - clip_start)) for (t_k, _) in (peaks or [])])
-    _inter_peaks  = _all_kill_rel[:-1] if len(_all_kill_rel) > 1 else []
+    _inter_peaks  = [max(0.2, round(p - 0.50, 2)) for p in _all_kill_rel[:-1]] if len(_all_kill_rel) > 1 else []
     if _inter_peaks:
         print(f"   ⚡ Intermediate peaks (mini slow-mo): {[f'{p:.1f}s' for p in _inter_peaks]}")
 
@@ -1673,7 +1931,7 @@ def render_short(
         output_path=step4,
         clip_duration=clip_duration,
         crop_x=crop_x_expr,
-        peak_moment=peak_moment,
+        peak_moment=rel_peak_moment,
         zoom_level=_zoom_level if use_zoom_punch else 1.0,
         zoom_duration=_zoom_dur,
         slowmo_speed=_slowmo_speed if use_speed_ramp else 1.0,
@@ -1687,7 +1945,7 @@ def render_short(
     # Przekazuj step1 (surowy wycinek z audio gry) jako game_audio_path
     # step4 nie ma audio (apply_editor_effects mapuje tylko [v_final])
     _rel_kill_peaks = [((tk if (tk < clip_start or clip_start == 0.0) else (tk - clip_start)), lbl) for (tk, lbl) in (peaks or [])]
-    merge_music(step4, music, step5_music, final_duration, peak_moment,
+    merge_music(step4, music, step5_music, final_duration, rel_peak_moment,
                 game_audio_path=step1, kill_peaks=_rel_kill_peaks,
                 music_volume=_music_vol, game_volume=_game_vol)
 
@@ -1699,18 +1957,10 @@ def render_short(
         except ImportError:
             from lol_config import ACTION_LABELS
         _hook = ACTION_LABELS.get(action_type, "").replace("🔥","").replace("⚡","").replace("💥","").replace("🎯","").replace("👑","").strip()
+    if not _hook:
+        _hook = f"{champion_name.upper()} {action_type.upper()}" if champion_name else action_type.upper()
 
-    act_lower = action_type.lower()
-    if "penta" in act_lower:
-        _end_cta = "CLEAN 1v5 OR TROLLING? RATE 1-10"
-    elif "quadra" in act_lower:
-        _end_cta = "CLEAN 1v4 OR LUCKY? RATE 1-10"
-    elif "solo" in act_lower or "bolo" in act_lower or "1v1" in act_lower:
-        _end_cta = "CLEAN OUTPLAY OR PURE LUCK? RATE 1-10"
-    elif "clutch" in act_lower or "1hp" in act_lower or "1%" in act_lower:
-        _end_cta = "CALCULATED OR 100% LUCK? RATE 1-10"
-    else:
-        _end_cta = "CLEAN PLAY OR PURE LUCK? RATE 1-10"
+    _end_cta = get_engagement_cta(action_type=action_type, champion=champion_name, hook_text=_hook)
 
     print(f"\n[5/6] Zunifikowane nakładki (Dynamic Captions + Hook '{_hook[:25]}' + CTA '{_end_cta[:25]}')...")
     apply_overlays_unified(
@@ -1719,7 +1969,7 @@ def render_short(
         peaks=peaks or [],
         trim_start=clip_start,
         video_duration=final_duration,
-        peak_moment=peak_moment,
+        peak_moment=rel_peak_moment,
         slowmo_speed=_slowmo_speed,
         slowmo_duration=_slowmo_dur,
         action_type=action_type,
@@ -1734,11 +1984,12 @@ def render_short(
     # Guard: jeśli pierwszy kill jest w pierwszych 3s klipu → pomijamy freeze (pierwsza akcja by zniknęła).
     _first_kill_t = min((t_k for (t_k, _) in (peaks or [])), default=999.0)
     _action_starts_immediately = _first_kill_t <= 3.0
-    _do_freeze = (bool(_hook)
-                  and not _action_starts_immediately
-                  and action_type.lower() not in ("solo_bolo", "solo", "1v1"))
-    if _action_starts_immediately and bool(_hook):
-        print(f"\n[8/8] Freeze-frame hook: POMINIĘTY — pierwszy kill za {_first_kill_t:.1f}s (akcja natychmiastowa)")
+    # Seamless Loop Standard: freeze frame na klatce 0.0s wprowadzał 0.6s zamrożenia obrazu i 600ms ciszy audio (adelay),
+    # co niszczyło płynność zapętlenia na YouTube Shorts. Zamiast statycznej stop-klatki, dynamiczne napisy z KROKU 5
+    # nakładają się w locie na wideo w pełnym 60 FPS ruchu bez opóźnień audio.
+    _do_freeze = False
+    if bool(_hook):
+        print(f"\n[8/8] Freeze-frame hook: POMINIĘTY (Seamless Loop Standard — dynamiczny overlay w ruchu)")
     if _do_freeze:
         step5_freeze = t("08_freeze_hook.mp4")
         print(f"\n[8/8] Freeze-frame hook: '{_hook[:30]}' (0.6s freeze na starcie)...")

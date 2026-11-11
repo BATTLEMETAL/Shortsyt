@@ -85,6 +85,61 @@ def refresh_all_tokens():
             log(f"[{profile}] BLAD: {e}")
             failed += 1
 
+    # --- TIKTOK AUTO-REFRESH ---
+    tiktok_token_path = os.path.join(ACCOUNTS_DIR, "tiktok_token.json")
+    if os.path.exists(tiktok_token_path):
+        try:
+            from lol_agent.tiktok_publisher import load_tiktok_token
+            tt = load_tiktok_token()
+            if tt:
+                log("[tiktok] OK — token sprawdzony/odswiezony")
+                success += 1
+            else:
+                log("[tiktok] SKIP — brak waznego tokenu lub refresh_token")
+        except Exception as tt_err:
+            log(f"[tiktok] BLAD: {tt_err}")
+
+    # --- INSTAGRAM HEALTH-CHECK ---
+    instagram_token_path = os.path.join(ACCOUNTS_DIR, "instagram_token.json")
+    if os.path.exists(instagram_token_path):
+        try:
+            from lol_agent.instagram_publisher import get_instagram_token_status
+            ig_stat = get_instagram_token_status()
+            if ig_stat.get("valid"):
+                log(f"[instagram] OK — token aktywny (@{ig_stat.get('username')})")
+                success += 1
+            else:
+                log(f"[instagram] BLAD: {ig_stat.get('message')}")
+                failed += 1
+        except Exception as ig_err:
+            log(f"[instagram] BLAD: {ig_err}")
+            failed += 1
+
+    # --- FACEBOOK PAGE HEALTH-CHECK ---
+    facebook_token_path = os.path.join(ACCOUNTS_DIR, "facebook_token.json")
+    if os.path.exists(facebook_token_path):
+        try:
+            from lol_agent.facebook_publisher import get_facebook_token_status
+            fb_stat = get_facebook_token_status()
+            if fb_stat.get("valid"):
+                log(f"[facebook] OK - token aktywny ({fb_stat.get('page_name')}, can_publish={fb_stat.get('can_publish')})")
+                success += 1
+            else:
+                log(f"[facebook] BLAD: {fb_stat.get('message')}")
+                failed += 1
+        except Exception as fb_err:
+            log(f"[facebook] BLAD: {fb_err}")
+            failed += 1
+
+    # --- AUTOMATED FEEDBACK LOOP (METRIC INGESTION) ---
+    try:
+        from lol_agent.platform_feedback_collector import collect_all_platform_metrics
+        log("\n[feedback_loop] Zbieranie metryk z opublikowanych filmow...")
+        report = collect_all_platform_metrics(max_videos=10)
+        log(f"[feedback_loop] Zaktualizowano bazy learning_states: YT={report.get('youtube_updated')}, IG={report.get('instagram_updated')}, FB={report.get('facebook_updated')}")
+    except Exception as fl_err:
+        log(f"[feedback_loop] Ostrzezenie feedback loop: {fl_err}")
+
     log("-" * 55)
     log(f"WYNIK: {success} sukces, {failed} bledow")
     log("=" * 55)

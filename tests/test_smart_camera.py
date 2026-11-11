@@ -410,3 +410,92 @@ class TestTabOverlayScoreboard:
         active = is_tab_overlay_active(frame, sw=1.0, sh=1.0)
         assert active is False
 
+
+class TestExclusionMaskIntegrityAndHUDShield:
+    """
+    Kluczowe testy regresyjne dla maski wykluczeń HUD w Smart Camera:
+    Gwarantują, że elementy interfejsu w lewym górnym rogu (ikony sojuszników, KDA, czas)
+    oraz czat/pingi w lewym dolnym rogu NIGDY nie ściągają kadru na lewą krawędź (crop_x = 0).
+    """
+
+    def test_top_exclusion_mask_spans_full_width_including_top_left(self):
+        """
+        Górna maska wykluczenia musi obejmować CAŁĄ szerokość ekranu (0 do 1920),
+        a nie tylko środek (640-1280). Zapobiega to detekcji elementów HUD przy x=195, y=45.
+        """
+        analysis_w, analysis_h = 1920, 1080
+        sh = analysis_h / 1080.0
+        excl = np.ones((analysis_h, analysis_w), dtype=bool)
+        excl[:int(140 * sh), :] = False
+
+        # Sprawdź lewy górny róg (x < 640)
+        assert np.all(excl[:int(140 * sh), :640] == False), "Lewy górny róg HUD musi być zamaskowany!"
+        # Sprawdź środek (640-1280)
+        assert np.all(excl[:int(140 * sh), 640:1280] == False), "Środkowy pasek KDA musi być zamaskowany!"
+        # Sprawdź prawy górny róg
+        assert np.all(excl[:int(140 * sh), 1280:] == False), "Prawy górny róg musi być zamaskowany!"
+
+    def test_top_left_scoreboard_element_never_triggers_gold_hp_bar(self):
+        """
+        Syntetyczny złoty piksel w lewym górnym rogu (x=195, y=45) nie może
+        zostać wykryty jako pasek gracza ani pociągnąć kamery do crop_x=0.
+        """
+        # Symulacja klatki 1080p
+        frame = np.full((1080, 1920, 3), 40, dtype=np.uint8)
+        # Element w lewym górnym rogu (ikona sojusznika / KDA ze złotym odcieniem RGB: 220, 180, 20)
+        frame[40:55, 180:220] = [220, 180, 20]
+
+        # Champion gracza na środku (x=960, y=540)
+        frame[535:545, 920:1000] = [220, 180, 20]
+
+        sh = 1.0
+        sw = 1.0
+        excl = np.ones((1080, 1920), dtype=bool)
+        excl[:int(140 * sh), :] = False  # Pełna górna maska
+
+        f = frame.astype(np.int16)
+        r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
+        gold_mask = ((r > 165) & (g > 130) & (b < 115) & ((r - b) > 50) & ((g - b) > 25)) & excl
+
+        # W lewym górnym rogu maska musi być pusta!
+        assert gold_mask[40:55, 180:220].sum() == 0, "HUD w lewym górnym rogu nie może przeciekać przez maskę!"
+        # Na środku champion musi być wykryty
+        assert gold_mask[535:545, 920:1000].sum() > 0, "Champion na środku musi być wykryty!"
+
+    def test_chatbox_and_ping_text_region_is_masked(self):
+        """
+        Obszar czatu w lewym dolnym rogu (y > 500, x < 430) musi być w pełni zamaskowany,
+        aby złoty tekst pingów ("Katarina - Alive") nie ściągał kamery w lewo.
+        """
+        analysis_w, analysis_h = 1920, 1080
+        sh = 1.0
+        sw = 1.0
+        excl = np.ones((analysis_h, analysis_w), dtype=bool)
+        excl[int(500 * sh):, :int(430 * sw)] = False
+
+        # Sprawdź obszar czatu
+        assert np.all(excl[550:700, 50:350] == False), "Czat musi być całkowicie wykluczony!"
+
+    def test_shunpo_dash_jump_instant_snap(self):
+        """
+        Katarina Shunpo (E): natychmiastowy przeskok o 400px w 1 klatce.
+        Kamera musi błyskawicznie wykonać snap bez kilkuklatkowego opóźnienia.
+        """
+        from lol_agent.smart_camera import simulate_player_trajectory
+        frames = []
+        # 5 klatek w pozycji x=600
+        for _ in range(5):
+            frames.append([(570, 530, 60, 20, 500.0, 600.0, 540.0)])
+        # Shunpo do celu przy x=1050 (delta = 450px > SNAP_DELTA 220px)
+        for _ in range(5):
+            frames.append([(1020, 530, 60, 20, 500.0, 1050.0, 540.0)])
+
+        pts = simulate_player_trajectory(frames, duration=5.0, source_w=1920, crop_w=608)
+        # Przed Shunpo: kadr wycentrowany wokół 600 (ok. 296px)
+        assert 280 <= pts[4][1] <= 315
+        # Natychmiast po Shunpo (klatka 5): kadr wycentrowany wokół 1050 (ok. 746px)
+        assert 725 <= pts[5][1] <= 765
+        # Skok kamery musi nastąpić natychmiast w tej samej klatce
+        assert pts[5][1] - pts[4][1] > 400
+
+

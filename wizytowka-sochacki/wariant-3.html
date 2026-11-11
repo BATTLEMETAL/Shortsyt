@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pl" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SOCHACKI | Warsztat & Wulkanizacja Wrocław Robotnicza 72A</title>
+  <meta name="description" content="Konkretny serwis opon, wyważanie 3D i mechanika pojazdowa we Wrocławiu. Zadzwoń: 71 794 96 11, ul. Robotnicza 72A.">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Inter"', 'sans-serif'],
+            display: ['"Oswald"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            heavy: {
+              bg: '#0f1013',
+              card: '#17181c',
+              border: '#2a2b32',
+              yellow: '#facc15', // Industrial Safety Yellow
+              amber: '#eab308',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-heavy-bg text-zinc-200 font-sans antialiased selection:bg-heavy-yellow selection:text-black pb-24 md:pb-0">
+
+  <!-- Operational Strip -->
+  <div class="border-b border-heavy-border bg-heavy-card/90 text-xs font-mono py-2.5 px-4 sm:px-6">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-2">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          STANOWISKA OTWARTE
+        </span>
+        <span class="text-zinc-400">WROCŁAW / FABRYCZNA • UL. ROBOTNICZA 72A</span>
+      </div>
+      <div class="flex items-center gap-4 text-zinc-300 font-bold">
+        <span>INFOLINIA:</span>
+        <a href="tel:717949611" class="text-heavy-yellow hover:underline">71 794 96 11</a>
+        <span class="text-zinc-600">|</span>
+        <a href="tel:509176579" class="text-white hover:text-heavy-yellow">509 176 579</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="border-b border-heavy-border bg-heavy-bg/95 sticky top-0 z-40 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <a href="#" class="flex items-center gap-3">
+        <div class="h-11 w-11 bg-heavy-yellow text-black flex items-center justify-center font-display font-black text-2xl">
+          S
+        </div>
+        <div>
+          <span class="font-display font-black text-2xl tracking-wider text-white flex items-center gap-2">
+            SOCHACKI <span class="text-xs font-mono font-bold px-1.5 py-0.5 bg-zinc-800 text-heavy-yellow border border-zinc-700">WROCŁAW</span>
+          </span>
+          <p class="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">SERWIS OGUMIENIA • MECHANIKA • GEOMETRIA 3D</p>
+        </div>
+      </a>
+
+      <!-- Desktop Nav -->
+      <nav class="hidden lg:flex items-center gap-8 text-xs font-mono uppercase tracking-wider text-zinc-300">
+        <a href="#fakty" class="hover:text-heavy-yellow transition-colors">Standard Maszynowy</a>
+        <a href="#cennik" class="hover:text-heavy-yellow transition-colors">Cennik Warsztatu</a>
+        <a href="#floty" class="hover:text-heavy-yellow transition-colors">Obsługa Flot B2B</a>
+        <a href="#lokalizacja" class="hover:text-heavy-yellow transition-colors">Dojazd & Mapa</a>
+      </nav>
+
+      <!-- CTA -->
+      <div class="flex items-center gap-3">
+        <a href="https://maps.google.com/?q=Robotnicza+72A,+Wroc%C5%82aw" target="_blank" rel="noopener noreferrer" class="hidden sm:inline-flex items-center gap-1.5 px-4 py-2.5 rounded border border-zinc-700 hover:border-zinc-500 text-white font-mono text-xs font-bold transition-colors">
+          <i data-lucide="navigation" class="w-3.5 h-3.5 text-heavy-yellow"></i>
+          <span>GPS</span>
+        </a>
+        <a href="#rezerwacja" class="px-5 py-2.5 bg-heavy-yellow hover:bg-heavy-amber text-black font-display font-bold uppercase text-xs tracking-wider transition-all">
+          Zgłoś Samochód
+        </a>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Full-Width Responsive Hero with Dual Dispatch Console -->
+  <section class="border-b border-heavy-border py-12 md:py-20 relative bg-gradient-to-b from-heavy-bg to-heavy-card/40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+        
+        <!-- Left Industrial Content -->
+        <div class="lg:col-span-7 space-y-6">
+          
+          <div class="inline-flex items-center gap-2 border border-heavy-yellow/40 bg-heavy-yellow/10 px-3 py-1 text-xs font-mono text-heavy-yellow">
+            <span>[STANOWISKA WARSZTATOWE UL. ROBOTNICZA 72A]</span>
+          </div>
+
+          <h1 class="font-display font-black text-4xl sm:text-6xl text-white tracking-tight uppercase leading-[0.95]">
+            BEZ KOMPROMISÓW. <br>
+            <span class="text-heavy-yellow">OPONY I MECHANIKA</span> <br>
+            ZROBIONE WG SZTUKI.
+          </h1>
+
+          <p class="text-zinc-300 text-base sm:text-lg leading-relaxed max-w-xl font-normal">
+            Nie jesteśmy sezonową przekładalnią pod marketem. Dysponujemy laserową geometrią 3D, bezdotykowymi stołami do felg 24", stacjami klimatyzacji i ubezpieczonym magazynem opon na 1200+ kompletów.
+          </p>
+
+          <!-- 3 GIANT TOUCH TILES (Direct Action) -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 font-mono text-xs">
+            
+            <a href="tel:717949611" class="p-4 rounded-xl bg-heavy-card border border-zinc-700 hover:border-heavy-yellow transition-all block group">
+              <span class="text-[10px] text-zinc-500 block uppercase font-bold">Biuro Serwisu:</span>
+              <strong class="text-base text-heavy-yellow font-bold block mt-1">71 794 96 11</strong>
+              <span class="text-[10px] text-zinc-400 block mt-1">Kliknij, aby zadzwonić →</span>
+            </a>
+
+            <a href="tel:509176579" class="p-4 rounded-xl bg-heavy-card border border-zinc-700 hover:border-heavy-yellow transition-all block group">
+              <span class="text-[10px] text-zinc-500 block uppercase font-bold">Kierownik Warsztatu:</span>
+              <strong class="text-base text-white font-bold block mt-1">509 176 579</strong>
+              <span class="text-[10px] text-zinc-400 block mt-1">Linia komórkowa →</span>
+            </a>
+
+            <a href="https://maps.google.com/?q=Robotnicza+72A,+Wroc%C5%82aw" target="_blank" rel="noopener noreferrer" class="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 hover:border-emerald-400 transition-all block group">
+              <span class="text-[10px] text-emerald-400 block uppercase font-bold">Nawigacja Google:</span>
+              <strong class="text-base text-white font-bold block mt-1">Robotnicza 72A</strong>
+              <span class="text-[10px] text-emerald-300 block mt-1">Uruchom trasę GPS →</span>
+            </a>
+
+          </div>
+
+          <div class="p-4 rounded-xl bg-heavy-card border border-heavy-border flex items-center justify-between text-xs font-mono">
+            <span class="text-zinc-400">Średni czas wjazdu na stanowisko z marszu:</span>
+            <strong class="text-heavy-yellow text-sm font-bold">ok. 15 minut</strong>
+          </div>
+
+        </div>
+
+        <!-- Right Quick Intake Terminal Console -->
+        <div class="lg:col-span-5" id="rezerwacja">
+          <div class="border-2 border-heavy-border bg-heavy-card p-6 sm:p-8 space-y-5 rounded-2xl shadow-2xl">
+            
+            <div class="border-b border-heavy-border pb-3 flex items-center justify-between">
+              <div>
+                <span class="text-[10px] font-mono text-heavy-yellow uppercase font-bold tracking-widest">[REZERWACJA ONLINE]</span>
+                <h3 class="font-display font-bold text-2xl text-white uppercase mt-0.5">ZGŁOŚ SAMOCHÓD</h3>
+              </div>
+              <div class="w-3 h-3 bg-heavy-yellow animate-ping"></div>
+            </div>
+
+            <form id="v3Form" class="space-y-3.5 font-mono text-xs">
+              <div>
+                <label class="block text-zinc-400 mb-1">NUMER TELEFONU *</label>
+                <input type="tel" required placeholder="np. 500 123 456" class="w-full bg-heavy-bg border border-zinc-700 text-white p-3 rounded-lg focus:outline-none focus:border-heavy-yellow text-xs">
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-zinc-400 mb-1">MARKA I MODEL:</label>
+                  <input type="text" placeholder="np. Golf VII" class="w-full bg-heavy-bg border border-zinc-700 text-white p-3 rounded-lg focus:outline-none focus:border-heavy-yellow text-xs">
+                </div>
+                <div>
+                  <label class="block text-zinc-400 mb-1">TERMIN:</label>
+                  <input type="text" placeholder="np. Dziś po 15:00" class="w-full bg-heavy-bg border border-zinc-700 text-white p-3 rounded-lg focus:outline-none focus:border-heavy-yellow text-xs">
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-zinc-400 mb-1">PAKIET USŁUGI:</label>
+                <select class="w-full bg-heavy-bg border border-zinc-700 text-white p-3 rounded-lg focus:outline-none focus:border-heavy-yellow text-xs">
+                  <option>Wymiana opon (4 szt.) + wyważenie 3D</option>
+                  <option>Wymiana opon + Sezonowy Hotel Kół</option>
+                  <option>Laserowa geometria 3D (Zbieżność)</option>
+                  <option>Klimatyzacja (Napełnienie / Ozonowanie)</option>
+                  <option>Przegląd hamulców i zawieszenia</option>
+                </select>
+              </div>
+
+              <button type="submit" class="w-full py-4 bg-heavy-yellow hover:bg-heavy-amber text-black font-display font-bold uppercase tracking-wider text-sm rounded-lg transition-all shadow-lg shadow-yellow-500/10">
+                WYŚLIJ ZGŁOSZENIE STANOWISKA →
+              </button>
+
+              <div id="v3Alert" class="hidden p-3 bg-emerald-950 border border-emerald-500 text-emerald-300 text-center font-bold text-xs rounded-lg">
+                ✓ ZGŁOSZENIE PRZYJĘTE. ODDZWONIMY W CIĄGU KILKUNASTU MINUT.
+              </div>
+            </form>
+
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Hard Facts Comparison: Tani punkt vs Sochacki -->
+  <section id="fakty" class="py-16 border-b border-heavy-border bg-heavy-bg">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+      
+      <div class="max-w-2xl space-y-2">
+        <span class="text-xs font-mono text-heavy-yellow uppercase tracking-widest">[FAKTY TECHNICZNE]</span>
+        <h2 class="font-display font-black text-3xl sm:text-4xl text-white uppercase">CZEGO UNIKASZ NA ROBOTNICZEJ 72A?</h2>
+        <p class="text-xs text-zinc-400 font-mono">Porównanie procedury z prowizorycznym punktem sezonowym.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono text-xs">
+        
+        <!-- Negatywne -->
+        <div class="p-6 rounded-2xl border border-rose-900/60 bg-rose-950/10 space-y-4">
+          <span class="text-rose-400 font-bold uppercase flex items-center gap-2">
+            <i data-lucide="x-circle" class="w-4 h-4"></i> Typowy tani punkt sezonowy:
+          </span>
+          <ul class="space-y-3 text-zinc-400">
+            <li class="flex items-start gap-2">
+              <span class="text-rose-500 font-bold">✕</span>
+              <span><strong>Dokręcanie kluczem udarowym na oko</strong> – urwane szpilki, zniszczone gwinty w piaście, brak szans na odkręcenie koła w trasie.</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-rose-500 font-bold">✕</span>
+              <span><strong>Metalowe łyżki monterskie</strong> – zarysowany lakier i obdarte ranty na drogich felgach aluminiowych.</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-rose-500 font-bold">✕</span>
+              <span><strong>Wyważanie bez kalibracji</strong> – bicie kierownicy przy 110–130 km/h i przedwczesne zużycie przekładni kierowniczej.</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Standard Sochacki -->
+        <div class="p-6 rounded-2xl border-2 border-heavy-yellow bg-heavy-card space-y-4">
+          <span class="text-heavy-yellow font-bold uppercase flex items-center gap-2">
+            <i data-lucide="check-circle-2" class="w-4 h-4"></i> Standard Serwisu Sochacki:
+          </span>
+          <ul class="space-y-3 text-zinc-200">
+            <li class="flex items-start gap-2">
+              <span class="text-heavy-yellow font-bold">✓</span>
+              <span><strong>Klucz dynamometryczny z nastawem Nm</strong> – każda śruba dociągana z atestem wg fabrycznej specyfikacji pojazdu.</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-heavy-yellow font-bold">✓</span>
+              <span><strong>Głowice bezdotykowe z teflonem</strong> – 100% ochrony rantów felg aluminiowych, polerowanych i lakierowanych.</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-heavy-yellow font-bold">✓</span>
+              <span><strong>Laserowe wyważarki 3D</strong> – precyzyjne ciężarki klejone w kolorze felgi, eliminacja drgań na autostradzie.</span>
+            </li>
+          </ul>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Clear Pricing Sheet -->
+  <section id="cennik" class="py-16 border-b border-heavy-border bg-heavy-card font-mono text-xs">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+      
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <span class="text-heavy-yellow uppercase font-bold">[CENNIK WARSZTATU]</span>
+          <h2 class="font-display font-black text-3xl sm:text-4xl text-white uppercase mt-1">TABELA ROZLICZEŃ BRUTTO</h2>
+        </div>
+        <p class="text-zinc-400">Płatność kartą, BLIK oraz faktury VAT</p>
+      </div>
+
+      <div class="border border-heavy-border divide-y divide-heavy-border bg-heavy-bg rounded-xl overflow-hidden">
+        
+        <div class="p-4 bg-zinc-900 text-zinc-400 flex justify-between font-bold">
+          <span>POZYCJA WARSZTATOWA (KOMPLET 4 SZT.)</span>
+          <span>STAWKA BRUTTO</span>
+        </div>
+
+        <div class="p-4 flex items-center justify-between hover:bg-zinc-900/40">
+          <div>
+            <strong class="text-white block">Wymiana opon — Felgi stalowe</strong>
+            <span class="text-zinc-500 text-[11px]">Z wyważeniem komputerowym i nowymi zaworami</span>
+          </div>
+          <span class="font-bold text-white text-sm">od 120 PLN</span>
+        </div>
+
+        <div class="p-4 flex items-center justify-between hover:bg-zinc-900/40">
+          <div>
+            <strong class="text-white block">Wymiana opon — Felgi aluminiowe 15" - 17"</strong>
+            <span class="text-zinc-500 text-[11px]">Ciężarki klejone ukryte, osłony kompozytowe</span>
+          </div>
+          <span class="font-bold text-white text-sm">od 140 PLN</span>
+        </div>
+
+        <div class="p-4 flex items-center justify-between hover:bg-zinc-900/40">
+          <div>
+            <strong class="text-white block">Wymiana opon 18" - 21"+ / SUV / Run-Flat</strong>
+            <span class="text-zinc-500 text-[11px]">Ramię pomocnicze bezdotykowe, stopka wzmocniona</span>
+          </div>
+          <span class="font-bold text-white text-sm">od 180 PLN</span>
+        </div>
+
+        <div class="p-4 flex items-center justify-between hover:bg-zinc-900/40">
+          <div>
+            <strong class="text-white block">Hotel Opon i Kół (Przechowalnia 1 sezon)</strong>
+            <span class="text-zinc-500 text-[11px]">Mycie, suszenie, pomiar bieżnika, ubezpieczenie magazynowe</span>
+          </div>
+          <span class="font-bold text-heavy-yellow text-sm">120 PLN</span>
+        </div>
+
+        <div class="p-4 flex items-center justify-between hover:bg-zinc-900/40">
+          <div>
+            <strong class="text-white block">Laserowa geometria kół 3D (Zbieżność osi przód + tył)</strong>
+            <span class="text-zinc-500 text-[11px]">Diagnostyka kątów, regulacja i wydruk fabryczny</span>
+          </div>
+          <span class="font-bold text-white text-sm">od 140 PLN</span>
+        </div>
+
+        <div class="p-4 flex items-center justify-between hover:bg-zinc-900/40">
+          <div>
+            <strong class="text-white block">Serwis klimatyzacji z ozonowaniem kabiny</strong>
+            <span class="text-zinc-500 text-[11px]">Próżniowy test szczelności + odgrzybienie</span>
+          </div>
+          <span class="font-bold text-white text-sm">od 150 PLN</span>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Location & Route -->
+  <section id="lokalizacja" class="py-16 bg-heavy-bg font-mono text-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+      
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <span class="text-heavy-yellow uppercase font-bold">[WSPÓŁRZĘDNE & WARSZTAT]</span>
+          <h2 class="font-display font-black text-3xl sm:text-4xl text-white uppercase mt-1">JAK TRAFIĆ NA ROBOTNICZĄ 72A?</h2>
+        </div>
+        <a href="https://maps.google.com/?q=Robotnicza+72A,+Wroc%C5%82aw" target="_blank" rel="noopener noreferrer" class="text-heavy-yellow hover:underline flex items-center gap-1 font-bold">
+          Nawiguj prosto w Google Maps →
+        </a>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+        
+        <div class="md:col-span-5 space-y-4">
+          <div class="p-4 rounded-xl bg-heavy-card border border-heavy-border space-y-1">
+            <strong class="text-white block text-sm">Adres punktu:</strong>
+            <p class="text-zinc-300">ul. Robotnicza 72A, 53-607 Wrocław (Fabryczna)</p>
+            <p class="text-zinc-500 text-[11px] mt-1">Wjazd od Robotniczej naprzeciwko dawnego Pafawagu. Duży plac manewrowy z miejscami dla aut dostawczych i busów.</p>
+          </div>
+
+          <div class="p-4 rounded-xl bg-heavy-card border border-heavy-border space-y-2">
+            <div class="flex justify-between">
+              <span class="text-zinc-400">Telefon stacjonarny:</span>
+              <a href="tel:717949611" class="text-heavy-yellow font-bold hover:underline">71 794 96 11</a>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-zinc-400">Telefon komórkowy:</span>
+              <a href="tel:509176579" class="text-white font-bold hover:underline">509 176 579</a>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-zinc-400">Godziny przyjęć:</span>
+              <span class="text-white">Pn–Pt 8–18 • Sob 8–16</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="md:col-span-7 h-72 rounded-xl overflow-hidden border border-heavy-border">
+          <iframe 
+            title="Dojazd Sochacki Robotnicza 72A Wrocław"
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2504.8197127926955!2d17.00049287687841!3d51.11181897172709!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x470fc2776c5b9691%3A0xb30c722513f5080e!2sRobotnicza%2072A%2C%2053-608%20Wroc%C5%82aw!5e0!3m2!1spl!2spl!4v1731000000000!5m2!1spl!2spl" 
+            width="100%" 
+            height="100%" 
+            style="border:0;" 
+            allowfullscreen="" 
+            loading="lazy">
+          </iframe>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-heavy-border py-8 text-xs font-mono text-zinc-500 bg-heavy-card">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <p>SOCHACKI MECHANIKA POJAZDOWA / SERWIS OGUMIENIA • ul. Robotnicza 72A, Wrocław</p>
+      <p>© 2026. Schemat przemysłowy.</p>
+    </div>
+  </footer>
+
+  <!-- Fixed Mobile Action Bar -->
+  <aside aria-label="Szybki kontakt mobilny" class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-black/95 border-t border-heavy-border p-2.5">
+    <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+      <a href="tel:717949611" class="flex items-center justify-center gap-2 py-3 rounded bg-zinc-900 border border-zinc-700 text-white font-bold">
+        <i data-lucide="phone" class="w-4 h-4 text-heavy-yellow"></i> Zadzwoń: 71 794 96 11
+      </a>
+      <a href="https://maps.google.com/?q=Robotnicza+72A,+Wroc%C5%82aw" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center gap-2 py-3 rounded bg-heavy-yellow text-black font-bold">
+        <i data-lucide="navigation" class="w-4 h-4"></i> Nawiguj do serwisu
+      </a>
+    </div>
+  </aside>
+
+  <script>
+    lucide.createIcons();
+    const v3Form = document.getElementById('v3Form');
+    const v3Alert = document.getElementById('v3Alert');
+    v3Form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      v3Alert.classList.remove('hidden');
+      v3Form.reset();
+    });
+  </script>
+</body>
+</html>

@@ -31,7 +31,8 @@ class GameEventDetector:
         video_path: str,
         clip_start: float,
         clip_end: float,
-        clip_duration: Optional[float] = None
+        clip_duration: Optional[float] = None,
+        action_type: Optional[str] = None
     ) -> List[Tuple[float, str]]:
         dur = clip_duration if clip_duration is not None else (clip_end - clip_start)
         hud_type = self.profile.get("hud_type", "top_center_kills")
@@ -55,7 +56,7 @@ class GameEventDetector:
         # Dla LoL i innych FPS/MOBA gier z bannerami killowymi:
         try:
             from lol_agent.smart_camera import detect_kill_events as _detect_kills
-            return _detect_kills(video_path, clip_start, clip_end, dur)
+            return _detect_kills(video_path, clip_start, clip_end, dur, action_type=action_type)
         except Exception:
             return []
 
@@ -65,8 +66,9 @@ def detect_kill_events(
     clip_start: float,
     clip_end: float,
     clip_duration: Optional[float] = None,
-    game_profile: str = "lol"
+    game_profile: str = "lol",
+    action_type: Optional[str] = None
 ) -> List[Tuple[float, str]]:
     """Backward-compatible wrapper delegating to GameEventDetector."""
     detector = GameEventDetector(game_profile)
-    return detector.detect_events(video_path, clip_start, clip_end, clip_duration)
+    return detector.detect_events(video_path, clip_start, clip_end, clip_duration, action_type=action_type)

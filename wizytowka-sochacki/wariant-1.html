@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="pl" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sochacki Serwis | Wulkanizacja, Opony & Mechanika Wrocław Robotnicza 72A</title>
+  <meta name="description" content="Nowoczesny serwis opon, wyważanie 3D, hotel kół oraz mechanika pojazdowa we Wrocławiu. Zadzwoń: 71 794 96 11, ul. Robotnicza 72A.">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            display: ['"Space Grotesk"', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              navy: '#0b1329',
+              dark: '#0f172a',
+              card: '#1e293b',
+              border: '#334155',
+              accent: '#38bdf8', // Sky Blue
+              amber: '#f59e0b', // Amber/Yellow
+              emerald: '#10b981',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-brand-navy text-slate-100 font-sans antialiased selection:bg-brand-amber selection:text-black pb-24 md:pb-0">
+
+  <!-- Top Info Header -->
+  <div class="border-b border-brand-border/60 bg-brand-dark/80 px-4 py-2 text-xs">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center gap-1.5 text-brand-emerald font-semibold">
+          <span class="w-2 h-2 rounded-full bg-brand-emerald animate-pulse"></span>
+          Czynne dzisiaj: 8:00 – 18:00
+        </span>
+        <span class="text-slate-500">•</span>
+        <span class="text-slate-300">Wrocław, ul. Robotnicza 72A (Fabryczna)</span>
+      </div>
+      <div class="flex items-center gap-4 text-xs font-semibold">
+        <a href="tel:717949611" class="text-white hover:text-brand-amber transition-colors flex items-center gap-1">
+          <i data-lucide="phone" class="w-3.5 h-3.5 text-brand-amber"></i> 71 794 96 11
+        </a>
+        <span class="text-slate-600">/</span>
+        <a href="tel:509176579" class="text-white hover:text-brand-amber transition-colors flex items-center gap-1">
+          <i data-lucide="smartphone" class="w-3.5 h-3.5 text-brand-accent"></i> 509 176 579
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Navigation -->
+  <header class="sticky top-0 z-40 bg-brand-navy/95 backdrop-blur-md border-b border-brand-border">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <a href="#" class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-brand-amber to-orange-600 flex items-center justify-center text-black font-extrabold text-xl shadow-lg shadow-amber-500/20">
+          S
+        </div>
+        <div>
+          <span class="font-display font-extrabold text-2xl tracking-tight text-white flex items-center gap-2">
+            SOCHACKI <span class="text-xs px-2 py-0.5 rounded bg-brand-card text-brand-amber font-mono font-bold border border-brand-border">SERWIS</span>
+          </span>
+          <p class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Serwis Ogumienia • Geometria 3D • Mechanika</p>
+        </div>
+      </a>
+
+      <!-- Desktop Links -->
+      <nav class="hidden lg:flex items-center gap-8 text-sm font-semibold text-slate-300">
+        <a href="#uslugi" class="hover:text-brand-amber transition-colors">Usługi</a>
+        <a href="#kalkulator" class="hover:text-brand-amber transition-colors">Kalkulator Kół</a>
+        <a href="#standard" class="hover:text-brand-amber transition-colors">Dlaczego My</a>
+        <a href="#opinie" class="hover:text-brand-amber transition-colors">Opinie</a>
+        <a href="#kontakt" class="hover:text-brand-amber transition-colors">Dojazd</a>
+      </nav>
+
+      <!-- Desktop CTAs -->
+      <div class="hidden sm:flex items-center gap-3">
+        <a href="https://maps.google.com/?q=Robotnicza+72A,+Wroc%C5%82aw" target="_blank" rel="noopener noreferrer" class="px-4 py-2.5 rounded-xl border border-brand-border hover:border-slate-500 text-slate-200 text-xs font-bold flex items-center gap-2 transition-colors">
+          <i data-lucide="navigation" class="w-3.5 h-3.5 text-brand-emerald"></i>
+          <span>Dojazd GPS</span>
+        </a>
+        <a href="#rezerwacja" class="px-5 py-2.5 rounded-xl bg-brand-amber hover:bg-amber-400 text-black text-xs font-extrabold uppercase tracking-wider shadow-lg shadow-amber-500/25 transition-all">
+          Umów Termin
+        </a>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Hero Section with Live Estimator -->
+  <section class="py-12 sm:py-20 border-b border-brand-border relative overflow-hidden">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        
+        <!-- Left Hero Copy -->
+        <div class="lg:col-span-7 space-y-6">
+          
+          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand-card border border-brand-border text-xs text-slate-300">
+            <span class="w-2 h-2 rounded-full bg-brand-amber"></span>
+            <span class="text-white font-bold">Wrocław Fabryczna</span>
+            <span>•</span>
+            <span>ul. Robotnicza 72A</span>
+            <span>•</span>
+            <span class="text-brand-accent">Partner Euromaster</span>
+          </div>
+
+          <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold font-display text-white tracking-tight leading-[1.1]">
+            Pewny serwis opon <br>
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-brand-amber via-yellow-300 to-brand-accent">i rzetelna mechanika</span><br>
+            bez kolejek.
+          </h1>
+
+          <p class="text-base sm:text-lg text-slate-300 max-w-xl font-normal leading-relaxed">
+            Wymieniamy opony na atestowanych maszynach bezdotykowych do 24 cali. Zapewniamy precyzyjne wyważanie 3D, regulację geometrii zawieszenia oraz ubezpieczony hotel opon w centrum Wrocławia.
+          </p>
+
+          <!-- 3 Quick badges -->
+          <div class="grid grid-cols-3 gap-3 pt-2 text-xs">
+            <div class="p-3 rounded-xl bg-brand-card/80 border border-brand-border">
+              <strong class="text-white block font-display">Bezdotykowo</strong>
+              <span class="text-slate-400 text-[11px]">Zero rys na felgach</span>
+            </div>
+            <div class="p-3 rounded-xl bg-brand-card/80 border border-brand-border">
+              <strong class="text-white block font-display">Klucz z atestem</strong>
+              <span class="text-slate-400 text-[11px]">Dociąg wg Nm producenta</span>
+            </div>
+            <div class="p-3 rounded-xl bg-brand-card/80 border border-brand-border">
+              <strong class="text-white block font-display">Hotel na miejscu</strong>
+              <span class="text-slate-400 text-[11px]">1200+ kompletów z myciem</span>
+            </div>
+          </div>
+
+          <!-- Buttons -->
+          <div class="flex flex-col sm:flex-row gap-4 pt-2">
+            <a href="#rezerwacja" class="px-7 py-4 rounded-xl bg-brand-amber hover:bg-amber-400 text-black font-extrabold text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-amber-500/20 transition-all">
+              <i data-lucide="calendar" class="w-4 h-4"></i>
+              <span>Zarezerwuj Wizytę Online</span>
+            </a>
+            <a href="tel:717949611" class="px-7 py-4 rounded-xl bg-brand-card hover:bg-slate-700 border border-brand-border text-white font-bold text-sm flex items-center justify-center gap-2 transition-all">
+              <i data-lucide="phone-call" class="w-4 h-4 text-brand-accent"></i>
+              <span>Zadzwoń: 71 794 96 11</span>
+            </a>
+          </div>
+
+        </div>
+
+        <!-- Right Hero Interactive Price Estimator -->
+        <div class="lg:col-span-5" id="kalkulator">
+          <div class="bg-brand-card border border-brand-border rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+            
+            <div class="flex items-center justify-between border-b border-brand-border pb-4">
+              <div>
+                <span class="text-[11px] font-mono text-brand-amber font-bold uppercase">Szybka wycena kompletu kół</span>
+                <h3 class="text-xl font-bold font-display text-white mt-0.5">Kalkulator Wymiany Opon</h3>
+              </div>
+              <div class="w-9 h-9 rounded-xl bg-brand-amber/15 text-brand-amber flex items-center justify-center">
+                <i data-lucide="calculator" class="w-5 h-5"></i>
+              </div>
+            </div>
+
+            <!-- Estimator Controls -->
+            <div class="space-y-4 text-xs">
+              
+              <div>
+                <label class="block font-bold text-slate-300 mb-1.5">Rozmiar felgi (4 koła):</label>
+                <div class="grid grid-cols-3 gap-2" id="calcRimSizes">
+                  <button type="button" data-val="15" class="rim-opt active py-2.5 rounded-lg border border-brand-amber bg-brand-amber/20 text-white font-bold text-xs">15" - 16"</button>
+                  <button type="button" data-val="17" class="rim-opt py-2.5 rounded-lg border border-brand-border bg-brand-navy text-slate-300 font-bold text-xs">17" - 18"</button>
+                  <button type="button" data-val="19" class="rim-opt py-2.5 rounded-lg border border-brand-border bg-brand-navy text-slate-300 font-bold text-xs">19" - 21"+</button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-300 mb-1.5">Typ felgi:</label>
+                <div class="grid grid-cols-2 gap-2" id="calcWheelTypes">
+                  <button type="button" data-type="alu" class="type-opt active py-2 rounded-lg border border-brand-amber bg-brand-amber/20 text-white font-semibold text-xs">Aluminiowa</button>
+                  <button type="button" data-type="stal" class="type-opt py-2 rounded-lg border border-brand-border bg-brand-navy text-slate-300 font-semibold text-xs">Stalowa</button>
+                </div>
+              </div>
+
+              <div class="space-y-2 pt-1">
+                <label class="flex items-center gap-2.5 p-2.5 rounded-lg bg-brand-navy border border-brand-border cursor-pointer">
+                  <input type="checkbox" id="chkHotel" class="rounded text-brand-amber bg-brand-card border-brand-border focus:ring-0">
+                  <span class="text-xs text-slate-200">+ Hotel Opon na 1 sezon z myciem (+120 zł)</span>
+                </label>
+                <label class="flex items-center gap-2.5 p-2.5 rounded-lg bg-brand-navy border border-brand-border cursor-pointer">
+                  <input type="checkbox" id="chkGeom" class="rounded text-brand-amber bg-brand-card border-brand-border focus:ring-0">
+                  <span class="text-xs text-slate-200">+ Kontrola laserowa geometrii 3D (+140 zł)</span>
+                </label>
+              </div>
+
+              <!-- Price Display -->
+              <div class="p-4 rounded-xl bg-brand-navy border border-brand-border flex items-center justify-between">
+                <div>
+                  <span class="text-[11px] text-slate-400 block">Szacunkowy koszt:</span>
+                  <div class="text-3xl font-extrabold font-mono text-white flex items-baseline gap-1">
+                    <span class="text-lg text-brand-amber">od</span>
+                    <span id="priceVal">140</span>
+                    <span class="text-sm text-slate-300">zł brutto</span>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="text-[10px] text-slate-500 uppercase block font-mono">Czas operacji:</span>
+                  <span class="text-xs font-bold text-brand-emerald">ok. 30-40 min</span>
+                </div>
+              </div>
+
+              <a href="#rezerwacja" class="block w-full text-center py-3.5 rounded-xl bg-brand-amber hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition-all">
+                Rezerwuj termin z tą wyceną →
+              </a>
+
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Services Grid -->
+  <section id="uslugi" class="py-20 border-b border-brand-border bg-brand-dark/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+      
+      <div class="max-w-2xl space-y-2">
+        <span class="text-xs font-bold text-brand-amber uppercase tracking-widest font-mono">[PEŁNA OFERTA WARSZTATOWA]</span>
+        <h2 class="text-3xl sm:text-4xl font-extrabold font-display text-white">Kompleksowe Usługi na Robotniczej</h2>
+        <p class="text-sm text-slate-400">Wszystko w jednym punkcie we Wrocławiu: od montażu kół po geometrię i mechanikę.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+        <div class="p-6 rounded-2xl bg-brand-card border border-brand-border space-y-4 hover:border-slate-500 transition-all">
+          <div class="w-10 h-10 rounded-xl bg-brand-amber/15 text-brand-amber flex items-center justify-center font-bold">
+            <i data-lucide="disc" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white font-display">Wulkanizacja & Opony do 24"</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Montaż opon niskoprofilowych, SUV i Run-Flat na maszynach bezdotykowych z teflonowymi nakładkami. Komputerowe wyważanie 3D i obsługa czujników ciśnienia TPMS.
+          </p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-brand-card border border-brand-border space-y-4 hover:border-slate-500 transition-all">
+          <div class="w-10 h-10 rounded-xl bg-brand-accent/15 text-brand-accent flex items-center justify-center font-bold">
+            <i data-lucide="crosshair" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white font-display">Laserowa Geometria Kół 3D</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Precyzyjna regulacja zbieżności i kątów pochylenia kół osi przedniej i tylnej. Likwidacja ściągania pojazdu na boki i ochrona bieżnika przed nierównomiernym zużyciem.
+          </p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-brand-card border border-brand-border space-y-4 hover:border-slate-500 transition-all">
+          <div class="w-10 h-10 rounded-xl bg-brand-emerald/15 text-brand-emerald flex items-center justify-center font-bold">
+            <i data-lucide="warehouse" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white font-display">Sezonowy Hotel Opon i Kół</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Zwolnij miejsce w piwnicy czy garażu. Przechowujemy koła w suchym, wentylowanym magazynie z ubezpieczeniem. Przed odłożeniem koła są myte i mierzone.
+          </p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-brand-card border border-brand-border space-y-4 hover:border-slate-500 transition-all">
+          <div class="w-10 h-10 rounded-xl bg-brand-amber/15 text-brand-amber flex items-center justify-center font-bold">
+            <i data-lucide="wrench" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white font-display">Układy Hamulcowe & Zawieszenie</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Wymiana klocków, tarcz, przewodów hamulcowych, amortyzatorów, wahaczy i łożysk. Przejrzysta wycena części i robocizny przed rozpoczęciem jakichkolwiek prac.
+          </p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-brand-card border border-brand-border space-y-4 hover:border-slate-500 transition-all">
+          <div class="w-10 h-10 rounded-xl bg-brand-accent/15 text-brand-accent flex items-center justify-center font-bold">
+            <i data-lucide="wind" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white font-display">Klimatyzacja (R134a / R1234yf)</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Próżniowa próba szczelności, napełnianie precyzyjną automatyczną stacją serwisową oraz chemiczne odgrzybianie i ozonowanie kabiny.
+          </p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-brand-card border border-brand-border space-y-4 hover:border-slate-500 transition-all">
+          <div class="w-10 h-10 rounded-xl bg-brand-emerald/15 text-brand-emerald flex items-center justify-center font-bold">
+            <i data-lucide="droplet" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white font-display">Oleje & Filtry Silnikowe</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Okresowa wymiana oleju silnikowego, filtrów oraz płynów eksploatacyjnych z kasowaniem inspekcji w komputerze pokładowym pojazdu.
+          </p>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Reservation Form -->
+  <section id="rezerwacja" class="py-20 border-b border-brand-border bg-brand-navy">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 space-y-8">
+      
+      <div class="text-center space-y-2">
+        <span class="text-xs font-mono uppercase text-brand-amber font-bold">[REZERWACJA ONLINE]</span>
+        <h2 class="text-3xl font-extrabold font-display text-white">Umów wizytę w warsztacie</h2>
+        <p class="text-xs text-slate-400">Oddzwonimy w ciągu kilkunastu minut w celu potwierdzenia dogodnej godziny.</p>
+      </div>
+
+      <form id="resForm" class="p-6 sm:p-8 rounded-2xl bg-brand-card border border-brand-border space-y-4 text-xs">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block font-bold text-slate-300 uppercase mb-1">Imię i nazwisko / Firma *</label>
+            <input type="text" required placeholder="np. Piotr Wiśniewski" class="w-full bg-brand-navy border border-brand-border rounded-xl p-3 text-white focus:outline-none focus:border-brand-amber text-sm">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-300 uppercase mb-1">Numer telefonu *</label>
+            <input type="tel" required placeholder="np. 501 234 567" class="w-full bg-brand-navy border border-brand-border rounded-xl p-3 text-white focus:outline-none focus:border-brand-amber text-sm">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block font-bold text-slate-300 uppercase mb-1">Pojazd / Rozmiar opon</label>
+            <input type="text" placeholder="np. Ford Focus, 205/55 R16" class="w-full bg-brand-navy border border-brand-border rounded-xl p-3 text-white focus:outline-none focus:border-brand-amber text-sm">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-300 uppercase mb-1">Wybór usługi</label>
+            <select class="w-full bg-brand-navy border border-brand-border rounded-xl p-3 text-white focus:outline-none focus:border-brand-amber text-sm">
+              <option>Wymiana opon 4 szt.</option>
+              <option>Wymiana opon + Sezonowy Hotel Kół</option>
+              <option>Laserowa geometria 3D (Zbieżność)</option>
+              <option>Klimatyzacja (Napełnienie / Ozonowanie)</option>
+              <option>Mechanika ogólna / Hamulce</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full py-4 rounded-xl bg-brand-amber hover:bg-amber-400 text-black font-extrabold uppercase tracking-wider text-sm transition-all shadow-lg shadow-amber-500/20">
+          Wyślij zgłoszenie terminu →
+        </button>
+
+        <div id="resAlert" class="hidden p-4 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-center font-bold">
+          ✓ Dziękujemy! Zgłoszenie przyjęte. Doradca serwisu oddzwoni w celu ustalenia godziny.
+        </div>
+      </form>
+
+    </div>
+  </section>
+
+  <!-- Location & Map -->
+  <section id="kontakt" class="py-16 bg-brand-dark/70">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+        
+        <div class="lg:col-span-5 space-y-4 text-xs">
+          <span class="text-brand-amber font-mono font-bold uppercase text-[11px]">[LOKALIZACJA]</span>
+          <h3 class="text-2xl font-bold font-display text-white">Dojazd do warsztatu</h3>
+          <p class="text-slate-300">
+            Serwis znajduje się przy <strong class="text-white">ul. Robotniczej 72A we Wrocławiu</strong> (Fabryczna). Posiadamy duży, bezpłatny plac manewrowy z miejscami parkingowymi.
+          </p>
+
+          <div class="p-4 rounded-xl bg-brand-card border border-brand-border space-y-2">
+            <div class="flex items-center justify-between text-slate-400">
+              <span>Telefon biuro:</span>
+              <a href="tel:717949611" class="text-white font-mono font-bold text-sm hover:underline">71 794 96 11</a>
+            </div>
+            <div class="flex items-center justify-between text-slate-400">
+              <span>Telefon komórkowy:</span>
+              <a href="tel:509176579" class="text-brand-amber font-mono font-bold text-sm hover:underline">509 176 579</a>
+            </div>
+            <div class="flex items-center justify-between text-slate-400">
+              <span>Godziny:</span>
+              <span class="text-white font-semibold">Pn-Pt 8–18 • Sob 8–16</span>
+            </div>
+          </div>
+
+          <a href="https://maps.google.com/?q=Robotnicza+72A,+Wroc%C5%82aw" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-brand-emerald hover:bg-emerald-600 text-white font-bold text-xs uppercase tracking-wider transition-colors">
+            <i data-lucide="navigation" class="w-4 h-4"></i>
+            <span>Uruchom Nawigację Google Maps</span>
+          </a>
+        </div>
+
+        <div class="lg:col-span-7 h-72 rounded-2xl overflow-hidden border border-brand-border">
+          <iframe 
+            title="Dojazd Sochacki Robotnicza 72A Wrocław"
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2504.8197127926955!2d17.00049287687841!3d51.11181897172709!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x470fc2776c5b9691%3A0xb30c722513f5080e!2sRobotnicza%2072A%2C%2053-608%20Wroc%C5%82aw!5e0!3m2!1spl!2spl!4v1731000000000!5m2!1spl!2spl" 
+            width="100%" 
+            height="100%" 
+            style="border:0;" 
+            allowfullscreen="" 
+            loading="lazy">
+          </iframe>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-brand-border py-8 text-xs text-slate-500 bg-brand-navy">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <p>SOCHACKI — Serwis Ogumienia i Mechanika Pojazdowa • ul. Robotnicza 72A, Wrocław</p>
+      <p>© 2026. Wszelkie prawa zastrzeżone.</p>
+    </div>
+  </footer>
+
+  <!-- Fixed Mobile Action Bar -->
+  <aside aria-label="Szybki kontakt mobilny" class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-brand-navy/95 backdrop-blur border-t border-brand-border p-2.5">
+    <div class="grid grid-cols-2 gap-2 text-xs">
+      <a href="tel:717949611" class="flex items-center justify-center gap-1.5 py-3 rounded-xl bg-brand-card text-white font-bold border border-brand-border">
+        <i data-lucide="phone" class="w-4 h-4 text-brand-amber"></i> Zadzwoń
+      </a>
+      <a href="https://maps.google.com/?q=Robotnicza+72A,+Wroc%C5%82aw" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center gap-1.5 py-3 rounded-xl bg-brand-amber text-black font-extrabold">
+        <i data-lucide="navigation" class="w-4 h-4"></i> Nawiguj GPS
+      </a>
+    </div>
+  </aside>
+
+  <script>
+    lucide.createIcons();
+
+    // Estimator calculation
+    let rim = 15;
+    let type = 'alu';
+    const rimButtons = document.querySelectorAll('.rim-opt');
+    const typeButtons = document.querySelectorAll('.type-opt');
+    const chkH = document.getElementById('chkHotel');
+    const chkG = document.getElementById('chkGeom');
+    const priceOutput = document.getElementById('priceVal');
+
+    function calcPrice() {
+      let base = (rim === 15) ? (type === 'alu' ? 140 : 120) : (rim === 17 ? (type === 'alu' ? 170 : 150) : (type === 'alu' ? 210 : 180));
+      if (chkH.checked) base += 120;
+      if (chkG.checked) base += 140;
+      priceOutput.textContent = base;
+    }
+
+    rimButtons.forEach(b => {
+      b.addEventListener('click', () => {
+        rimButtons.forEach(btn => {
+          btn.classList.remove('active', 'border-brand-amber', 'bg-brand-amber/20', 'text-white');
+          btn.classList.add('border-brand-border', 'bg-brand-navy', 'text-slate-300');
+        });
+        b.classList.add('active', 'border-brand-amber', 'bg-brand-amber/20', 'text-white');
+        b.classList.remove('border-brand-border', 'bg-brand-navy', 'text-slate-300');
+        rim = parseInt(b.dataset.val);
+        calcPrice();
+      });
+    });
+
+    typeButtons.forEach(b => {
+      b.addEventListener('click', () => {
+        typeButtons.forEach(btn => {
+          btn.classList.remove('active', 'border-brand-amber', 'bg-brand-amber/20', 'text-white');
+          btn.classList.add('border-brand-border', 'bg-brand-navy', 'text-slate-300');
+        });
+        b.classList.add('active', 'border-brand-amber', 'bg-brand-amber/20', 'text-white');
+        b.classList.remove('border-brand-border', 'bg-brand-navy', 'text-slate-300');
+        type = b.dataset.type;
+        calcPrice();
+      });
+    });
+
+    chkH.addEventListener('change', calcPrice);
+    chkG.addEventListener('change', calcPrice);
+
+    // Form
+    const resForm = document.getElementById('resForm');
+    const resAlert = document.getElementById('resAlert');
+    resForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      resAlert.classList.remove('hidden');
+      resForm.reset();
+    });
+  </script>
+</body>
+</html>

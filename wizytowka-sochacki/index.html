@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Koncepcje Nowej Wizytówki WWW | Sochacki Serwis Wrocław</title>
+  <meta name="description" content="Propozycja nowej strony i wizytówki internetowej dla serwisu ogumienia i mechaniki Sochacki (ul. Robotnicza 72A, Wrocław). Wybierz jeden z 3 gotowych wariantów.">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            display: ['"Space Grotesk"', 'sans-serif'],
+          },
+          colors: {
+            portal: {
+              bg: '#090d16',
+              card: '#111827',
+              border: '#1f293d',
+              gold: '#f59e0b',
+              accent: '#38bdf8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-portal-bg text-slate-100 font-sans antialiased selection:bg-portal-gold selection:text-black min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+
+  <div class="max-w-6xl mx-auto space-y-12">
+    
+    <!-- Executive Pitch Header -->
+    <header class="text-center space-y-4 max-w-3xl mx-auto">
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-portal-card border border-portal-border text-xs text-portal-gold font-bold">
+        <span>PROJEKT DLA: SOCHACKI SERWIS POJAZDOWY (WROCŁAW, ROBOTNICZA 72A)</span>
+      </div>
+
+      <h1 class="text-3xl sm:text-5xl font-extrabold font-display text-white tracking-tight leading-[1.15]">
+        Wybierz koncepcję nowej <br>
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-portal-gold via-yellow-300 to-portal-accent">wizytówki internetowej</span>
+      </h1>
+
+      <p class="text-base text-slate-300 font-normal leading-relaxed">
+        Przygotowaliśmy <strong>3 zupełnie różne, w pełni działające wersje</strong> nowej strony. Każda została zoptymalizowana pod kątem kierowców z Wrocławia szukających wulkanizacji ze smartfona w trasie. Kliknij poniżej, aby przetestować każdą z nich.
+      </p>
+    </header>
+
+    <!-- 3 DISTINCT SHOWCASE CARDS -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+      
+      <!-- KARTA WARIANTU 1 -->
+      <div class="bg-portal-card border-2 border-portal-border hover:border-portal-gold rounded-3xl p-7 flex flex-col justify-between space-y-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-amber-500/10 group">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-mono font-bold px-3 py-1 rounded-full bg-amber-500/15 text-portal-gold border border-amber-500/30">
+              WARIANT 1
+            </span>
+            <span class="text-xs text-slate-500 font-mono">wariant-1.html</span>
+          </div>
+
+          <h3 class="text-2xl font-bold font-display text-white group-hover:text-portal-gold transition-colors">
+            Modern Auto Center
+          </h3>
+
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Dynamiczny, nowoczesny styl w barwach granatu i bursztynu (styl Michelin/Euromaster). Wyposażony w <strong>interaktywny kalkulator wymiany opon</strong> (klient klika rozmiar felgi 15"–21" i od razu widzi cenę za komplet z hotelem) oraz formularz rezerwacji.
+          </p>
+
+          <div class="pt-2 border-t border-portal-border space-y-2 text-xs text-slate-400">
+            <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-portal-gold"></i> Interaktywny kalkulator wyceny kół</div>
+            <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-portal-gold"></i> Dynamiczny status otwarcia serwisu</div>
+            <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-portal-gold"></i> Stały dolny pasek szybkiego kontaktu</div>
+          </div>
+        </div>
+
+        <div class="pt-4">
+          <a href="wariant-1.html" class="w-full py-4 rounded-xl bg-portal-gold hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20">
+            <span>Otwórz Wariant 1 (Auto Center)</span>
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </a>
+        </div>
+      </div>
+
+      <!-- KARTA WARIANTU 2 -->
+      <div class="bg-portal-card border-2 border-portal-border hover:border-portal-accent rounded-3xl p-7 flex flex-col justify-between space-y-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-sky-500/10 group">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-mono font-bold px-3 py-1 rounded-full bg-sky-500/15 text-portal-accent border border-sky-500/30">
+              WARIANT 2
+            </span>
+            <span class="text-xs text-slate-500 font-mono">wariant-2.html</span>
+          </div>
+
+          <h3 class="text-2xl font-bold font-display text-white group-hover:text-portal-accent transition-colors">
+            Prestige Workshop
+          </h3>
+
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Jasny, prestiżowy styl autoryzowanej stacji dealerskiej (biel, grafit i królewski kobalt). Skupiony na zaufaniu, <strong>certyfikowanym standardzie dokręcania kół kluczem dynamometrycznym</strong>, przejrzystej tabeli cennikowej oraz strefie flot B2B.
+          </p>
+
+          <div class="pt-2 border-t border-portal-border space-y-2 text-xs text-slate-400">
+            <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-portal-accent"></i> Jasny, instytucjonalny design OEM</div>
+            <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-portal-accent"></i> Pełna tabela usług i stawek brutto</div>
+            <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-portal-accent"></i> Dedykowany moduł flot firmowych B2B</div>
+          </div>
+        </div>
+
+        <div class="pt-4">
+          <a href="wariant-2.html" class="w-full py-4 rounded-xl bg-portal-accent hover:bg-sky-400 text-black font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg shadow-sky-500/20">
+            <span>Otwórz Wariant 2 (Prestige)</span>
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </a>
+        </div>
+      </div>
+
+      <!-- KARTA WARIANTU 3 -->
+      <div class="bg-portal-card border-2 border-portal-border hover:border-yellow-400 rounded-3xl p-7 flex flex-col justify-between space-y-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-yellow-500/10 group">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-mono font-bold px-3 py-1 rounded-full bg-yellow-400/15 text-yellow-400 border border-yellow-400/30">
+              WARIANT 3
+            </span>
+            <span class="text-xs text-slate-500 font-mono">wariant-3.html</span>
+          </div>
+
+          <h3 class="text-2xl font-bold font-display text-white group-hover:text-yellow-400 transition-colors">
+            Express Warsztat
+          </h3>
+
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Mocny, rzemieślniczy, industrialny charakter (Snap-on / Milwaukee). <strong>3 wielkie kafelki natychmiastowej akcji</strong> (telefon stacjonarny, komórka kierownika, bezpośrednia nawigacja GPS) oraz twarde porównanie faktów montażowych.
+          </p>
+
+          <div class="pt-2 border-t border-portal-border space-y-2 text-xs text-slate-400">
+            <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-yellow-400"></i> Błyskawiczny telefon i nawigacja GPS</div>
+            <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-yellow-400"></i> Porównanie: Tani punkt vs Sochacki</div>
+            <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-yellow-400"></i> Warsztatowa tablica rozliczeń</div>
+          </div>
+        </div>
+
+        <div class="pt-4">
+          <a href="wariant-3.html" class="w-full py-4 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg shadow-yellow-500/20">
+            <span>Otwórz Wariant 3 (Express)</span>
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </a>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Client Info Bar -->
+    <div class="p-6 rounded-2xl bg-portal-card border border-portal-border flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+      <div class="flex items-center gap-3">
+        <i data-lucide="map-pin" class="w-5 h-5 text-portal-gold shrink-0"></i>
+        <span>Adres serwisu: <strong class="text-white">ul. Robotnicza 72A, 53-607 Wrocław</strong> • Telefony: <strong class="text-white">71 794 96 11</strong> / <strong class="text-white">509 176 579</strong></span>
+      </div>
+      <span class="text-emerald-400 font-mono font-bold">100% gotowe do wdrożenia</span>
+    </div>
+
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

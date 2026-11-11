@@ -20,6 +20,25 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+import sys
+import types
+
+# Compatibility shim for older pickled Google Auth tokens
+try:
+    import google.auth._regional_access_boundary_utils
+except ImportError:
+    class DummyRAB:
+        def __init__(self, *args, **kwargs): pass
+        def __setstate__(self, state):
+            if isinstance(state, dict): self.__dict__.update(state)
+        def apply_headers(self, headers): pass
+
+    _rab_mod = types.ModuleType("google.auth._regional_access_boundary_utils")
+    _rab_mod.DummyRAB = DummyRAB
+    _rab_mod._RegionalAccessBoundaryManager = DummyRAB
+    _rab_mod._RegionalAccessBoundaryData = DummyRAB
+    _rab_mod._RegionalAccessBoundaryRefreshManager = DummyRAB
+    sys.modules["google.auth._regional_access_boundary_utils"] = _rab_mod
 
 try:
     from .config import YT_TOKEN_PATH, ACCOUNTS_DIR
@@ -50,8 +69,16 @@ def _get_services() -> Tuple[Optional[Any], Optional[Any], Optional[str]]:
         if creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
-                with open(YT_TOKEN_PATH, "wb") as f:
+                if hasattr(creds, "_rab_manager"):
+                    try:
+                        delattr(creds, "_rab_manager")
+                    except Exception:
+                        pass
+                tmp_path = YT_TOKEN_PATH.with_suffix(".tmp")
+                with open(tmp_path, "wb") as f:
                     pickle.dump(creds, f)
+                import os
+                os.replace(tmp_path, YT_TOKEN_PATH)
             except Exception:
                 pass
 

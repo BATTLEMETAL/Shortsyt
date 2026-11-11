@@ -38,12 +38,12 @@ def test_generate_channel_title_ab_variants_differ_and_enforce_hashtags():
     title_a = generate_channel_title(action_type="solo_bolo", champion="Zed", variant="A")
     title_b = generate_channel_title(action_type="solo_bolo", champion="Zed", variant="B", exclude_title=title_a)
     assert title_a != title_b
-    assert "#Shorts" in title_a
-    assert "#LeagueOfLegends" in title_a
-    assert "#LoL" in title_a
-    assert "#Shorts" in title_b
-    assert "#LeagueOfLegends" in title_b
-    assert "#LoL" in title_b
+    assert "#shorts" in title_a.lower()
+    assert "#leagueoflegends" in title_a.lower()
+    assert "#lol" in title_a.lower()
+    assert "#shorts" in title_b.lower()
+    assert "#leagueoflegends" in title_b.lower()
+    assert "#lol" in title_b.lower()
 
 
 def test_generate_metadata_includes_title_variants():
@@ -59,4 +59,28 @@ def test_generate_metadata_includes_title_variants():
     assert len(meta["title_variants"]) == 2
     assert meta["title"] == meta["title_variants"][0]
     assert meta["title_variant_b"] == meta["title_variants"][1]
-    assert "#Shorts" in meta["title_variant_b"]
+    assert "#shorts" in meta["title_variant_b"].lower()
+
+
+def test_channel_title_no_banned_cliches_and_high_diversity():
+    """Verify generated titles eliminate overused tropes, rank prefixes, and have high diversity."""
+    banned = ["bad idea", "hunting grounds", "massacre", "reset machine", "mistake", "regret"]
+    actions = ["solo_bolo", "outplay", "triple", "double", "pentakill"]
+
+    for act in actions:
+        generated = []
+        for _ in range(15):
+            t = generate_channel_title(action_type=act, champion="Katarina", map_zone_label="River")
+            t_lower = t.lower()
+            for b in banned:
+                assert b not in t_lower, f"Found banned trope '{b}' in title: {t}"
+            assert not t_lower.startswith("master "), f"Found rank prefix in title: {t}"
+            assert not t_lower.startswith("diamond "), f"Found rank prefix in title: {t}"
+            generated.append(t)
+
+        # Diversity check: at least 4 unique titles out of 15, and river is not 100% forced
+        unique_titles = set(generated)
+        assert len(unique_titles) >= 4, f"Low diversity for {act}: {len(unique_titles)} unique out of 15"
+        river_count = sum(1 for t in generated if "river" in t.lower())
+        assert river_count < 15, f"Map zone overwhelmed all choices for {act} (15/15 had river)"
+

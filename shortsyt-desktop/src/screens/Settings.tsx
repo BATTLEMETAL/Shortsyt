@@ -3,11 +3,13 @@ import {
   getServerUrl, setServerUrl, getJwtToken, clearJwtToken,
   apiLogin, apiHealthCheck, apiGetYtTokenStatus, apiGetYtAuthUrl,
   apiGetHardwareInfo, apiRunBenchmarkScan,
+  apiGetTikTokStatus, apiGetInstagramStatus, apiGetFacebookStatus, apiSetupMetaToken, TikTokStatus, InstagramStatus, FacebookStatus,
   DEFAULT_URL, YtTokenStatusResponse, HardwareProfile,
 } from '../lib/api';
 import {
   Settings as SettingsIcon, Save, KeyRound, Server, Check, AlertCircle,
   Trash2, Youtube, RefreshCw, ExternalLink, ShieldCheck, ShieldAlert, ShieldOff, Copy,
+  Instagram, Share2, Video,
 } from 'lucide-react';
 
 export default function Settings() {
@@ -26,6 +28,56 @@ export default function Settings() {
   const [copied, setCopied] = useState(false);
   const [ytMsg, setYtMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Multi-Platform Social Tokens
+  const [ttStatus, setTtStatus] = useState<TikTokStatus | null>(null);
+  const [igStatus, setIgStatus] = useState<InstagramStatus | null>(null);
+  const [fbStatus, setFbStatus] = useState<FacebookStatus | null>(null);
+  const [socialLoading, setSocialLoading] = useState(false);
+
+  const fetchSocialStatus = useCallback(async () => {
+    if (!token) return;
+    setSocialLoading(true);
+    try {
+      const [tt, ig, fb] = await Promise.all([
+        apiGetTikTokStatus().catch(() => null),
+        apiGetInstagramStatus().catch(() => null),
+        apiGetFacebookStatus().catch(() => null),
+      ]);
+      setTtStatus(tt);
+      setIgStatus(ig);
+      setFbStatus(fb);
+    } catch {
+      // ignore
+    } finally {
+      setSocialLoading(false);
+    }
+  }, [token]);
+
+  // Meta Token Setup (Facebook Page & Instagram)
+  const [metaTokenInput, setMetaTokenInput] = useState<string>('');
+  const [metaSubmitting, setMetaSubmitting] = useState<boolean>(false);
+  const [metaResult, setMetaResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const handleSetupMeta = async () => {
+    if (!metaTokenInput.trim()) return;
+    setMetaSubmitting(true);
+    setMetaResult(null);
+    try {
+      const res = await apiSetupMetaToken(metaTokenInput.trim());
+      setMetaResult({ ok: true, msg: res.message || "Token Meta pomyślnie zaktualizowany!" });
+      setMetaTokenInput('');
+      fetchSocialStatus();
+    } catch (e: any) {
+      setMetaResult({ ok: false, msg: e.response?.data?.detail || e.message || "Błąd autoryzacji Meta" });
+    } finally {
+      setMetaSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSocialStatus();
+  }, [fetchSocialStatus]);
 
   useEffect(() => {
     async function load() {
@@ -315,6 +367,146 @@ export default function Settings() {
             {!token && <p className="text-[11px] text-[#FFB347]">Musisz byc zalogowany (JWT) aby autoryzowac YouTube.</p>}
           </div>
         )}
+      </div>
+
+      {/* ── Multi-Platform Social Accounts (TikTok & Instagram) ── */}
+      <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5 text-sm font-bold text-[#E4D6B5]">
+            <Share2 className="w-4 h-4 text-[#C89B3C]" />
+            <span>Multi-Platform — TikTok, Instagram & Facebook Page</span>
+          </div>
+          <button onClick={() => fetchSocialStatus()} disabled={socialLoading}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#0A0E1A] border border-[#1E2438] text-xs text-[#8B8FA8] hover:text-[#E4D6B5] disabled:opacity-40">
+            <RefreshCw className={`w-3 h-3 ${socialLoading ? 'animate-spin' : ''}`} /> Odswiez
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* TikTok Card */}
+          <div className="p-4 rounded-xl bg-[#0A0E1A] border border-[#1E2438] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Video className="w-4 h-4 text-[#00F2FE]" />
+                <span className="text-xs font-bold text-[#E4D6B5]">TikTok (Shortsyt-Dev)</span>
+              </div>
+              {ttStatus?.valid ? (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-[#55E88D]">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Aktywny
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-[#FF6060]">
+                  <ShieldOff className="w-3.5 h-3.5" /> Wymagana autoryzacja
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-[#8B8FA8] space-y-1 font-mono">
+              <div>Status: <span className="text-[#E4D6B5] font-sans">{ttStatus?.message || "Sprawdzam..."}</span></div>
+              {ttStatus?.refresh_expires_in_days !== undefined && (
+                <div>Waznosc tokenu: <span className="text-[#C89B3C]">{ttStatus.refresh_expires_in_days} dni</span></div>
+              )}
+              {ttStatus?.open_id && (
+                <div className="truncate text-[10px] text-[#50546A]">OpenID: {ttStatus.open_id}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Instagram Card */}
+          <div className="p-4 rounded-xl bg-[#0A0E1A] border border-[#1E2438] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Instagram className="w-4 h-4 text-[#E1306C]" />
+                <span className="text-xs font-bold text-[#E4D6B5]">Instagram Reels</span>
+              </div>
+              {igStatus?.valid ? (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-[#55E88D]">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Aktywny (Wieczny)
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-[#FF6060]">
+                  <ShieldOff className="w-3.5 h-3.5" /> Wymagana autoryzacja
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-[#8B8FA8] space-y-1 font-mono">
+              <div>Konto: <span className="text-[#E4D6B5] font-sans">@{igStatus?.username || "dwannellenga"}</span></div>
+              {igStatus?.instagram_account_id && (
+                <div>IG ID: <span className="text-[#C89B3C]">{igStatus.instagram_account_id}</span></div>
+              )}
+              <div className="text-[10px] text-[#55E88D] font-sans">Direct Meta Resumable Upload (rupload.facebook.com)</div>
+            </div>
+          </div>
+
+          {/* Facebook Card */}
+          <div className="p-4 rounded-xl bg-[#0A0E1A] border border-[#1E2438] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Share2 className="w-4 h-4 text-[#1877F2]" />
+                <span className="text-xs font-bold text-[#E4D6B5]">Facebook Page</span>
+              </div>
+              {fbStatus?.valid ? (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-[#55E88D]">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Aktywny
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-[#FF6060]">
+                  <ShieldOff className="w-3.5 h-3.5" /> Wymagana autoryzacja
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-[#8B8FA8] space-y-1 font-mono">
+              <div>Fanpage: <span className="text-[#E4D6B5] font-sans">{fbStatus?.page_name || "Dwannellenga"}</span></div>
+              {fbStatus?.page_id && (
+                <div>Page ID: <span className="text-[#1877F2]">{fbStatus.page_id}</span></div>
+              )}
+              <div className="text-[10px] text-[#55E88D] font-sans">Meta Graph API v19.0 (Reels & Video)</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── META RE-AUTHORIZATION FORM (FB + IG) ── */}
+        <div className="mt-4 p-4 rounded-xl bg-[#0A0E1A] border border-[#C89B3C]/30 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-[#C89B3C]" />
+              <span className="text-xs font-bold text-[#E4D6B5]">Odśwież Token Meta (Facebook & Instagram)</span>
+            </div>
+            <a
+              href="https://developers.facebook.com/tools/explorer/"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] text-[#C89B3C] hover:text-[#E5C269] flex items-center gap-1 font-semibold transition-colors"
+            >
+              <span>Graph API Explorer</span> <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+          <p className="text-[11px] text-[#8B8FA8] leading-relaxed">
+            Wklej <strong>User Access Token</strong> z Meta Graph API Explorer. Aplikacja automatycznie wymieni go na wieczny token strony i autoryzuje jednocześnie <strong>Facebook Page (Dwannellenga)</strong> oraz <strong>Instagram Reels (@dwannellenga)</strong>.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={metaTokenInput}
+              onChange={(e) => setMetaTokenInput(e.target.value)}
+              placeholder="Wklej User Access Token (np. EAA...)..."
+              className="flex-1 bg-[#121624] border border-[#1E2438] rounded-lg px-3 py-2 text-xs text-[#E4D6B5] focus:border-[#C89B3C] outline-none font-mono"
+            />
+            <button
+              onClick={handleSetupMeta}
+              disabled={metaSubmitting || !metaTokenInput.trim()}
+              className="px-4 py-2 bg-[#C89B3C] hover:bg-[#E5C269] disabled:opacity-50 text-[#0A0E1A] text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${metaSubmitting ? 'animate-spin' : ''}`} />
+              {metaSubmitting ? "Weryfikuję..." : "Zapisz i Autoryzuj"}
+            </button>
+          </div>
+          {metaResult && (
+            <div className={`p-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 ${metaResult.ok ? 'bg-[#55E88D]/15 text-[#55E88D] border border-[#55E88D]/30' : 'bg-[#FF6060]/15 text-[#FF6060] border border-[#FF6060]/30'}`}>
+              {metaResult.ok ? <ShieldCheck className="w-4 h-4 shrink-0" /> : <ShieldAlert className="w-4 h-4 shrink-0" />}
+              <span>{metaResult.msg}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── SEKCJA SKANERA SPRZĘTU I AUTO-TUNINGU ── */}

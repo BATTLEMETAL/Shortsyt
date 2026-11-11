@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-10-13T12:46:11.025673",
+  "total_entries": 82,
+  "successes": 40,
+  "failures": 21,
+  "insights": [
+    "Best action type: solo_bolo (2,669 avg views) — prioritize these clips",
+    "Underperforming: pentakill (495 avg views) — consider raising quality threshold for this type",
+    "Quality score: successful videos avg 86 vs failed 79 — threshold is well calibrated"
+  ],
+  "action_rankings": {
+    "solo_bolo": 2669,
+    "outplay": 2179,
+    "triple": 2028,
+    "double": 1384,
+    "pentakill": 495
+  },
+  "music_rankings": {
+    "": 1416
+  }
+}

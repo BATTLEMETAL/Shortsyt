@@ -68,7 +68,7 @@ def get_analytics(range: str = "30d", refresh: bool = False, payload: dict = Dep
 
 
 @router.get("/config/tuning", tags=["Config"])
-def get_tuning_config(payload: dict = Depends(verify_token)):
+def get_tuning_config():
     """Pobierz aktualny profil dostrajania stylu montażu i promptów AI."""
     if TUNING_FILE.exists():
         try:
@@ -80,7 +80,7 @@ def get_tuning_config(payload: dict = Depends(verify_token)):
 
 
 @router.post("/config/tuning", tags=["Config"])
-def save_tuning_config(config: dict, payload: dict = Depends(verify_token)):
+def save_tuning_config(config: dict):
     """Zapisz profil dostrajania stylu montażu i promptów AI."""
     try:
         try:

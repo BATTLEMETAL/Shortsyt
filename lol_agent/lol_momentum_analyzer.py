@@ -588,7 +588,7 @@ def analyze_momentum(
         main_peak_t, last_label = climax_candidates[-1]
 
         # Kille powiązane z tą walką (maksymalnie do 18s przed punktem kulminacyjnym)
-        relevant_kills = [k for k in kills if k[0] <= main_peak_t and (main_peak_t - k[0]) <= 18.0]
+        relevant_kills = [k for k in kills if k[0] <= main_peak_t and (main_peak_t - k[0]) <= 28.0]
         first_kill_t = relevant_kills[0][0] if relevant_kills else max(0.0, main_peak_t - 8.0)
 
         # Multi-kill climax: 1.2s po ostatnim fragu/banerze → punchy koniec bez bicia wieży/biegania

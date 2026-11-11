@@ -41,12 +41,19 @@ def get_authenticated_service(profile_name="kanal_1"):
         credentials = pickle.load(token)
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
-            credentials.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-            credentials = flow.run_local_server(port=0, prompt='consent select_account')
-        with open(token_file, 'wb') as token:
-            pickle.dump(credentials, token)
+            try:
+                credentials.refresh(Request())
+            except Exception as e:
+                print(f"⚠️  Nie udało się odświeżyć tokenu dla '{profile_name}': {e}")
+                credentials = None
+        if not credentials or not credentials.valid:
+            print(f"⚠️  Wymagana autoryzacja kanału '{profile_name}'. Uruchom: python authorize_channel.py --konto {profile_name}")
+            return None
+        if credentials:
+            with open(token_file, 'wb') as token:
+                pickle.dump(credentials, token)
+    if not credentials or not credentials.valid:
+        return None
     return build(API_SERVICE_NAME, API_VERSION, credentials=credentials)
 
 

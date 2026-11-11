@@ -68,14 +68,39 @@ def _load_optimal_duration_range() -> tuple:
         # Domyślny zakres (zgodny z tuning_config dopóki learning_engine nie ma danych)
         return 15.0, 30.0
 
-# Kill type weights for scoring
-KILL_WEIGHTS = {
-    "PENTAKILL": 10,
-    "QUADRAKILL": 7,
-    "TRIPLE KILL": 4,
-    "DOUBLE KILL": 2,
-    "KILL": 1,
-}
+def _load_dynamic_kill_weights() -> dict:
+    """Ładuje dynamiczne wagi akcji z learning_directive.json (lub fallback do domyślnych)."""
+    try:
+        from lol_agent.learning_engine import get_learning_directive
+        directive = get_learning_directive()
+        eval_cfg = directive.get("evaluator_config", {})
+        base_weights = eval_cfg.get("base_kill_weights")
+        if base_weights:
+            return {
+                "PENTAKILL": base_weights.get("PENTAKILL", 70.0) / 10.0,
+                "QUADRAKILL": base_weights.get("QUADRAKILL", 60.0) / 10.0,
+                "TRIPLE KILL": base_weights.get("TRIPLE KILL", 50.0) / 10.0,
+                "DOUBLE KILL": base_weights.get("DOUBLE KILL", 30.0) / 10.0,
+                "SOLO BOLO": base_weights.get("SOLO BOLO", 90.0) / 10.0,
+                "OUTPLAY": base_weights.get("OUTPLAY", 75.0) / 10.0,
+                "CLUTCH": base_weights.get("CLUTCH", 80.0) / 10.0,
+                "KILL": base_weights.get("KILL", 10.0) / 10.0,
+            }
+    except Exception:
+        pass
+    return {
+        "PENTAKILL": 10.0,
+        "QUADRAKILL": 7.0,
+        "TRIPLE KILL": 5.0,
+        "DOUBLE KILL": 2.5,
+        "SOLO BOLO": 9.0,
+        "OUTPLAY": 7.5,
+        "CLUTCH": 8.0,
+        "KILL": 1.0,
+    }
+
+# Dynamiczne wagi typów killi ładowane z silnika samouczenia
+KILL_WEIGHTS = _load_dynamic_kill_weights()
 
 # Dynamiczne progi czasu trwania (ładowane z tuning_config przez learning_engine)
 OPTIMAL_MIN, OPTIMAL_MAX = _load_optimal_duration_range()

@@ -124,3 +124,66 @@ def test_compute_optimal_clip_window_fallback_when_no_kills():
     assert end_t > start_t
     assert end_t <= 25.0
     assert peak_m > 0.0
+
+
+def test_lead_in_is_capped_to_prevent_dead_running():
+    """
+    Kluczowy test regresyjny: Wzór na lead-in nie może pozwalać na wielosekundowy pusty bieg
+    (np. bieg przez dżunglę przez 8 sekund przed pierwszym killem).
+    Dla pierwszego killa w 9.0s, start musi nastąpić w przedziale [6.5s, 7.5s] (lead-in <= 2.5s).
+    """
+    res = FragAnalysisResult(
+        video_path="",
+        duration=34.0,
+        detected_frag_type="triple",
+        confidence=0.92,
+        kill_count=3,
+        kills=[
+            {"timestamp": 9.0, "label": "DOUBLE KILL", "type": "double", "tier": 2},
+            {"timestamp": 15.0, "label": "KILL", "type": "kill", "tier": 1},
+            {"timestamp": 21.0, "label": "TRIPLE KILL", "type": "triple", "tier": 3},
+        ],
+        min_hp_percentage=40.0,
+        is_clutch_1hp=False,
+        badge_label="TRIPLE KILL",
+        suggested_title_hook="TRIPLE KILL",
+        suggested_badge_color="#FF3366",
+    )
+
+    start_t, end_t, peak_m, segs = compute_optimal_clip_window(res, total_dur=34.0, action_type="triple")
+
+    # Start musi być nie wcześniej niż 6.5s (maksymalnie 2.5s lead-in do pierwszego killa w 9.0s)
+    lead_in = 9.0 - start_t
+    assert 1.5 <= lead_in <= 2.5, f"Lead-in wynosi {lead_in:.2f}s — oczekiwano pomiędzy 1.5s a 2.5s!"
+    assert start_t >= 6.5, f"Start klipu ({start_t:.1f}s) zaczął się za wcześnie (martwy bieg)!"
+    assert end_t >= 22.0, "Koniec klipu musi obejmować ostatniego fraga!"
+
+
+def test_multi_frag_montage_does_not_exceed_30s():
+    """
+    Montaż wielo-fragowy nie może być rozciągnięty do absurdalnych długości (> 30s)
+    ani obcięty przed ostatnim fragiem.
+    """
+    res = FragAnalysisResult(
+        video_path="",
+        duration=35.0,
+        detected_frag_type="triple",
+        confidence=0.95,
+        kill_count=3,
+        kills=[
+            {"timestamp": 8.7, "label": "DOUBLE KILL", "type": "double", "tier": 2},
+            {"timestamp": 18.0, "label": "KILL", "type": "kill", "tier": 1},
+            {"timestamp": 26.5, "label": "TRIPLE KILL", "type": "triple", "tier": 3},
+        ],
+        min_hp_percentage=35.0,
+        is_clutch_1hp=False,
+        badge_label="TRIPLE KILL",
+        suggested_title_hook="TRIPLE KILL",
+        suggested_badge_color="#FF3366",
+    )
+
+    start_t, end_t, peak_m, segs = compute_optimal_clip_window(res, total_dur=35.0, action_type="triple")
+    duration = end_t - start_t
+    assert duration <= 28.0, f"Długość montażu ({duration:.1f}s) przekracza limit Shorts!"
+    assert start_t >= 6.2, "Start musi wyciąć wczesny marsz!"
+

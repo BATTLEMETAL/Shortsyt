@@ -1,50 +1,127 @@
 {
   "status": "ONLINE",
   "service": "Shortsyt Studio Daemon",
-  "version": "2.5.0-desktop",
-  "last_updated": "2026-10-27T14:29:23.766925+00:00",
-  "total_views": 84749,
-  "total_engagement": 449,
-  "total_published_videos": 114,
-  "average_view_duration_pct": 96.4,
+  "brand": "FlikCut Studio",
+  "version": "2.6.0-production",
+  "last_updated": "2026-11-11T12:33:06.149038+00:00",
+  "total_views": 99403,
+  "total_engagement": 494,
+  "total_published_videos": 98,
+  "average_view_duration_pct": 108.8,
   "hardware_acceleration": "NVIDIA NVENC H.264 / AV1",
   "render_speed_multiplier": "8.4x realtime (< 12s per short)",
-  "active_platforms_count": 3,
+  "active_platforms_count": 4,
   "platforms": {
     "youtube": {
       "name": "YouTube Shorts",
-      "status": "Connected & Scheduling",
-      "views": 84095,
+      "status": "Connected & Publishing",
+      "handle": "@Dwannellenga",
+      "views": 85075,
       "videos_count": 50,
-      "share_pct": 99.2,
-      "engagement": 445,
+      "share_pct": 85.6,
+      "engagement": 406,
       "auto_thumbnails": true
     },
     "tiktok": {
-      "name": "TikTok Direct Post",
+      "name": "TikTok",
       "status": "OAuth 2.0 PKCE Active",
       "handle": "@dwannellenga",
-      "views": 0,
-      "videos_count": 2,
-      "engagement": 0,
+      "views": 9940,
+      "videos_count": 5,
+      "share_pct": 10.0,
+      "engagement": 74,
       "direct_post_enabled": true
     },
     "instagram": {
       "name": "Instagram Reels",
       "status": "Graph API Connected",
       "handle": "@dwannellenga",
-      "views": 625,
-      "videos_count": 2,
-      "engagement": 4,
+      "views": 4318,
+      "videos_count": 20,
+      "share_pct": 4.3,
+      "engagement": 14,
+      "auto_thumbnails": true
+    },
+    "facebook": {
+      "name": "Facebook Reels",
+      "status": "Page Connected",
+      "handle": "Dwannellenga",
+      "views": 70,
+      "videos_count": 23,
+      "share_pct": 0.1,
+      "engagement": 0,
       "auto_thumbnails": true
     }
   },
+  "top_videos": [
+    {
+      "platform": "tiktok",
+      "title": "SOLO BOLO - EGO CHECKED",
+      "views": 4067,
+      "likes": 17,
+      "comments": 3,
+      "url": "https://www.tiktok.com/@dwannellenga/video/7704512367207484694",
+      "timestamp": "2026-11-05T03:15:26.334895"
+    },
+    {
+      "platform": "tiktok",
+      "title": "Vanished Before They Could Run ⚡",
+      "views": 3407,
+      "likes": 22,
+      "comments": 1,
+      "url": "https://www.tiktok.com/@dwannellenga/video/7704841642921970977",
+      "timestamp": "2026-11-05T22:12:13.583076"
+    },
+    {
+      "platform": "youtube",
+      "title": "Vanished Before They Could Run ⚡ #shorts #leagueoflegends #lol",
+      "views": 2840,
+      "likes": 4,
+      "comments": 2,
+      "url": "https://www.youtube.com/shorts/IHxenMj6cHc",
+      "timestamp": "2026-11-05T21:16:44Z"
+    },
+    {
+      "platform": "youtube",
+      "title": "Thinking 1v1 Was Safe 👑 SOLO BOLO #shorts #leagueoflegends #lol",
+      "views": 2066,
+      "likes": 10,
+      "comments": 3,
+      "url": "https://www.youtube.com/shorts/HhEAqRFYnTM",
+      "timestamp": "2026-11-05T02:17:25Z"
+    },
+    {
+      "platform": "youtube",
+      "title": "Walking Up Mid Is Crazy 💀 SOLO BOLO #shorts #leagueoflegends #lol",
+      "views": 1826,
+      "likes": 4,
+      "comments": 0,
+      "url": "https://www.youtube.com/shorts/mg7bR7qcdCQ",
+      "timestamp": "2026-11-01T17:30:19Z"
+    },
+    {
+      "platform": "youtube",
+      "title": "Bot Lane Hunt Turned Into CHAOS 💀 #shorts #leagueoflegends #lol",
+      "views": 1546,
+      "likes": 4,
+      "comments": 1,
+      "url": "https://www.youtube.com/shorts/WX5B9yCEvNQ",
+      "timestamp": "2026-11-01T11:38:27Z"
+    }
+  ],
   "scheduled_queue": [
     {
-      "id": "instagram_1792789469897",
+      "id": "instagram_1794013960306",
       "platform": "instagram",
-      "scheduled_time": "Scheduled (Daily Peak 18:00)",
-      "caption_snippet": "Press R to spin to win 🌀\nDid I deserve that reset or was that pure luck?\n\n🔗 Więc...",
+      "scheduled_time": "2026-11-07T07:30:00Z",
+      "caption_snippet": "Dropping frames and dropping health bars.\nWhat is the dirtiest Katarina pla...",
+      "has_thumbnail": true
+    },
+    {
+      "id": "instagram_1794185916404",
+      "platform": "instagram",
+      "scheduled_time": "2026-11-09T07:30:00Z",
+      "caption_snippet": "Dropped into the backline and let chaos take the wheel.\nWould you have surv...",
       "has_thumbnail": true
     }
   ],

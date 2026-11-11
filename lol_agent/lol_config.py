@@ -38,6 +38,15 @@ CLIENT_SECRET_PATH = os.path.join(os.path.dirname(__file__), "..", "client_secre
 ACCOUNTS_DIR = os.path.join(os.path.dirname(__file__), "..", "accounts")
 TOKEN_PATH = os.path.join(ACCOUNTS_DIR, f"{CHANNEL_PROFILE}_token.pickle")
 
+# Zakresy uprawnień YouTube Data API + Analytics API
+YT_OAUTH_SCOPES = [
+    'https://www.googleapis.com/auth/youtube.upload',
+    'https://www.googleapis.com/auth/youtube.force-ssl',
+    'https://www.googleapis.com/auth/youtube.readonly',
+    'https://www.googleapis.com/auth/youtube',
+    'https://www.googleapis.com/auth/yt-analytics.readonly',
+]
+
 # ==========================================
 # USTAWIENIA MONTAŻU
 # ==========================================
@@ -142,15 +151,24 @@ GEMINI_FALLBACK_MODELS = [
 # Dodaj tutaj championow ktorych grasz na kanale.
 CHAMPION_WHITELIST = [
     "Katarina",
+    "Kha'Zix",
     "Ahri",
     "Zed",
     "Yasuo",
+    "Yone",
     "Jinx",
+    "Viego",
+    "Kayn",
+    "Lee Sin",
+    "Sylas",
+    "Samira",
+    "Pyke",
+    "Master Yi",
+    "Draven",
     "Thresh",
     "Lux",
     "Ezreal",
     "Akali",
-    "Yone",
 ]
 
 

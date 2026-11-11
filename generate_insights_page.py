@@ -22,8 +22,9 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # ── Ścieżki ──────────────────────────────────────────────────────────────────
 SHORTSYT_DIR = Path(__file__).parent
-WEBSITE_DIR  = Path(r"C:\Users\mz100\OneDrive\Pulpit\strona kopia\strona yt")
-OUTPUT_FILE  = WEBSITE_DIR / "wnioski.html"
+PRIMARY_WEB_DIR = Path(r"C:\Users\mz100\OneDrive\Pulpit\odpal\Shortsyt")
+LEGACY_WEB_DIR = Path(r"C:\Users\mz100\OneDrive\Pulpit\strona kopia\strona yt")
+OUTPUT_FILE = PRIMARY_WEB_DIR / "wnioski.html"
 
 # ── Ładowanie danych ──────────────────────────────────────────────────────────
 
@@ -718,10 +719,17 @@ def main():
         audit_insights, trend_insights
     )
 
-    # Save
-    WEBSITE_DIR.mkdir(parents=True, exist_ok=True)
+    # Save to primary website folder (Desktop odpal\Shortsyt)
+    PRIMARY_WEB_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_FILE.write_text(html, encoding="utf-8")
-    print(f"\n[OK] Strona zapisana: {OUTPUT_FILE}")
+    print(f"\n[OK] Strona zapisana w folderze głównym: {OUTPUT_FILE}")
+
+    # Also mirror to legacy folder if it exists
+    if LEGACY_WEB_DIR.exists():
+        legacy_out = LEGACY_WEB_DIR / "wnioski.html"
+        legacy_out.write_text(html, encoding="utf-8")
+        print(f"[OK] Strona zsynchronizowana w folderze legacy: {legacy_out}")
+
     print(f"[OK] Gotowe! Otwórz w przeglądarce: file:///{OUTPUT_FILE}")
 
 

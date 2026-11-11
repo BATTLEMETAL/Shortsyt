@@ -1,0 +1,67 @@
+========================================================================
+PAKIET WIZYTÓWKI WWW — SOCHACKI SERWIS POJAZDOWY (WROCŁAW, ROBOTNICZA 72A)
+========================================================================
+
+Ten folder jest w 100% gotowy do wrzucenia na Twój serwer przez FTP.
+
+------------------------------------------------------------------------
+1. ZAWARTOŚĆ FOLDERU:
+------------------------------------------------------------------------
+- index.html      -> Główna strona (Wariant 1 domyślnie, z paskiem wyboru)
+- wariant-1.html  -> WARIANT 1: Aplikacyjny Split-Screen Dashboard
+                     (boczny panel dyspozytorski + interaktywny selektor
+                     stanowisk ST-01..03 + diagnostyk kół dla kierowcy)
+
+- wariant-2.html  -> WARIANT 2: Szwajcarski Magazyn & Manifest Rzemiosła
+                     (papierowa biel, butelkowa zieleń, timeline procedury
+                     minuta po minucie 00:00 -> 00:35, strefa flot B2B)
+
+- wariant-3.html  -> WARIANT 3: Ekspresowy Terminal Mobilny Kierowcy
+                     (kompaktowa konsola pod kciuk, 3 wielkie przyciski:
+                     Telefon Biuro, Komórka Kierownik, Nawigacja GPS,
+                     tabowany cennik bez scrollowania)
+
+Każdy z wariantów ma u góry dyskretny pasek prezentacyjny, dzięki czemu
+klient może jednym kliknięciem przełączać się między stylami na telefonie
+lub komputerze.
+
+------------------------------------------------------------------------
+2. JAK WRZUCIĆ NA SERWER PRZEZ FTP (np. FileZilla / Total Commander):
+------------------------------------------------------------------------
+1. Połącz się ze swoim serwerem FTP.
+2. Otwórz katalog główny Twojej strony: "Shortsyt".
+3. Przeciągnij CAŁY folder "wizytowka-sochacki" bezpośrednio do "Shortsyt".
+4. Gotowe! Żadnej instalacji, baz danych czy konfiguracji.
+
+------------------------------------------------------------------------
+3. JAKIE LINKI DLA KLIENTA ZADZIAŁAJĄ PO PRZESŁANIU NA SERWER:
+------------------------------------------------------------------------
+- Główny link prezentacyjny:
+  https://shortsyt.salon-prettywoman.pl/wizytowka-sochacki/
+
+- Bezpośredni link do Wariantu 1 (Web-App Dashboard):
+  https://shortsyt.salon-prettywoman.pl/wizytowka-sochacki/wariant-1.html
+
+- Bezpośredni link do Wariantu 2 (Szwajcarski Editorial):
+  https://shortsyt.salon-prettywoman.pl/wizytowka-sochacki/wariant-2.html
+
+- Bezpośredni link do Wariantu 3 (Terminal Mobilny):
+  https://shortsyt.salon-prettywoman.pl/wizytowka-sochacki/wariant-3.html
+
+------------------------------------------------------------------------
+4. GOTOWA WIADOMOŚĆ DO WŁAŚCICIELA SERWISU (SMS / WhatsApp / E-mail):
+------------------------------------------------------------------------
+"Dzień dobry panie [Imię / Serwis Sochacki],
+zauważyłem, że większość kierowców szuka wulkanizacji i geometrii na Robotniczej
+bezpośrednio ze smartfona w trasie.
+
+Przygotowałem dla Was 3 gotowe, interaktywne koncepcje nowej wizytówki www:
+1. Panel Aplikacyjny ze stanowiskami i diagnostykiem objawów bicia kół
+2. Elegancki Styl Magazynowy z procedurą minuta po minucie i strefą flot B2B
+3. Ekspresowy Terminal z natychmiastowym telefonem i nawigacją GPS pod bramę
+
+Wszystkie 3 wersje można sprawdzić na żywo pod tym adresem:
+https://shortsyt.salon-prettywoman.pl/wizytowka-sochacki/
+
+(U góry strony jest przełącznik stylów). Dajcie znać, który kierunek najbardziej Wam odpowiada!"
+========================================================================

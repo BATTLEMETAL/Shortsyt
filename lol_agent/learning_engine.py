@@ -664,6 +664,13 @@ def correlate_viral_duration_and_pacing(
         "title_tone": params["title_tone"],
         "user_notes": params["user_notes"],
         "bucket_stats": bucket_stats,
+        "mei_directives": {
+            "target_combat_density_pct": 85.0,
+            "max_outro_latency_sec": 1.8,
+            "target_hook_latency_sec": 1.2,
+            "require_smart_camera_lerp": True,
+            "require_seamless_loop": True,
+        },
     }
 
 
@@ -691,6 +698,17 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         except ImportError:
             return {"status": "error", "message": "Brak modułu youtube_uploader"}
 
+    # ── Uruchom automatyczną weryfikację oczekujących sprawdzeń z performance trackera
+    try:
+        try:
+            from lol_agent.lol_performance_tracker import reconcile_and_verify_published_videos, run_pending_checks
+        except ImportError:
+            from lol_performance_tracker import reconcile_and_verify_published_videos, run_pending_checks
+        reconcile_and_verify_published_videos()
+        run_pending_checks()
+    except Exception as e_rec:
+        _safe_print(f"[Learning] Reconcile warning: {e_rec}")
+
     yt_data = get_channel_videos_and_performance(max_results=50, force_refresh=force_refresh)
     published_yt = yt_data.get("published", [])
     local_history = _load_published_history()
@@ -712,6 +730,30 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
                 videos_by_id[vid]["champion"] = loc["champion"]
             if loc.get("source_path") and not videos_by_id[vid].get("source_path"):
                 videos_by_id[vid]["source_path"] = loc["source_path"]
+
+    # Dołącz zweryfikowane dane analityczne z performance_log.jsonl (zamknięcie pętli feedbacku)
+    perf_log_file = LEARNING_DIR / "performance_log.jsonl"
+    if perf_log_file.exists():
+        try:
+            with open(perf_log_file, "r", encoding="utf-8") as _plf:
+                for _pline in _plf:
+                    if not _pline.strip():
+                        continue
+                    try:
+                        p_item = json.loads(_pline.strip())
+                        p_vid = p_item.get("video_id")
+                        if not p_vid:
+                            continue
+                        if p_vid in videos_by_id:
+                            for k in ("views", "likes", "comments", "hook_retention_pct", "swiped_away_pct", "avg_view_pct", "completion_rate_pct"):
+                                if p_item.get(k) is not None:
+                                    videos_by_id[p_vid][k] = p_item[k]
+                        else:
+                            videos_by_id[p_vid] = p_item
+                    except Exception:
+                        pass
+        except Exception as e_perf:
+            _safe_print(f"[Learning] Warning reading performance_log.jsonl: {e_perf}")
 
     all_analyzed = list(videos_by_id.values())
     total_count = len(all_analyzed)
@@ -812,11 +854,20 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         # Używamy trimmed_mean jako signal, ale z ograniczeniem zmiany ±30% per cykl
         if n_valid >= MIN_SAMPLE_FOR_WEIGHT:
             raw_weight = ratio_trimmed * eng_factor
+
+            # Ochrona formatów ze świeżym hitem (np. Double Kill z nowym montażem i retencją > 100% lub wysokim VPH)
+            recent_breakout = any(
+                (float(v.get("avg_view_pct") or 0) >= 95.0 or float(v.get("views_per_hour") or 0) >= 40.0)
+                for v in vids[-5:]
+            )
+            if recent_breakout and raw_weight < 1.10:
+                raw_weight = max(1.10, raw_weight * 1.35)
+
             # Clamp: max zmiana od domyślnej wartości ±40%
             default_w = DEFAULT_ACTION_WEIGHTS.get(act, 1.0)
             clamped_w = max(default_w * 0.60, min(default_w * 1.60, raw_weight))
             final_weight = round(max(0.4, min(2.5, clamped_w)), 2)
-            weight_source = f"computed_n{n_valid}"
+            weight_source = f"computed_n{n_valid}" + ("_breakout_boost" if recent_breakout else "")
         else:
             # Za mała próba — zostaw domyślną wagę
             final_weight = DEFAULT_ACTION_WEIGHTS.get(act, 1.0)
@@ -824,9 +875,13 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
 
         action_weights[act] = final_weight
 
-        # ── Democja: wymaga MIN_SAMPLE_FOR_DEMOTION i ratio < 0.75 i nie jest w NEVER_DEMOTE ──
+        # ── Democja: wymaga MIN_SAMPLE_FOR_DEMOTION i ratio < 0.75 i nie jest w NEVER_DEMOTE i brak świeżego hitu ──
+        has_recent_breakout = any(
+            (float(v.get("avg_view_pct") or 0) >= 95.0 or float(v.get("views_per_hour") or 0) >= 40.0)
+            for v in vids[-5:]
+        )
         if (ratio_median < 0.75 and n_valid >= MIN_SAMPLE_FOR_DEMOTION
-                and act.lower() not in _NEVER_DEMOTE):
+                and act.lower() not in _NEVER_DEMOTE and not has_recent_breakout):
             demoted_formats.append(act)
 
         action_stats[act] = {
@@ -998,6 +1053,36 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         "top_action_type": top_action,
     }
 
+    # ── KROK 11: Feedback Loop Accuracy (ocena vs realne statystyki) ─────────────
+    evaluator_accuracy = {"total_evaluated": 0, "accuracy_pct": 100.0, "correlation": 0.0}
+    try:
+        try:
+            from lol_agent.lol_performance_tracker import _load_performance_log
+        except ImportError:
+            from lol_performance_tracker import _load_performance_log
+        perf_log = _load_performance_log()
+        scored_vids = [e for e in perf_log if e.get("quality_score") is not None and e.get("views") is not None]
+        if scored_vids:
+            accurate = sum(1 for e in scored_vids if e.get("prediction_eval") in ("ACCURATE_HIGH", "ACCURATE_LOW", "NEUTRAL"))
+            acc_pct = round((accurate / len(scored_vids)) * 100, 1)
+            qs_list = [float(e["quality_score"]) for e in scored_vids]
+            vw_list = [float(e["views"]) for e in scored_vids]
+            if len(scored_vids) >= 3 and statistics.stdev(qs_list) > 0 and statistics.stdev(vw_list) > 0:
+                mean_q = statistics.mean(qs_list)
+                mean_v = statistics.mean(vw_list)
+                cov = sum((q - mean_q) * (v - mean_v) for q, v in zip(qs_list, vw_list)) / (len(scored_vids) - 1)
+                corr = round(cov / (statistics.stdev(qs_list) * statistics.stdev(vw_list)), 2)
+            else:
+                corr = 0.0
+            evaluator_accuracy = {
+                "total_evaluated": len(scored_vids),
+                "accurate_count": accurate,
+                "accuracy_pct": acc_pct,
+                "correlation_qs_views": corr,
+            }
+    except Exception as e_acc:
+        _safe_print(f"[Learning] Evaluator accuracy error: {e_acc}")
+
     # ── Insights ─────────────────────────────────────────────────────────────────
     cadence_flag = "⚠️ CADENCE WARNING: " + cadence_analysis["recommendation"] if cadence_analysis.get("gap_warning") else f"Rytm: {cadence_analysis.get('status', 'ok')} (śr. {cadence_analysis.get('avg_gap_days', '?')} dni)."
     fatigue_flag = "⚠️ TITLE FATIGUE: " + title_fatigue["recommendation"] if title_fatigue.get("fatigue_warning") else "Tytuły: różnorodne."
@@ -1008,6 +1093,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         f"Closed Pacing Loop (mediana): Kohorta viral_hit ({pacing_analysis['viral_count']} filmów) → bucket '{pacing_analysis['best_bucket']}' (pewna: {bucket_stats_reliable(pacing_analysis['bucket_stats'])}). Profil: '{rec_pacing}'.",
         f"Title Reinforcement: Najlepsza struktura (mediana ratio): {top_structure}. CTR słowa: {', '.join(winning_keywords[:4])}. Avoid: {', '.join(avoid_keywords[:4])}.",
         f"Evaluator: Solo Bolo={base_kill_weights.get('SOLO BOLO')}pkt, Pentakill={base_kill_weights.get('PENTAKILL')}pkt. Zdegradowane: {', '.join(demoted_formats) or 'brak'} (wymaga N>={MIN_SAMPLE_FOR_DEMOTION}).",
+        f"Feedback Loop: Przetestowano {evaluator_accuracy.get('total_evaluated', 0)} filmów pod kątem jakości. Trafność predykcji: {evaluator_accuracy.get('accuracy_pct', 100.0)}% (korelacja QS vs Views: {evaluator_accuracy.get('correlation_qs_views', 0.0):+.2f}).",
         f"A/B Title Testing: {ab_title_analysis['tracked_ab_experiments']} testów w toku. Winning structure: '{ab_title_analysis['winning_title_structure']}'.",
         cadence_flag,
         fatigue_flag,
@@ -1041,6 +1127,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         "top_viral_titles": top_viral_titles,
         "recommended_pacing": rec_pacing,
         "evaluator_config": evaluator_config,
+        "evaluator_accuracy": evaluator_accuracy,
         "insights": insights,
     }
 

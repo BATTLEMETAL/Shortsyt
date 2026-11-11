@@ -301,7 +301,7 @@ def generate_smart_title(
         if os.path.exists(_pub_log):
             with open(_pub_log, "r", encoding="utf-8") as _f:
                 _lines = [l.strip() for l in _f if l.strip()]
-            for _line in _lines[-20:]:
+            for _line in _lines[-30:]:
                 try:
                     _t = json.loads(_line).get("title", "")
                     if _t:
@@ -403,15 +403,17 @@ TASK:
 4. Do NOT use "dive" unless it was actually a tower dive. Use context clues above.
 
 TITLE ARCHETYPE ROTATION — choose the best fit for this clip:
-- DISRESPECT / EGO: "They Grouped For Free 💀", "All-In On {champion_name}? Instant Regret 💀"
-- STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "One Reset. Five Graves. 🩸"
-- STORY / RETRIBUTION: "Trash Talk Turned Into Silence 😈", "They Cornered Her. Bad Idea. 💥"
-- MECHANICAL FLEX: "Perfect Reset Machine 🔥 Full Domination 😈"
-- CLUTCH / STAKES: "Surviving on 1 HP to Win 🩸"
-- HUNT / CHASE: "No Escape 💀 Hunting Down The Entire Team 🔥"
-QUESTIONS ("Rate 1-10", "Clean or Luck?") are allowed but sparingly — max 20% frequency. Never repeat a question variant.
+- DISRESPECT / EGO: "They Grouped For Free 💀", "They Thought 1v1 Was Safe 😏", "Walking Up Like That Is Crazy 💀"
+- STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "Vanished Before They Could Even Flash 💨"
+- STORY / TURNAROUND: "Duel Accepted. Duel Won. 💀", "They Already Typed 'GG' 🔥", "They Flashed Into Their Own Doom 💀"
+- MECHANICAL FLEX: "Pixel-Perfect Reaction 🔥", "Calculated to the Exact Millisecond 🧠", "Dodge Everything, Hit Everything 👑"
+- CLUTCH / STAKES: "Surviving on 1 HP to Win 🩸", "The Cleanest 1% HP Clutch 💀"
+- HUNT / CHASE: "No Escape 💀 Hunting Down The Squad 🔥", "Chasing Down Every Single Reset ⚡"
+QUESTIONS ("Rate 1-10", "Clean or Luck?") are allowed but sparingly — max 15% frequency. Never repeat a question variant.
 
-FORBIDDEN PATTERNS:
+FORBIDDEN PATTERNS & CLICHES:
+- Overused cliches: "Bad Idea", "Hunting Grounds", "Massacre", "Reset Machine", "Mistake", "Regret"
+- Prepending rank as prefix like "Master Katarina", "Master Reset"
 - Generic "[Champion] Pentakill Rampage!"
 - "[Champion]'s Unstoppable [Action]!"
 - "[Champion] MELTS Entire Team"
@@ -419,15 +421,15 @@ FORBIDDEN PATTERNS:
 - Titles that don't match the game phase or situation described above
 - Repeating "Clean or Luck?", "Rate 1-10", "Ego Checked" patterns back-to-back
 
-FORMATTING: Hook phrase first (max 45 visible chars), then ONLY #Shorts at end. Put #LeagueOfLegends #LoL in description/tags NOT in title.
+FORMATTING: Hook phrase first (max 45 visible chars), then ONLY #shorts at end. Put #leagueoflegends #lol in description/tags NOT in title.
 
 RECENTLY PUBLISHED TITLES (DO NOT REPEAT or closely paraphrase — semantic diversity required):
 {chr(10).join(f'- "{t.split("#")[0].strip()}"' for t in _recent_titles[-15:]) if _recent_titles else "(none)"}
 
 Return ONLY valid JSON (no markdown, no comments):
 {{
-  "title": "Short punchy hook (max 45 chars) + #Shorts at end. No #LeagueOfLegends in title. ENGLISH ONLY.",
-  "description": "Short engaging description (80-120 words) with hype, champion context, subscription CTA and hashtags #LeagueOfLegends #LoL. ENGLISH ONLY.",
+  "title": "Short punchy hook (max 45 chars) + #shorts at end. No #leagueoflegends in title. ENGLISH ONLY.",
+  "description": "Short engaging description (80-120 words) with hype, champion context, subscription CTA and hashtags #leagueoflegends #lol. ENGLISH ONLY.",
   "tags": ["15-20 tags in English, NO # symbol in tags, plain lowercase keywords: league of legends, {champion_name.lower()}, {action_type.lower()}"],
   "hook_text": "3-4 word ALL CAPS overlay (e.g. THEY NEVER SAW IT / NO WAY OUT / 1V5 DEFENSE). ENGLISH ONLY.",
   "why_this_title": "One sentence explaining which archetype this title uses AND why it fits the actual clip context"
@@ -439,7 +441,13 @@ Return ONLY valid JSON (no markdown, no comments):
 
     for model_name in models_to_try:
         try:
-            response = client.models.generate_content(model=model_name, contents=prompt)
+            gen_config = None
+            try:
+                from google.genai import types as _genai_types
+                gen_config = _genai_types.GenerateContentConfig(temperature=0.85)
+            except Exception:
+                pass
+            response = client.models.generate_content(model=model_name, contents=prompt, config=gen_config) if gen_config else client.models.generate_content(model=model_name, contents=prompt)
             text = response.text.strip()
 
             # Wyciągnij JSON
@@ -481,6 +489,30 @@ Return ONLY valid JSON (no markdown, no comments):
             if detected_polish:
                 print(f"⚠️  Polish detected in output ({detected_polish}) — trying next model / fallback")
                 continue
+
+            # Strip rank prefix if any
+            if "title" in data and data["title"]:
+                data["title"] = re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', data["title"], flags=re.IGNORECASE).strip()
+
+            # Reject banned tropes
+            BANNED_TROPES = ["bad idea", "hunting grounds", "massacre", "reset machine", "mistake", "regret"]
+            if any(bt in data.get("title", "").lower() for bt in BANNED_TROPES):
+                print(f"⚠️  Banned trope in title '{data.get('title')}' — trying next model / fallback")
+                continue
+
+            # Check 2-word opening duplicate against recent titles
+            _t_clean = re.sub(r'#\S+', '', data.get("title", "")).upper()
+            _t_clean = re.sub(r'[^\w\s]', '', _t_clean).strip()
+            _t_words = _t_clean.split()
+            if len(_t_words) >= 2 and _recent_titles:
+                _op2 = " ".join(_t_words[:2])
+                recent_op2 = {
+                    " ".join(re.sub(r'[^\w\s]', '', re.sub(r'#\S+', '', rt)).strip().upper().split()[:2])
+                    for rt in _recent_titles if len(re.sub(r'#\S+', '', rt).split()) >= 2
+                }
+                if _op2 in recent_op2:
+                    print(f"⚠️  Opening 2-word repeat '{_op2}' — trying next model / fallback")
+                    continue
 
             # Wymuś pełne tagi viralowe w tytule: #Shorts #LeagueOfLegends #LoL
             try:

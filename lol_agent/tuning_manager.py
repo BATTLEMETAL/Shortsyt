@@ -17,11 +17,11 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "id": "aggressive",
         "name": "Ekstremalnie Szybkie 🔥",
         "buildup_sec": 0.8,         # 0.8s przed pierwszym killem (wejście w akcję z impetem!)
-        "outro_sec": 1.5,           # 1.5s po kulminacji / ostatnim killu
-        "target_min_dur": 10.0,     # minimalna długość shorta
-        "target_max_dur": 13.0,     # maksymalna długość shorta (krótki, wysoka retencja 10-13s)
+        "outro_sec": 1.0,           # 1.0s po kulminacji / ostatnim killu
+        "target_min_dur": 8.0,      # minimalna długość shorta (krótki, wysoka retencja)
+        "target_max_dur": 12.0,     # maksymalna długość shorta (10-12s złoty standard Shorts)
         "zoom_aggression": 1.30,    # mocny zoom-punch przy eliminacjach
-        "slowmo_duration": 0.9,     # krótkie, dynamiczne zwolnienie na decydujący cios
+        "slowmo_duration": 0.65,    # punktowe, dynamiczne zwolnienie na decydujący cios
         "music_balance": 0.60,      # wyważona, dynamiczna muzyka NCS/Phonk w tle
         "game_sound_balance": 0.85, # wyraźne dźwięki gry i zapowiedzi
         "title_tone": "hype",
@@ -30,11 +30,11 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "id": "balanced",
         "name": "Zbalansowane (Dwannellenga v25) ✅",
         "buildup_sec": 1.8,
-        "outro_sec": 2.2,
-        "target_min_dur": 14.0,
-        "target_max_dur": 17.0,
+        "outro_sec": 1.2,
+        "target_min_dur": 9.0,
+        "target_max_dur": 13.0,
         "zoom_aggression": 1.20,
-        "slowmo_duration": 1.4,
+        "slowmo_duration": 0.75,
         "music_balance": 0.55,
         "game_sound_balance": 0.85,
         "title_tone": "narrative",

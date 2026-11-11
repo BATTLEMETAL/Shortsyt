@@ -241,14 +241,14 @@ def score_short(
 
     # ── 5. Duration fit (10%) ──────────────────────────────────────────────────
     rendered_dur = _ffprobe_duration(rendered_path)
-    if 18.0 <= rendered_dur <= 35.0:
+    if 12.0 <= rendered_dur <= 35.0:
         dur_score = 100.0
-    elif rendered_dur < 18.0:
-        dur_score = max(0, (rendered_dur / 18.0) * 100)
-        issues.append(f"Short is only {rendered_dur:.1f}s — too short for good retention")
+    elif rendered_dur < 12.0:
+        dur_score = max(0, (rendered_dur / 12.0) * 100)
+        issues.append(f"Short is only {rendered_dur:.1f}s — short clip under 12s")
     elif rendered_dur > 35.0:
         dur_score = max(0, 100 - (rendered_dur - 35.0) * 10)
-        issues.append(f"Short is {rendered_dur:.1f}s — YouTube retention typically drops after 30s")
+        issues.append(f"Short is {rendered_dur:.1f}s — YouTube retention typically drops after 35s")
 
     breakdown["duration"] = {
         "score": dur_score,

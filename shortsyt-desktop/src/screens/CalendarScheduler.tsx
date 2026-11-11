@@ -169,7 +169,7 @@ export function CalendarScheduler() {
 
       await apiReserveCalendarSlot({
         slot_id: selectedSlot.slot_id,
-        title: slotTitle || `League of Legends ${finalFrag.toUpperCase()} #Shorts`,
+        title: slotTitle || `League of Legends ${finalFrag.toUpperCase()} #shorts`,
         champion: champion,
         frag_type: finalFrag,
         source_clip: selectedClipPath,

@@ -28,13 +28,17 @@ from .models import (
 from .youtube_uploader import flush_pending_comments
 
 # Routers
-from .routers import auth, pipeline, clips, youtube, calendar, learning, system
+from .routers import auth, pipeline, clips, youtube, calendar, learning, system, social
 from .routers.clips import list_clips, auto_detect_clip, scan_available_clips
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Zarządza cyklem życia aplikacji — procesy w tle i czyszczenie."""
+    if "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("TESTING") == "true":
+        yield
+        return
+
     import asyncio
     stop_event = asyncio.Event()
 
@@ -48,17 +52,69 @@ async def lifespan(app: FastAPI):
             try:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, flush_pending_comments)
+
+                def _flush_scheduled():
+                    try:
+                        from lol_agent.scheduled_queue import check_and_flush_scheduled_posts
+                        check_and_flush_scheduled_posts()
+                    except Exception as sq_err:
+                        import logging
+                        logging.getLogger("shortsyt.flusher").debug("Scheduled queue check: %s", sq_err)
+
+                await loop.run_in_executor(None, _flush_scheduled)
             except Exception as e:
                 import logging
                 logging.getLogger("shortsyt.flusher").debug("Comment flush check: %s", e)
 
+    async def _tracker_loop():
+        # Po 5 sekundach od startu uruchom wstępne sprawdzenie zaległych filmów
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=5)
+            return
+        except asyncio.TimeoutError:
+            pass
+
+        while not stop_event.is_set():
+            try:
+                loop = asyncio.get_running_loop()
+                def _do_check():
+                    try:
+                        from lol_agent.lol_performance_tracker import reconcile_and_verify_published_videos, run_pending_checks
+                        from lol_agent.learning_engine import run_channel_learning_cycle
+                        n_rec = reconcile_and_verify_published_videos()
+                        c_any = run_pending_checks()
+                        if n_rec > 0 or c_any:
+                            run_channel_learning_cycle(force_refresh=True)
+
+                        # Automatyczna synchronizacja telemetrii na stronę (docs/ oraz Pulpit odpal/Shortsyt)
+                        try:
+                            from scripts.sync_website_stats import sync_stats
+                            sync_stats(force_refresh_api=False)
+                        except Exception as se:
+                            import logging
+                            logging.getLogger("shortsyt.sync").debug("Live stats sync: %s", se)
+                    except Exception as pe:
+                        import logging
+                        logging.getLogger("shortsyt.tracker").debug("Tracker check: %s", pe)
+                await loop.run_in_executor(None, _do_check)
+            except Exception:
+                pass
+
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=600)  # co 10 minut
+                break
+            except asyncio.TimeoutError:
+                pass
+
     flusher_task = asyncio.create_task(_flusher_loop())
+    tracker_task = asyncio.create_task(_tracker_loop())
     yield
     stop_event.set()
     flusher_task.cancel()
+    tracker_task.cancel()
     try:
-        await flusher_task
-    except asyncio.CancelledError:
+        await asyncio.gather(flusher_task, tracker_task, return_exceptions=True)
+    except Exception:
         pass
 
 
@@ -100,6 +156,7 @@ app.include_router(youtube.router)
 app.include_router(calendar.router)
 app.include_router(learning.router)
 app.include_router(system.router)
+app.include_router(social.router)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STATYCZNY FRONTEND SPA (Electron / Browser)

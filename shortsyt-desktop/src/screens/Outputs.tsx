@@ -3,12 +3,12 @@ import {
   apiListOutputs, OutputItem, apiGetOutputUrl, apiListThumbnails,
   ThumbnailItem, apiUploadToYt, apiGetNextPeakSlot, PeakSlotInfo,
   apiGetOutputMetadata, apiSaveOutputMetadata, OutputMetadata, apiStartPipeline,
-  apiRecordCorrection
+  apiRecordCorrection, apiPublishMulti
 } from "../lib/api";
 import {
   Video, RefreshCw, Upload, Play, Film, FolderOpen, Image as ImageIcon,
   Copy, Check, X, Loader, Clock, Zap, Edit3, Save, RotateCcw, AlertTriangle,
-  Info, Sliders, CheckCircle2
+  Info, Sliders, CheckCircle2, Youtube, Instagram, Share2
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -42,6 +42,25 @@ export default function Outputs() {
   const [peakSlot, setPeakSlot] = useState<PeakSlotInfo | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ok:boolean;url?:string;error?:string;scheduledFor?:string}|null>(null);
+  const [selYt, setSelYt] = useState(true);
+  const [selTt, setSelTt] = useState(true);
+  const [selIg, setSelIg] = useState(true);
+  const [selFb, setSelFb] = useState(true);
+  const [multiResults, setMultiResults] = useState<Record<string, any> | null>(null);
+
+  const handleSelectPlatformPreset = (preset: 'yt' | 'tt' | 'ig' | 'fb' | 'all') => {
+    if (preset === 'yt') {
+      setSelYt(true); setSelTt(false); setSelIg(false); setSelFb(false);
+    } else if (preset === 'tt') {
+      setSelYt(false); setSelTt(true); setSelIg(false); setSelFb(false);
+    } else if (preset === 'ig') {
+      setSelYt(false); setSelTt(false); setSelIg(true); setSelFb(false);
+    } else if (preset === 'fb') {
+      setSelYt(false); setSelTt(false); setSelIg(false); setSelFb(true);
+    } else if (preset === 'all') {
+      setSelYt(true); setSelTt(true); setSelIg(true); setSelFb(true);
+    }
+  };
 
   // Edit modal
   const [editModal, setEditModal] = useState<string | null>(null); // filename
@@ -83,30 +102,82 @@ export default function Outputs() {
   const handleCopyPath = (p: string) => { navigator.clipboard.writeText(p); setCopiedPath(p); setTimeout(()=>setCopiedPath(null),2000); };
 
   const [uploadOriginalTitle, setUploadOriginalTitle] = useState("");
+  const [uploadModalMeta, setUploadModalMeta] = useState<OutputMetadata | null>(null);
 
-  const openUploadModal = (filename: string) => {
-    const aiTitle = "Sick Play! #Shorts #LoL";
-    setUploadTitle(aiTitle);
-    setUploadOriginalTitle(aiTitle);
-    setUploadModal({ filename }); setUploadResult(null);
+  const openUploadModal = async (filename: string) => {
+    setUploadResult(null);
+    setMultiResults(null);
+    setUploadModal({ filename });
+    try {
+      const meta = await apiGetOutputMetadata(filename);
+      setUploadModalMeta(meta);
+      const initialTitle = meta.title || "Sick Play! #Shorts #LoL";
+      setUploadTitle(initialTitle);
+      setUploadOriginalTitle(initialTitle);
+      setUploadDesc(meta.description || "");
+    } catch {
+      setUploadModalMeta(null);
+      const fallbackTitle = "Sick Play! #Shorts #LoL";
+      setUploadTitle(fallbackTitle);
+      setUploadOriginalTitle(fallbackTitle);
+      setUploadDesc("");
+    }
   };
 
   const handleUpload = async () => {
     if (!uploadModal) return;
-    setUploading(true); setUploadResult(null);
+    const platforms: string[] = [];
+    if (selYt) platforms.push("youtube");
+    if (selTt) platforms.push("tiktok");
+    if (selIg) platforms.push("instagram");
+    if (selFb) platforms.push("facebook");
+
+    if (platforms.length === 0) {
+      setUploadResult({ ok: false, error: "Wybierz przynajmniej jedną platformę do publikacji!" });
+      return;
+    }
+
+    setUploading(true); setUploadResult(null); setMultiResults(null);
     try {
       let privacy = "public", publishAt: string|undefined, scheduledLabel: string|undefined;
       if (uploadMode==="peak" && peakSlot) { privacy="private"; publishAt=peakSlot.publish_at; scheduledLabel=peakSlot.label; }
       else if (uploadMode==="private") { privacy="private"; }
       const matchThumb = findMatchingThumb(uploadModal.filename);
-      // Rejestruj korektę tytułu jeśli użytkownik go zmienił (fire-and-forget)
       if (uploadTitle !== uploadOriginalTitle && uploadOriginalTitle) {
         apiRecordCorrection("title", uploadOriginalTitle, uploadTitle, "ui_upload_modal");
       }
-      const res = await apiUploadToYt(uploadModal.filename, uploadTitle, uploadDesc,
-        ["league of legends","lol","shorts","gaming"], privacy,
-        "What would you have done here? Rate 1-10! 🔥", matchThumb?.path, publishAt);
-      setUploadResult({ ok: true, url: res.url || `https://youtube.com/shorts/${res.video_id}`, scheduledFor: scheduledLabel });
+
+      const res = await apiPublishMulti(uploadModal.filename, {
+        title: uploadTitle,
+        description: uploadDesc,
+        tags: uploadModalMeta?.tags && uploadModalMeta.tags.length > 0 ? uploadModalMeta.tags : undefined,
+        hashtags: uploadModalMeta?.hashtags && uploadModalMeta.hashtags.length > 0 ? uploadModalMeta.hashtags : undefined,
+        platforms,
+        privacy_yt: privacy,
+        privacy_tiktok: "PUBLIC_TO_EVERYONE",
+        share_to_ig_feed: true,
+        thumbnail_path: matchThumb?.path,
+        publish_at: publishAt,
+        pinned_comment: uploadModalMeta?.pinned_comment,
+        champion_name: uploadModalMeta?.champion_name,
+        action_type: uploadModalMeta?.action_type,
+        rank: uploadModalMeta?.rank,
+      });
+
+      const results = res.results || {};
+      setMultiResults(results);
+
+      const anySuccess = Object.values(results).some((r: any) => r && r.success);
+      if (anySuccess) {
+        setUploadResult({
+          ok: true,
+          url: results.youtube?.url || results.instagram?.url || results.facebook?.url || (results.tiktok?.publish_id ? `TikTok Publish ID: ${results.tiktok.publish_id}` : undefined),
+          scheduledFor: scheduledLabel
+        });
+      } else {
+        const firstErr = Object.values(results).map((r: any) => r?.error).filter(Boolean)[0] || "Błąd publikacji";
+        setUploadResult({ ok: false, error: String(firstErr) });
+      }
     } catch (e: any) { setUploadResult({ ok: false, error: String(e) }); }
     finally { setUploading(false); }
   };
@@ -197,41 +268,204 @@ export default function Outputs() {
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-[#121624] border border-[#C89B3C]/40 rounded-2xl p-6 w-full max-w-lg space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-[#E4D6B5] flex items-center gap-2"><Upload className="w-4 h-4 text-[#C89B3C]"/>Upload na YouTube</h2>
+              <h2 className="text-base font-bold text-[#E4D6B5] flex items-center gap-2"><Share2 className="w-4 h-4 text-[#C89B3C]"/>Publikacja Multi-Platform</h2>
               <button onClick={() => setUploadModal(null)} className="text-[#8B8FA8] hover:text-[#E4D6B5]"><X className="w-4 h-4"/></button>
             </div>
             <div className="text-xs text-[#8B8FA8] bg-[#0A0E1A] rounded-lg px-3 py-2 font-mono truncate">{uploadModal.filename}</div>
+
+            {/* Wybór platformy (5 Przycisków + Checkboxy) */}
+            <div className="space-y-2 pt-0.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-[#8B8FA8] flex items-center gap-1.5">
+                  <Share2 className="w-3.5 h-3.5 text-[#C89B3C]" /> Gdzie wrzucać (Wybór / Presety):
+                </label>
+                <span className="text-[10px] text-[#C89B3C] font-mono font-bold">
+                  Wybrano ({[selYt, selTt, selIg, selFb].filter(Boolean).length}/4): {[selYt && 'YT', selTt && 'TikTok', selIg && 'IG', selFb && 'FB'].filter(Boolean).join(' + ') || 'Brak'}
+                </span>
+              </div>
+
+              {/* 5 Dedykowanych Przycisków Wyboru Celu */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleSelectPlatformPreset('yt')}
+                  className={`p-2 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer select-none ${
+                    selYt && !selTt && !selIg && !selFb
+                      ? 'bg-[#FF0000]/25 border-[#FF0000] text-white shadow-lg shadow-[#FF0000]/20 scale-[1.02]'
+                      : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#FF0000]/60 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1 text-xs font-bold">
+                    <Youtube className="w-3.5 h-3.5 text-[#FF0000]" />
+                    <span>1. YouTube</span>
+                  </div>
+                  <span className="text-[9px] text-[#8B8FA8]">Tylko YT</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectPlatformPreset('tt')}
+                  className={`p-2 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer select-none ${
+                    !selYt && selTt && !selIg && !selFb
+                      ? 'bg-[#00F2FE]/25 border-[#00F2FE] text-white shadow-lg shadow-[#00F2FE]/20 scale-[1.02]'
+                      : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#00F2FE]/60 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1 text-xs font-bold">
+                    <Video className="w-3.5 h-3.5 text-[#00F2FE]" />
+                    <span>2. TikTok</span>
+                  </div>
+                  <span className="text-[9px] text-[#8B8FA8]">Tylko TikTok</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectPlatformPreset('ig')}
+                  className={`p-2 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer select-none ${
+                    !selYt && !selTt && selIg && !selFb
+                      ? 'bg-[#E1306C]/25 border-[#E1306C] text-white shadow-lg shadow-[#E1306C]/20 scale-[1.02]'
+                      : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#E1306C]/60 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1 text-xs font-bold">
+                    <Instagram className="w-3.5 h-3.5 text-[#E1306C]" />
+                    <span>3. Instagram</span>
+                  </div>
+                  <span className="text-[9px] text-[#8B8FA8]">Tylko Reels</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectPlatformPreset('fb')}
+                  className={`p-2 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer select-none ${
+                    !selYt && !selTt && !selIg && selFb
+                      ? 'bg-[#1877F2]/25 border-[#1877F2] text-white shadow-lg shadow-[#1877F2]/20 scale-[1.02]'
+                      : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#1877F2]/60 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1 text-xs font-bold">
+                    <Share2 className="w-3.5 h-3.5 text-[#1877F2]" />
+                    <span>4. Facebook</span>
+                  </div>
+                  <span className="text-[9px] text-[#8B8FA8]">Tylko Fanpage</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectPlatformPreset('all')}
+                  className={`col-span-2 sm:col-span-1 p-2 rounded-xl border-2 text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer select-none ${
+                    selYt && selTt && selIg && selFb
+                      ? 'bg-gradient-to-br from-[#C89B3C]/35 to-[#F1A80A]/20 border-[#C89B3C] text-[#E4D6B5] shadow-lg shadow-[#C89B3C]/25 scale-[1.02]'
+                      : 'bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#C89B3C]/60 hover:text-[#E4D6B5]'
+                  }`}
+                >
+                  <div className="flex items-center gap-1 text-xs font-black text-[#C89B3C]">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>5. WSZYSTKO</span>
+                  </div>
+                  <span className="text-[9px] text-[#C89B3C] font-semibold">Wszystkie 4</span>
+                </button>
+              </div>
+
+              {/* Checkboxy do precyzyjnego miksowania */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                <label className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer select-none transition-all ${selYt ? "bg-[#FF0000]/15 border-[#FF0000]/60 text-white" : "bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8]"}`}>
+                  <input type="checkbox" checked={selYt} onChange={e=>setSelYt(e.target.checked)} className="accent-[#FF0000]" />
+                  <span className="text-xs font-bold flex items-center gap-1"><Youtube className="w-3.5 h-3.5 text-[#FF0000]" /> YouTube</span>
+                </label>
+                <label className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer select-none transition-all ${selTt ? "bg-[#00F2FE]/15 border-[#00F2FE]/60 text-white" : "bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8]"}`}>
+                  <input type="checkbox" checked={selTt} onChange={e=>setSelTt(e.target.checked)} className="accent-[#00F2FE]" />
+                  <span className="text-xs font-bold flex items-center gap-1"><Video className="w-3.5 h-3.5 text-[#00F2FE]" /> TikTok</span>
+                </label>
+                <label className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer select-none transition-all ${selIg ? "bg-[#E1306C]/15 border-[#E1306C]/60 text-white" : "bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8]"}`}>
+                  <input type="checkbox" checked={selIg} onChange={e=>setSelIg(e.target.checked)} className="accent-[#E1306C]" />
+                  <span className="text-xs font-bold flex items-center gap-1"><Instagram className="w-3.5 h-3.5 text-[#E1306C]" /> Instagram</span>
+                </label>
+                <label className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer select-none transition-all ${selFb ? "bg-[#1877F2]/15 border-[#1877F2]/60 text-white" : "bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8]"}`}>
+                  <input type="checkbox" checked={selFb} onChange={e=>setSelFb(e.target.checked)} className="accent-[#1877F2]" />
+                  <span className="text-xs font-bold flex items-center gap-1"><Share2 className="w-3.5 h-3.5 text-[#1877F2]" /> Facebook</span>
+                </label>
+              </div>
+            </div>
+
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[#C89B3C]">Tytuł</label>
-              <input value={uploadTitle} onChange={e=>setUploadTitle(e.target.value)} className="w-full bg-[#0A0E1A] border border-[#1E2438] rounded-lg px-3 py-2 text-sm text-[#E4D6B5] focus:border-[#C89B3C] outline-none" placeholder="Tytuł YouTube..."/>
+              <input value={uploadTitle} onChange={e=>setUploadTitle(e.target.value)} className="w-full bg-[#0A0E1A] border border-[#1E2438] rounded-lg px-3 py-2 text-sm text-[#E4D6B5] focus:border-[#C89B3C] outline-none" placeholder="Tytuł wideo..."/>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-[#C89B3C]">Opis</label>
-              <textarea value={uploadDesc} onChange={e=>setUploadDesc(e.target.value)} rows={4} className="w-full bg-[#0A0E1A] border border-[#1E2438] rounded-lg px-3 py-2 text-xs text-[#E4D6B5] focus:border-[#C89B3C] outline-none resize-none"/>
+              <label className="text-xs font-semibold text-[#C89B3C]">Opis / Hashtagi</label>
+              <textarea value={uploadDesc} onChange={e=>setUploadDesc(e.target.value)} rows={3} className="w-full bg-[#0A0E1A] border border-[#1E2438] rounded-lg px-3 py-2 text-xs text-[#E4D6B5] focus:border-[#C89B3C] outline-none resize-none"/>
             </div>
             <div className="space-y-2 pt-1">
-              <label className="text-xs font-semibold text-[#8B8FA8] flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-[#C89B3C]"/>Tryb Publikacji:</label>
+              <label className="text-xs font-semibold text-[#8B8FA8] flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-[#C89B3C]"/>Tryb Publikacji (YouTube):</label>
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={()=>setUploadMode("peak")} className={`p-2.5 rounded-xl border text-left transition-all ${uploadMode==="peak"?"bg-[#C89B3C]/15 border-[#C89B3C] text-[#E4D6B5]":"bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#C89B3C]/40"}`}>
+                <button type="button" onClick={()=>setUploadMode("peak")} className={`p-2 rounded-xl border text-left transition-all ${uploadMode==="peak"?"bg-[#C89B3C]/15 border-[#C89B3C] text-[#E4D6B5]":"bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#C89B3C]/40"}`}>
                   <div className="flex items-center justify-between"><span className="text-xs font-bold text-[#C89B3C] flex items-center gap-1"><Zap className="w-3 h-3"/>AI Peak Slot</span><span className="text-[9px] bg-[#2ECC71]/20 text-[#2ECC71] px-1 rounded font-bold">TOP</span></div>
-                  <div className="text-[11px] font-semibold text-[#E4D6B5] mt-1 truncate">{peakSlot?.label||"Dziś o 18:30 CET"}</div>
+                  <div className="text-[11px] font-semibold text-[#E4D6B5] mt-0.5 truncate">{peakSlot?.label||"Dziś o 18:30 CET"}</div>
                 </button>
-                <button type="button" onClick={()=>setUploadMode("now")} className={`p-2.5 rounded-xl border text-left transition-all ${uploadMode==="now"?"bg-[#2ECC71]/15 border-[#2ECC71] text-[#E4D6B5]":"bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#2ECC71]/40"}`}>
+                <button type="button" onClick={()=>setUploadMode("now")} className={`p-2 rounded-xl border text-left transition-all ${uploadMode==="now"?"bg-[#2ECC71]/15 border-[#2ECC71] text-[#E4D6B5]":"bg-[#0A0E1A] border-[#1E2438] text-[#8B8FA8] hover:border-[#2ECC71]/40"}`}>
                   <div className="text-xs font-bold text-[#2ECC71]">Opublikuj Teraz</div>
-                  <div className="text-[11px] font-semibold text-[#E4D6B5] mt-1">Publiczny od razu</div>
+                  <div className="text-[11px] font-semibold text-[#E4D6B5] mt-0.5">Publiczny od razu</div>
                 </button>
               </div>
             </div>
+
             {uploadResult && (
-              <div className={`rounded-lg px-3 py-2 text-xs font-semibold ${uploadResult.ok?"bg-[#2ECC71]/10 text-[#2ECC71] border border-[#2ECC71]/30":"bg-red-500/10 text-red-400 border border-red-500/30"}`}>
-                {uploadResult.ok ? (<div><div>✅ Wgrano na YouTube! <a href={uploadResult.url} target="_blank" rel="noreferrer" className="underline">{uploadResult.url}</a></div>{uploadResult.scheduledFor&&<div className="text-[11px] text-[#C89B3C] mt-0.5">⏰ Zaplanowano na: {uploadResult.scheduledFor}</div>}</div>)
-                  : <span>❌ Błąd: {uploadResult.error}</span>}
+              <div className={`rounded-lg px-3 py-2.5 text-xs font-semibold space-y-1.5 ${uploadResult.ok?"bg-[#2ECC71]/10 text-[#2ECC71] border border-[#2ECC71]/30":"bg-red-500/10 text-red-400 border border-red-500/30"}`}>
+                {uploadResult.ok ? (
+                  <div>
+                    <div className="font-bold text-[#55E88D] mb-1">🎉 Wyniki publikacji:</div>
+                    {multiResults && (
+                      <div className="space-y-1 text-[11px] font-mono">
+                        {multiResults.youtube && (
+                          <div className={multiResults.youtube.success ? "text-[#55E88D]" : "text-[#FF6060]"}>
+                            • YouTube: {multiResults.youtube.success ? `✅ Wgrano (${multiResults.youtube.url})` : `❌ ${multiResults.youtube.error}`}
+                          </div>
+                        )}
+                        {multiResults.tiktok && (
+                          <div className={multiResults.tiktok.success ? "text-[#55E88D]" : "text-[#FFB347]"}>
+                            • TikTok: {multiResults.tiktok.success ? `✅ Opublikowano (${multiResults.tiktok.publish_id || "OK"})` : `⚠️ ${multiResults.tiktok.error}`}
+                          </div>
+                        )}
+                        {multiResults.instagram && (
+                          <div className={multiResults.instagram.success ? "text-[#55E88D]" : "text-[#FF6060]"}>
+                            • Instagram: {multiResults.instagram.success ? `✅ Reel opublikowany (${multiResults.instagram.url || "OK"})` : `❌ ${multiResults.instagram.error}`}
+                          </div>
+                        )}
+                        {multiResults.facebook && (
+                          <div className={multiResults.facebook.success ? "text-[#55E88D]" : "text-[#FF6060]"}>
+                            • Facebook: {multiResults.facebook.success ? `✅ Fanpage opublikowano (${multiResults.facebook.url || multiResults.facebook.video_id || "OK"})` : `❌ ${multiResults.facebook.error}`}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {uploadResult.scheduledFor && <div className="text-[11px] text-[#C89B3C] mt-1 font-sans">⏰ Zaplanowano na: {uploadResult.scheduledFor}</div>}
+                  </div>
+                ) : (
+                  <span>❌ Błąd: {uploadResult.error}</span>
+                )}
               </div>
             )}
+
             <div className="flex gap-3 pt-1">
               <button onClick={()=>setUploadModal(null)} className="flex-1 py-2 rounded-xl border border-[#1E2438] text-xs text-[#8B8FA8] hover:text-[#E4D6B5] font-semibold">Anuluj</button>
-              <button onClick={handleUpload} disabled={uploading||!uploadTitle.trim()} className="flex-1 py-2 rounded-xl bg-[#C89B3C] hover:bg-[#E5C269] disabled:opacity-50 text-[#0A0E1A] text-xs font-bold flex items-center justify-center gap-1.5">
-                {uploading?<Loader className="w-3.5 h-3.5 animate-spin"/>:<Upload className="w-3.5 h-3.5"/>}{uploading?"Wgrywam...":"Wgraj na YouTube"}
+              <button onClick={handleUpload} disabled={uploading||!uploadTitle.trim()||(!selYt&&!selTt&&!selIg&&!selFb)} className="flex-1 py-2.5 rounded-xl bg-[#C89B3C] hover:bg-[#E5C269] disabled:opacity-50 text-[#0A0E1A] text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md">
+                {uploading?<Loader className="w-3.5 h-3.5 animate-spin"/>:<Share2 className="w-3.5 h-3.5"/>}
+                {uploading
+                  ? "Publikuję..."
+                  : selYt && selTt && selIg && selFb
+                  ? "🚀 Opublikuj na WSZYSTKO (4 platformy)"
+                  : !selYt && !selTt && !selIg && !selFb
+                  ? "⚠️ Zaznacz platformę"
+                  : selYt && !selTt && !selIg && !selFb
+                  ? "🚀 Opublikuj na YouTube Shorts"
+                  : !selYt && selTt && !selIg && !selFb
+                  ? "🚀 Opublikuj na TikTok"
+                  : !selYt && !selTt && selIg && !selFb
+                  ? "🚀 Opublikuj na Instagram Reels"
+                  : !selYt && !selTt && !selIg && selFb
+                  ? "🚀 Opublikuj na Facebook Page"
+                  : `🚀 Opublikuj (${[selYt&&'YT', selTt&&'TT', selIg&&'IG', selFb&&'FB'].filter(Boolean).join(' + ')})`}
               </button>
             </div>
           </div>
@@ -471,7 +705,7 @@ export default function Outputs() {
                       <Edit3 className="w-3.5 h-3.5"/>Edytuj
                     </button>
                     <button onClick={()=>openUploadModal(out.filename)} className="text-xs bg-[#C89B3C] hover:bg-[#E5C269] text-[#0A0E1A] font-bold px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-[#C89B3C]/10">
-                      <Upload className="w-3.5 h-3.5"/>YouTube
+                      <Share2 className="w-3.5 h-3.5"/>Publikuj
                     </button>
                   </div>
                 </div>

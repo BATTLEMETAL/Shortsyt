@@ -1,9 +1,4 @@
 {
   "pacing": "balanced",
-  "zoomAggression": 1.2,
-  "slowmoDuration": 1.4,
-  "musicBalance": 0.55,
-  "gameSoundBalance": 0.85,
-  "titleTone": "narrative",
-  "userNotes": "Balanced (14-17s): optymalny buildup 1.8s, zoom 1.20x, zwolnienie 1.4s."
+  "zoom_aggression": 1.18
 }

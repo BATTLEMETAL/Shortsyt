@@ -106,3 +106,46 @@ class AnalyzeFragRequest(BaseModel):
 
 class AutoFillCalendarRequest(BaseModel):
     max_slots: int = 4
+
+
+class TikTokAuthCodeRequest(BaseModel):
+    code: str
+
+
+class TikTokUploadRequest(BaseModel):
+    title: str
+    hashtags: List[str] = []
+    privacy_level: str = 'PUBLIC_TO_EVERYONE'
+
+
+class InstagramUploadRequest(BaseModel):
+    caption: str
+    share_to_feed: bool = True
+
+
+class FacebookUploadRequest(BaseModel):
+    caption: str
+
+
+class MultiPlatformUploadRequest(BaseModel):
+    title: str
+    description: str = ''
+    tags: List[str] = []
+    hashtags: List[str] = []
+    platforms: List[str] = ['youtube', 'tiktok', 'instagram', 'facebook']
+    privacy_yt: str = 'public'
+    privacy_tiktok: str = 'PUBLIC_TO_EVERYONE'
+    share_to_ig_feed: bool = True
+    thumbnail_path: Optional[str] = None
+    publish_at: Optional[str] = None
+    pinned_comment: Optional[str] = None
+    champion_name: Optional[str] = None
+    action_type: Optional[str] = None
+    rank: Optional[str] = None
+
+
+class ScreenRecordRequest(BaseModel):
+    duration: Optional[float] = 30.0
+    output_filename: Optional[str] = 'shortsyt_demo.mp4'
+    fps: int = 30
+    window_title: Optional[str] = None

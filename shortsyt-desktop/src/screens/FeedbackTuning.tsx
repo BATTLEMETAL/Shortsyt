@@ -96,13 +96,26 @@ export default function FeedbackTuning() {
     }
   };
 
+  const sanitizeProfile = (raw: any): TuningProfile => ({
+    ...DEFAULT_TUNING,
+    ...(raw || {}),
+    zoomAggression: typeof raw?.zoomAggression === 'number' ? raw.zoomAggression : DEFAULT_TUNING.zoomAggression,
+    slowmoDuration: typeof raw?.slowmoDuration === 'number' ? raw.slowmoDuration : DEFAULT_TUNING.slowmoDuration,
+    musicBalance: typeof raw?.musicBalance === 'number' ? raw.musicBalance : DEFAULT_TUNING.musicBalance,
+    gameSoundBalance: typeof raw?.gameSoundBalance === 'number' ? raw.gameSoundBalance : DEFAULT_TUNING.gameSoundBalance,
+    pacing: raw?.pacing || DEFAULT_TUNING.pacing,
+    titleTone: raw?.titleTone || DEFAULT_TUNING.titleTone,
+    userNotes: typeof raw?.userNotes === 'string' ? raw.userNotes : DEFAULT_TUNING.userNotes,
+  });
+
   useEffect(() => {
     async function load() {
       try {
         const remote = await apiGetTuningConfig();
-        if (remote && remote.pacing) {
-          setProfile(remote);
-          profileRef.current = remote;
+        if (remote && typeof remote === 'object') {
+          const clean = sanitizeProfile(remote);
+          setProfile(clean);
+          profileRef.current = clean;
           setLoading(false);
           return;
         }
@@ -114,8 +127,9 @@ export default function FeedbackTuning() {
         try {
           const stored = await window.electronStore.get('tuning_profile', DEFAULT_TUNING);
           if (stored) {
-            setProfile(stored);
-            profileRef.current = stored;
+            const clean = sanitizeProfile(stored);
+            setProfile(clean);
+            profileRef.current = clean;
           }
         } catch {
           // ignore
@@ -123,9 +137,14 @@ export default function FeedbackTuning() {
       } else {
         const stored = localStorage.getItem('tuning_profile');
         if (stored) {
-          const parsed = JSON.parse(stored);
-          setProfile(parsed);
-          profileRef.current = parsed;
+          try {
+            const parsed = JSON.parse(stored);
+            const clean = sanitizeProfile(parsed);
+            setProfile(clean);
+            profileRef.current = clean;
+          } catch {
+            // ignore
+          }
         }
       }
       setLoading(false);
@@ -291,14 +310,14 @@ export default function FeedbackTuning() {
             <div>
               <div className="flex justify-between text-xs font-semibold mb-1.5">
                 <span className="text-[#8B8FA8]">Siła Zoom-Punch (Kill Impact):</span>
-                <span className="font-mono text-[#C89B3C] font-bold">{profile.zoomAggression.toFixed(2)}x</span>
+                <span className="font-mono text-[#C89B3C] font-bold">{(profile?.zoomAggression ?? 1.20).toFixed(2)}x</span>
               </div>
               <input
                 type="range"
                 min="1.05"
                 max="1.35"
                 step="0.05"
-                value={profile.zoomAggression}
+                value={profile?.zoomAggression ?? 1.20}
                 onChange={(e) => handleSliderChange('zoomAggression', parseFloat(e.target.value))}
                 className="w-full accent-[#C89B3C] cursor-pointer"
               />
@@ -311,14 +330,14 @@ export default function FeedbackTuning() {
             <div>
               <div className="flex justify-between text-xs font-semibold mb-1.5">
                 <span className="text-[#8B8FA8]">Długość Slow-Mo na Peak Action:</span>
-                <span className="font-mono text-[#C89B3C] font-bold">{profile.slowmoDuration.toFixed(1)}s</span>
+                <span className="font-mono text-[#C89B3C] font-bold">{(profile?.slowmoDuration ?? 1.4).toFixed(1)}s</span>
               </div>
               <input
                 type="range"
                 min="0.8"
                 max="2.5"
                 step="0.1"
-                value={profile.slowmoDuration}
+                value={profile?.slowmoDuration ?? 1.4}
                 onChange={(e) => handleSliderChange('slowmoDuration', parseFloat(e.target.value))}
                 className="w-full accent-[#C89B3C] cursor-pointer"
               />
@@ -343,14 +362,14 @@ export default function FeedbackTuning() {
               <div>
                 <div className="flex justify-between text-xs font-semibold mb-1.5">
                   <span className="text-[#8B8FA8]">Głośność Muzyki NCS / Phonk:</span>
-                  <span className="font-mono text-[#55E88D] font-bold">{Math.round(profile.musicBalance * 100)}%</span>
+                  <span className="font-mono text-[#55E88D] font-bold">{Math.round((profile?.musicBalance ?? 0.55) * 100)}%</span>
                 </div>
                 <input
                   type="range"
                   min="0.3"
                   max="1.0"
                   step="0.05"
-                  value={profile.musicBalance}
+                  value={profile?.musicBalance ?? 0.55}
                   onChange={(e) => handleSliderChange('musicBalance', parseFloat(e.target.value))}
                   className="w-full accent-[#2ECC71] cursor-pointer"
                 />
@@ -359,14 +378,14 @@ export default function FeedbackTuning() {
               <div>
                 <div className="flex justify-between text-xs font-semibold mb-1.5">
                   <span className="text-[#8B8FA8]">Dźwięk Gry (VFX / Announcer / Kills):</span>
-                  <span className="font-mono text-[#4FA3F7] font-bold">{Math.round(profile.gameSoundBalance * 100)}%</span>
+                  <span className="font-mono text-[#4FA3F7] font-bold">{Math.round((profile?.gameSoundBalance ?? 0.85) * 100)}%</span>
                 </div>
                 <input
                   type="range"
                   min="0.2"
                   max="1.0"
                   step="0.05"
-                  value={profile.gameSoundBalance}
+                  value={profile?.gameSoundBalance ?? 0.85}
                   onChange={(e) => handleSliderChange('gameSoundBalance', parseFloat(e.target.value))}
                   className="w-full accent-[#2A7FD4] cursor-pointer"
                 />

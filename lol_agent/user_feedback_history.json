@@ -1,576 +1,861 @@
 {
   "version": 1,
-  "last_updated": "2026-10-01T13:49:17.222797+00:00",
-  "total_corrections": 2,
+  "last_updated": "2026-11-11T16:47:53.708894+00:00",
+  "total_corrections": 111,
   "total_renders_accepted": 5,
   "total_renders_rejected": 0,
   "learned_preferences": {
-    "music_balance": 0.6,
+    "music_balance": 0.55,
     "game_sound_balance": 0.85,
     "min_lead_in_sec": 4.5,
     "max_outro_sec": 1.8,
-    "preferred_pacing": "aggressive",
+    "preferred_pacing": "balanced",
     "smooth_win": 5,
     "end_freeze_sec": 0.6
   },
   "history": [
     {
-      "timestamp": "2026-09-06T13:35:37.487786+00:00",
-      "type": "render_approved",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788701656704_auto.mp4",
-      "action_type": "solo_bolo",
-      "duration": 15.0,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-06T20:13:33.707417+00:00",
-      "type": "render_approved",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788725524810_auto.mp4",
+      "timestamp": "2026-10-23T18:54:17.500050+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-166\\test_pipeline_runner_auto_cent0\\out.mp4",
       "action_type": "triple",
-      "duration": 11.2,
-      "qa_score": 35
+      "duration": 21.299999999999997,
+      "qa_score": 94
     },
     {
-      "timestamp": "2026-09-07T22:37:08.514612+00:00",
-      "type": "render_approved",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788820524886_auto.mp4",
-      "action_type": "solo_bolo",
-      "duration": 15.0,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-07T22:42:05.545758+00:00",
-      "type": "rule_learned",
-      "rule_id": "solo_bolo_captions",
-      "description": "W trybie SOLO BOLO (1v1) zakazane sa liczniki multikill (KILL X/Y) oraz banery DOUBLE/TRIPLE/PENTA. Stosowac wylacznie dedykowany baner SOLO BOLO @ peak."
-    },
-    {
-      "timestamp": "2026-09-07T22:42:21.746638+00:00",
-      "type": "rule_learned",
-      "rule_id": "solo_bolo_captions",
-      "description": "W trybie SOLO BOLO (1v1) zakazane sa liczniki multikill (KILL X/Y) oraz banery DOUBLE/TRIPLE/PENTA. Stosowac wylacznie dedykowany baner SOLO BOLO @ peak."
-    },
-    {
-      "timestamp": "2026-09-07T22:42:27.894234+00:00",
-      "type": "rule_learned",
-      "rule_id": "audio_loudnorm",
-      "description": "Muzyka I=-17 LUFS (60%), Gra I=-14 LUFS (85%), sidechain ducking -45%."
-    },
-    {
-      "timestamp": "2026-09-07T22:42:27.903052+00:00",
-      "type": "rule_learned",
-      "rule_id": "camera_kinematics",
-      "description": "SMOOTH_WIN=5, MAX_PAN_PX=80, LERP=0.35, DEADBAND=30px, end_freeze=0.6s."
-    },
-    {
-      "timestamp": "2026-09-07T22:42:27.911567+00:00",
-      "type": "rule_learned",
-      "rule_id": "seo_hashtags",
-      "description": "Pelny pakiet 12-18 viralowych hashtagow na koncu opisu Shorts."
-    },
-    {
-      "timestamp": "2026-09-07T22:45:39.696115+00:00",
-      "type": "rule_learned",
-      "rule_id": "title_hashtags",
-      "description": "Tytul Shorts musi konczyc sie viralowymi tagami: #Shorts #LeagueOfLegends #LoL."
-    },
-    {
-      "timestamp": "2026-09-07T22:49:07.179173+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788821245920_auto.mp4",
-      "action_type": "solo_bolo",
-      "duration": 15.0,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-08T13:28:22.188230+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788873975393_auto.mp4",
-      "action_type": "outplay",
-      "duration": 6.0,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-08T13:56:01.264359+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788875689504_auto.mp4",
-      "action_type": "triple",
-      "duration": 24.5,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-08T14:07:13.552473+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788876352433_auto.mp4",
-      "action_type": "triple",
-      "duration": 24.0,
-      "qa_score": 35
-    },
-    {
-      "timestamp": "2026-09-08T14:33:18.700318+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788877933438_auto.mp4",
-      "action_type": "triple",
-      "duration": 24.5,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-08T15:01:08.373370+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788879585143_auto.mp4",
-      "action_type": "triple",
-      "duration": 24.5,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-08T15:09:28.414758+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788880100482_auto.mp4",
-      "action_type": "double",
-      "duration": 9.999999999999998,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-08T17:35:57.532324+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_output.mp4",
-      "action_type": "multi_kill",
-      "duration": 24.5,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-08T17:50:22.026649+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788889743778_auto.mp4",
-      "action_type": "double",
-      "duration": 9.999999999999998,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-08T17:56:56.354817+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788890161936_auto.mp4",
-      "action_type": "double",
-      "duration": 9.999999999999998,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-08T22:49:07.442430+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788907660591_auto.mp4",
-      "action_type": "double",
-      "duration": 9.999999999999998,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-08T22:55:10.806288+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788908054687_auto.mp4",
-      "action_type": "double",
-      "duration": 9.999999999999998,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-08T22:59:50.748817+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788908310367_auto.mp4",
-      "action_type": "triple",
-      "duration": 24.5,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-08T23:11:41.680861+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_output.mp4",
-      "action_type": "triple",
-      "duration": 24.5,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-08T23:14:21.551376+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788909185533_auto.mp4",
-      "action_type": "triple",
-      "duration": 24.5,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-09T11:23:23.379666+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1788952945318_auto.mp4",
-      "action_type": "triple",
-      "duration": 19.5,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-10T17:11:44.155323+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-2\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-09-10T17:15:59.304929+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789060501518_auto.mp4",
-      "action_type": "double",
-      "duration": 10.5,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-10T17:22:20.241242+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789060887886_auto.mp4",
-      "action_type": "triple",
-      "duration": 9.999999999999998,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-10T17:27:44.359846+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789061170592_auto.mp4",
-      "action_type": "triple",
-      "duration": 15.0,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-13T15:41:41.344421+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789314044399_auto.mp4",
-      "action_type": "double",
-      "duration": 10.0,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-14T00:17:09.156623+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789344924813_auto.mp4",
-      "action_type": "triple",
-      "duration": 16.5,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-15T10:35:49.841729+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-3\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-09-15T10:51:50.904889+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-4\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-09-15T11:13:53.498041+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-5\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-09-15T11:23:07.629880+00:00",
+      "timestamp": "2026-10-23T19:13:42.268974+00:00",
       "type": "parameter_correction",
-      "source": "adversarial_test",
-      "param": "test_param",
-      "old_value": "old",
-      "new_value": "new",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-10-23T19:13:47.141685+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-167\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-10-23T19:13:47.197652+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-167\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-10-23T20:15:06.741829+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1792786427049_auto.mp4",
+      "action_type": "outplay",
+      "duration": 10.1,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-10-23T20:15:29.296672+00:00",
+      "type": "parameter_correction",
+      "source": "tuning_slider",
+      "param": "musicBalance",
+      "old_value": null,
+      "new_value": 0.55,
       "reason": ""
     },
     {
-      "timestamp": "2026-09-15T11:24:47.037170+00:00",
+      "timestamp": "2026-10-23T20:15:29.313331+00:00",
       "type": "parameter_correction",
-      "source": "adversarial_test",
-      "param": "test_param",
-      "old_value": "old",
-      "new_value": "new",
+      "source": "tuning_slider",
+      "param": "gameSoundBalance",
+      "old_value": null,
+      "new_value": 0.85,
       "reason": ""
     },
     {
-      "timestamp": "2026-09-15T11:24:53.175648+00:00",
+      "timestamp": "2026-10-23T20:15:29.327307+00:00",
+      "type": "parameter_correction",
+      "source": "tuning_slider",
+      "param": "zoomAggression",
+      "old_value": null,
+      "new_value": 1.2,
+      "reason": ""
+    },
+    {
+      "timestamp": "2026-10-23T20:15:29.337486+00:00",
+      "type": "parameter_correction",
+      "source": "tuning_slider",
+      "param": "slowmoDuration",
+      "old_value": null,
+      "new_value": 1.4,
+      "reason": ""
+    },
+    {
+      "timestamp": "2026-10-23T20:20:50.823204+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-10-23T20:20:55.668741+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-6\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-169\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
       "action_type": "outplay",
       "duration": 15.0,
       "qa_score": 0
     },
     {
-      "timestamp": "2026-09-15T11:32:47.550372+00:00",
+      "timestamp": "2026-10-23T20:20:55.734551+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-7\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-09-16T09:08:44.174734+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789549663401_auto.mp4",
-      "action_type": "double",
-      "duration": 10.5,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-16T09:44:53.471199+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-8\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-09-16T09:45:51.888230+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-9\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-09-16T10:08:42.593670+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-10\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-09-16T10:33:03.027889+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-11\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-09-18T08:29:57.179546+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789720094683_auto.mp4",
-      "action_type": "solo_bolo",
-      "duration": 15.0,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-18T08:33:48.333995+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789720362735_auto.mp4",
-      "action_type": "solo_bolo",
-      "duration": 15.0,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-18T18:34:12.433706+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789756386482_auto.mp4",
-      "action_type": "solo_bolo",
-      "duration": 15.0,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-19T11:16:05.263214+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789816509345_auto.mp4",
-      "action_type": "double",
-      "duration": 17.5,
-      "qa_score": 90
-    },
-    {
-      "timestamp": "2026-09-20T07:59:49.278477+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789891126022_auto.mp4",
-      "action_type": "double",
-      "duration": 10.5,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-20T08:02:53.820333+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789891296450_auto.mp4",
-      "action_type": "solo_bolo",
-      "duration": 15.0,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-20T09:26:31.007144+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789896321658_auto.mp4",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-169\\test_pipeline_runner_auto_cent0\\out.mp4",
       "action_type": "triple",
-      "duration": 26.5,
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-10-23T20:30:56.292294+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-10-23T20:31:01.443265+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-170\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-10-23T20:31:01.495601+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-170\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-10-23T20:56:00.595698+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1792788880691_auto.mp4",
+      "action_type": "outplay",
+      "duration": 10.1,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-10-23T21:03:07.826959+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1792789308609_auto.mp4",
+      "action_type": "triple",
+      "duration": 16.700000000000003,
       "qa_score": 100
     },
     {
-      "timestamp": "2026-09-21T10:27:07.822886+00:00",
+      "timestamp": "2026-10-23T21:32:19.075815+00:00",
+      "type": "parameter_correction",
+      "source": "tuning_slider",
+      "param": "pacing",
+      "old_value": "cinematic",
+      "new_value": "balanced",
+      "reason": ""
+    },
+    {
+      "timestamp": "2026-10-23T21:32:19.105320+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-10-23T21:32:24.520395+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1789986371491_auto.mp4",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-172\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-10-23T21:32:24.574330+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-172\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-10-26T11:28:27.321469+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793014009073_auto.mp4",
+      "action_type": "triple",
+      "duration": 17.9,
+      "qa_score": 100
+    },
+    {
+      "timestamp": "2026-10-26T11:49:35.664726+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793015301573_auto.mp4",
+      "action_type": "outplay",
+      "duration": 12.5,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-10-27T17:33:11.299262+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793122316038_auto.mp4",
       "action_type": "double",
+      "duration": 13.7,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-10-27T17:46:56.562789+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793123117991_auto.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-10-27T21:42:06.560377+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-175\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-10-27T21:42:07.114347+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-175\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-10-28T00:49:34.752726+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793148512183_auto.mp4",
+      "action_type": "outplay",
+      "duration": 3.0,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-10-28T00:53:41.338669+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793148758623_auto.mp4",
+      "action_type": "double",
+      "duration": 3.1000000000000014,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-10-28T00:56:06.350628+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793148903174_auto.mp4",
+      "action_type": "double",
+      "duration": 6.399999999999999,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-10-28T11:32:59.253818+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-176\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-10-28T11:32:59.318663+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-176\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-10-28T11:41:05.061085+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-177\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-10-28T11:41:05.112956+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-177\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-10-28T11:42:32.396370+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-178\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-10-28T11:42:32.445346+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-178\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-10-28T11:43:13.582901+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-179\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-10-28T11:43:13.638456+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-179\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-10-28T11:53:39.707064+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793188343138_auto.mp4",
+      "action_type": "double",
+      "duration": 14.6,
+      "qa_score": 100
+    },
+    {
+      "timestamp": "2026-10-28T12:01:55.873987+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793188842011_auto.mp4",
+      "action_type": "outplay",
+      "duration": 14.600000000000001,
+      "qa_score": 100
+    },
+    {
+      "timestamp": "2026-10-28T12:07:21.881991+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793189167246_auto.mp4",
+      "action_type": "outplay",
+      "duration": 14.600000000000001,
+      "qa_score": 100
+    },
+    {
+      "timestamp": "2026-10-28T12:22:28.610145+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793190075319_auto.mp4",
+      "action_type": "outplay",
+      "duration": 14.4,
+      "qa_score": 100
+    },
+    {
+      "timestamp": "2026-10-30T11:30:00.570843+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793359526978_auto.mp4",
+      "action_type": "triple",
       "duration": 10.000000000000002,
-      "qa_score": 100
+      "qa_score": 96
     },
     {
-      "timestamp": "2026-09-25T11:30:38.704157+00:00",
+      "timestamp": "2026-10-30T11:40:24.184527+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790335757879_auto.mp4",
-      "action_type": "triple",
-      "duration": 13.5,
-      "qa_score": 100
-    },
-    {
-      "timestamp": "2026-09-26T08:21:45.494487+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790410849759_auto.mp4",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793360283813_auto.mp4",
       "action_type": "double",
-      "duration": 12.5,
+      "duration": 15.0,
       "qa_score": 100
     },
     {
-      "timestamp": "2026-09-29T07:29:27.674533+00:00",
+      "timestamp": "2026-11-01T11:17:36.350738+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790666907483_auto.mp4",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793531776638_auto.mp4",
       "action_type": "triple",
-      "duration": 16.5,
-      "qa_score": 90
+      "duration": 9.999999999999998,
+      "qa_score": 96
     },
     {
-      "timestamp": "2026-09-29T07:33:21.023707+00:00",
+      "timestamp": "2026-11-01T11:56:51.292550+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790667145586_auto.mp4",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793533975394_auto.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 100
+    },
+    {
+      "timestamp": "2026-11-01T12:22:14.667344+00:00",
+      "type": "parameter_correction",
+      "source": "tuning_slider",
+      "param": "pacing",
+      "old_value": "cinematic",
+      "new_value": "balanced",
+      "reason": ""
+    },
+    {
+      "timestamp": "2026-11-01T12:22:14.695750+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-01T12:22:21.073129+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-180\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-11-01T12:22:21.126215+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-180\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-11-01T12:24:46.373401+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-01T12:24:51.451373+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-183\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-11-01T12:24:51.502133+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-183\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-11-01T12:29:39.598745+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793536092576_auto.mp4",
       "action_type": "solo_bolo",
-      "duration": 15.5,
+      "duration": 11.8,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-01T12:43:36.019214+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793536547581_auto.mp4",
+      "action_type": "triple",
+      "duration": 12.399999999999999,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-01T13:07:11.171403+00:00",
+      "type": "parameter_correction",
+      "source": "tuning_slider",
+      "param": "pacing",
+      "old_value": "cinematic",
+      "new_value": "balanced",
+      "reason": ""
+    },
+    {
+      "timestamp": "2026-11-01T13:07:11.201104+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-01T13:07:17.357347+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-184\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-11-01T13:07:17.417882+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-184\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-11-01T13:37:49.647936+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793540146248_auto.mp4",
+      "action_type": "triple",
+      "duration": 16.8,
       "qa_score": 100
     },
     {
-      "timestamp": "2026-09-29T07:36:39.875323+00:00",
+      "timestamp": "2026-11-01T15:03:50.382718+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790667346855_auto.mp4",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793545332621_auto.mp4",
+      "action_type": "triple",
+      "duration": 13.0,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-02T11:54:00.967912+00:00",
+      "type": "parameter_correction",
+      "source": "tuning_slider",
+      "param": "pacing",
+      "old_value": "cinematic",
+      "new_value": "balanced",
+      "reason": ""
+    },
+    {
+      "timestamp": "2026-11-02T11:54:00.996241+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-02T11:54:06.795746+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-188\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-11-02T11:54:06.848796+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-188\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-11-02T11:56:58.130219+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-02T11:57:02.903008+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-189\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-11-02T11:57:02.956406+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-189\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-11-03T22:35:31.601446+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793745229952_auto.mp4",
+      "action_type": "outplay",
+      "duration": 13.299999999999999,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-03T22:39:17.121552+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793745444663_auto.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-05T02:00:26.596918+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793843942440_auto.mp4",
+      "action_type": "triple",
+      "duration": 10.0,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-05T02:03:41.498921+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793844136648_auto.mp4",
+      "action_type": "triple",
+      "duration": 10.0,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-05T02:10:04.467847+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793844330381_auto.mp4",
       "action_type": "double",
-      "duration": 12.5,
+      "duration": 18.5,
       "qa_score": 100
     },
     {
-      "timestamp": "2026-10-01T08:44:31.143483+00:00",
+      "timestamp": "2026-11-05T02:15:26.332177+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-0\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793844751559_auto.mp4",
+      "action_type": "solo_bolo",
+      "duration": 15.0,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-05T02:36:16.914869+00:00",
+      "type": "parameter_correction",
+      "source": "tuning_slider",
+      "param": "pacing",
+      "old_value": "cinematic",
+      "new_value": "balanced",
+      "reason": ""
+    },
+    {
+      "timestamp": "2026-11-05T02:36:16.946312+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-05T02:36:24.318846+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-191\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
       "action_type": "outplay",
       "duration": 15.0,
       "qa_score": 0
     },
     {
-      "timestamp": "2026-10-01T09:07:45.305580+00:00",
+      "timestamp": "2026-11-05T02:36:24.369314+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-1\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-191\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
     },
     {
-      "timestamp": "2026-10-01T09:29:32.658965+00:00",
+      "timestamp": "2026-11-05T21:12:13.580939+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-2\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-10-01T09:33:33.608168+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-3\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
-      "action_type": "outplay",
-      "duration": 15.0,
-      "qa_score": 0
-    },
-    {
-      "timestamp": "2026-10-01T09:37:07.371279+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790847353068_auto.mp4",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1793913018350_auto.mp4",
       "action_type": "double",
-      "duration": 14.499999999999998,
+      "duration": 18.599999999999998,
       "qa_score": 100
     },
     {
-      "timestamp": "2026-10-01T10:03:44.580841+00:00",
+      "timestamp": "2026-11-07T01:11:50.787236+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-4\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1794013553130_auto.mp4",
+      "action_type": "outplay",
+      "duration": 13.399999999999999,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-09T00:58:01.469013+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1794185757216_auto.mp4",
+      "action_type": "triple",
+      "duration": 21.0,
+      "qa_score": 100
+    },
+    {
+      "timestamp": "2026-11-11T10:01:44.254367+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1794391198641_auto.mp4",
+      "action_type": "clutch",
+      "duration": 15.0,
+      "qa_score": 96
+    },
+    {
+      "timestamp": "2026-11-11T10:38:23.122978+00:00",
+      "type": "parameter_correction",
+      "source": "tuning_slider",
+      "param": "pacing",
+      "old_value": "cinematic",
+      "new_value": "balanced",
+      "reason": ""
+    },
+    {
+      "timestamp": "2026-11-11T10:38:23.158929+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-11T10:38:30.702123+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-194\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
       "action_type": "outplay",
       "duration": 15.0,
       "qa_score": 0
     },
     {
-      "timestamp": "2026-10-01T10:06:44.890935+00:00",
+      "timestamp": "2026-11-11T10:38:30.762688+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790849134043_auto.mp4",
-      "action_type": "double",
-      "duration": 14.499999999999998,
-      "qa_score": 100
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-194\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
     },
     {
-      "timestamp": "2026-10-01T10:10:01.767664+00:00",
+      "timestamp": "2026-11-11T11:58:41.494865+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-11T11:58:51.246070+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-5\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-196\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
       "action_type": "outplay",
       "duration": 15.0,
       "qa_score": 0
     },
     {
-      "timestamp": "2026-10-01T10:19:35.914839+00:00",
+      "timestamp": "2026-11-11T11:58:51.299944+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790849904289_auto.mp4",
-      "action_type": "double",
-      "duration": 14.499999999999998,
-      "qa_score": 100
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-196\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
     },
     {
-      "timestamp": "2026-10-01T10:22:25.617265+00:00",
-      "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790850074522_auto.mp4",
-      "action_type": "double",
-      "duration": 14.499999999999998,
-      "qa_score": 100
+      "timestamp": "2026-11-11T12:36:12.507432+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
     },
     {
-      "timestamp": "2026-10-01T11:05:40.937572+00:00",
+      "timestamp": "2026-11-11T12:37:19.812325+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-11T12:37:29.433659+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-6\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-200\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
       "action_type": "outplay",
       "duration": 15.0,
       "qa_score": 0
     },
     {
-      "timestamp": "2026-10-01T11:25:43.239760+00:00",
+      "timestamp": "2026-11-11T12:37:29.486177+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790853863147_auto.mp4",
-      "action_type": "double",
-      "duration": 14.499999999999998,
-      "qa_score": 100
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-200\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
     },
     {
-      "timestamp": "2026-10-01T11:51:44.984694+00:00",
+      "timestamp": "2026-11-11T13:01:17.797217+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-11T13:01:22.763340+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-7\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-201\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
       "action_type": "outplay",
       "duration": 15.0,
       "qa_score": 0
     },
     {
-      "timestamp": "2026-10-01T13:36:55.874542+00:00",
+      "timestamp": "2026-11-11T13:01:22.815570+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\PycharmProjects\\shortsyt\\lol_agent\\lol_temp\\short_1790861734572_auto.mp4",
-      "action_type": "double",
-      "duration": 14.499999999999998,
-      "qa_score": 100
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-201\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
     },
     {
-      "timestamp": "2026-10-01T13:49:17.222789+00:00",
+      "timestamp": "2026-11-11T16:41:14.814156+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-11T16:41:22.244679+00:00",
       "type": "render_generated",
-      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-8\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-202\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
       "action_type": "outplay",
       "duration": 15.0,
       "qa_score": 0
+    },
+    {
+      "timestamp": "2026-11-11T16:41:22.323290+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-202\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
+    },
+    {
+      "timestamp": "2026-11-11T16:47:47.029987+00:00",
+      "type": "parameter_correction",
+      "source": "api_test",
+      "param": "title",
+      "old_value": "OLD TITLE",
+      "new_value": "NEW TITLE",
+      "reason": "testing correction"
+    },
+    {
+      "timestamp": "2026-11-11T16:47:53.657222+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-203\\test_run_pipeline_no_name_erro0\\lol_short_final.mp4",
+      "action_type": "outplay",
+      "duration": 15.0,
+      "qa_score": 0
+    },
+    {
+      "timestamp": "2026-11-11T16:47:53.708883+00:00",
+      "type": "render_generated",
+      "filename": "C:\\Users\\mz100\\AppData\\Local\\Temp\\pytest-of-mz100\\pytest-203\\test_pipeline_runner_auto_cent0\\out.mp4",
+      "action_type": "triple",
+      "duration": 21.299999999999997,
+      "qa_score": 94
     }
   ],
   "learned_rules": {

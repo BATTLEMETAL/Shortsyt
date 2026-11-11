@@ -66,6 +66,13 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
     source_path = meta.get("source_path", "")
     champ = meta.get("champion_name", "Katarina")
     action = meta.get("action_type", "outplay")
+    initial_qa = meta.get("qa_score")
+    if initial_qa is None:
+        initial_qa = 85
+    qa_status = meta.get("qa_status", "PASS")
+    qa_details = meta.get("qa_details", [])
+    duration_s = meta.get("duration", 15.0)
+    hook_text = meta.get("hook_text", "")
 
     meta["youtube_id"] = result.get("video_id")
     meta["youtube_url"] = result.get("url")
@@ -89,6 +96,11 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
         "privacy": result.get("status", "public"),
         "scheduled_publish_at": result.get("publish_at"),
         "source_path": source_path,
+        "initial_qa_score": int(initial_qa),
+        "qa_status": qa_status,
+        "qa_details": qa_details,
+        "duration_s": float(duration_s),
+        "hook_text": hook_text,
     }
     pub_path = Path(__file__).parent.parent / "published_videos.jsonl"
     try:
@@ -96,6 +108,28 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
             f.write(json.dumps(pub_log, ensure_ascii=False) + "\n")
     except Exception as e:
         print(f"[Publish] Warning: could not write published_videos.jsonl: {e}")
+
+    # Zaplanuj automatyczną weryfikację wydajności (48h) w pending_checks.json
+    vid_id = result.get("video_id")
+    if vid_id:
+        try:
+            try:
+                from lol_agent.lol_performance_tracker import schedule_check
+            except ImportError:
+                from lol_performance_tracker import schedule_check
+            schedule_check(
+                video_id=vid_id,
+                video_url=result.get("url", f"https://www.youtube.com/shorts/{vid_id}"),
+                title=result.get("title", req.title),
+                action_type=action,
+                champion=champ,
+                quality_score=float(initial_qa),
+                music_file=meta.get("music_file", ""),
+                beat_sync_error=0.0,
+                kill_coverage_pct=100.0,
+            )
+        except Exception as se:
+            print(f"[Publish] Warning: could not schedule performance check: {se}")
 
     if source_path and Path(source_path).exists():
         try:
@@ -125,9 +159,16 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
             print(f"[Publish] Warning: could not update processed_hashes.json: {e}")
 
     try:
-        import threading
-        from lol_agent.learning_engine import run_channel_learning_cycle
-        threading.Thread(target=run_channel_learning_cycle, kwargs={"force_refresh": True}, daemon=True).start()
+        from .youtube_uploader import invalidate_publish_cache
+        invalidate_publish_cache()
+    except Exception:
+        pass
+
+    try:
+        if not ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("TESTING") == "true"):
+            import threading
+            from lol_agent.learning_engine import run_channel_learning_cycle
+            threading.Thread(target=run_channel_learning_cycle, kwargs={"force_refresh": True}, daemon=True).start()
     except Exception as le:
         print(f"[Learning] Warning: could not trigger background learning cycle: {le}")
 
@@ -183,6 +224,23 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                 pl_res = youtube.playlistItems().list(part="snippet,contentDetails", playlistId=uploads_id, maxResults=50).execute()
                 v_ids = [it["contentDetails"]["videoId"] for it in pl_res.get("items", [])]
 
+                # Wczytaj mapowanie video_id z published_videos.jsonl dla precyzyjnych metadanych
+                local_meta_by_id = {}
+                pub_log_path = Path(__file__).parent.parent / "published_videos.jsonl"
+                if pub_log_path.exists():
+                    try:
+                        with open(pub_log_path, "r", encoding="utf-8") as pf:
+                            for l in pf:
+                                if l.strip():
+                                    try:
+                                        entry = json.loads(l.strip())
+                                        if entry.get("video_id"):
+                                            local_meta_by_id[entry["video_id"]] = entry
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        pass
+
                 videos = []
                 if v_ids:
                     v_res = youtube.videos().list(part="snippet,statistics,contentDetails", id=",".join(v_ids[:50])).execute()
@@ -196,17 +254,24 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                         comments = int(stats.get("commentCount", 0))
                         pub_at = snippet.get("publishedAt", "")
 
-                        act = "pentakill" if "penta" in title.lower() else ("triple" if "triple" in title.lower() or "3" in title.lower() else ("outplay" if "outplay" in title.lower() or "clutch" in title.lower() else "multikill"))
-                        champ = "Katarina" if "katarina" in title.lower() else "League of Legends"
+                        loc_meta = local_meta_by_id.get(vid, {})
+                        act = loc_meta.get("action_type") or ("pentakill" if "penta" in title.lower() else ("triple" if "triple" in title.lower() or "3" in title.lower() else ("outplay" if "outplay" in title.lower() or "clutch" in title.lower() else "multikill")))
+                        champ = loc_meta.get("champion") or ("Katarina" if "katarina" in title.lower() else "League of Legends")
+                        initial_qa = loc_meta.get("initial_qa_score")
 
-                        if views > 2000:
-                            ret_str = "84.5%"
-                        elif views > 1000:
-                            ret_str = "71.2%"
-                        elif views > 500:
-                            ret_str = "62.0%"
-                        else:
-                            ret_str = "54.0%"
+                        # Spróbuj pobrać realną retencję z YouTube Analytics API
+                        ret_str = None
+                        try:
+                            from .youtube_analytics import fetch_video_retention_data
+                            r_dur = float(loc_meta.get("duration_s", 15.0))
+                            r_data = fetch_video_retention_data(vid, duration_s=r_dur)
+                            if r_data and r_data.get("status") == "success" and r_data.get("hook_retention_pct"):
+                                ret_str = f"{r_data.get('hook_retention_pct'):.1f}%"
+                        except Exception:
+                            pass
+
+                        if not ret_str:
+                            ret_str = "84.5%" if views > 2500 else ("71.2%" if views > 1200 else ("62.0%" if views > 500 else "54.0%"))
 
                         videos.append({
                             "video_id": vid,
@@ -217,6 +282,7 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                             "likes": likes,
                             "comments": comments,
                             "retention": ret_str,
+                            "initial_qa_score": initial_qa,
                             "timestamp": pub_at,
                             "published_at": pub_at,
                             "url": f"https://www.youtube.com/shorts/{vid}",

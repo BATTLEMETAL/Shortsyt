@@ -32,16 +32,27 @@ OUTPUT_FILE  = os.path.join(os.path.dirname(__file__), "lol_pre_analysis.json")
 TOP_N        = 10
 CACHE_PATH   = os.path.join(os.path.dirname(__file__), "yt_perf_cache.json")
 
-# Wagi action type - na podstawie historii kanalu (outplay byl #1 z 13k views)
-ACTION_WEIGHTS = {
-    "pentakill":   1.0,
-    "quadrakill":  1.15,
-    "triple":      1.05,
-    "outplay":     1.30,
-    "clutch":      1.25,
-    "double":      0.85,
-    "solo_bolo":   1.20,  # 1v1 clean kill — viral na tym kanale
-}
+def _load_dynamic_action_weights() -> dict:
+    try:
+        from lol_agent.learning_engine import get_learning_directive
+        directive = get_learning_directive()
+        weights = directive.get("action_weights")
+        if weights:
+            return weights
+    except Exception:
+        pass
+    return {
+        "pentakill":   1.0,
+        "quadrakill":  1.0,
+        "triple":      1.0,
+        "outplay":     1.06,
+        "clutch":      1.20,
+        "double":      0.76,
+        "solo_bolo":   1.33,
+    }
+
+# Wagi action type ładowane dynamicznie z silnika samouczenia (learning_directive.json)
+ACTION_WEIGHTS = _load_dynamic_action_weights()
 
 OPTIMAL_MIN = 12
 OPTIMAL_MAX = 35

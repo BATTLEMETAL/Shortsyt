@@ -109,7 +109,10 @@ def authorize_only():
     print("4. Zezwól na dostęp\n")
 
     try:
-        service = get_lol_youtube_service()
+        service = get_lol_youtube_service(allow_interactive=True)
+        if not service:
+            print("\n❌ Autoryzacja anulowana lub nie powiodła się.")
+            sys.exit(1)
         channels = service.channels().list(part="snippet,statistics", mine=True).execute()
 
         print("\n✅ AUTORYZACJA ZAKOŃCZONA SUKCESEM!")
@@ -430,9 +433,7 @@ def run_pipeline(
         except Exception as e:
             log(f"   ⚠️  Smart titles error: {e}")
 
-    # Hook override: dla akcji z JASNA ETYKIETA (kills) zawsze uzyj tej etykiety.
-    # AI generuje kreatywne ale BLEDNE hooki np. 'FIVE KILLS INSTANT' zamiast 'PENTAKILL'.
-    # Etykieta zabojstwa = to co widz OCZEKUJE zobaczyc w pierwszej sekundzie.
+    # Hook fallback: jeśli ani AI ani detector nie wyznaczyły hooka, użyj czystej etykiety
     _KILL_HOOKS = {
         "pentakill":  "PENTAKILL!",
         "quadrakill": "QUADRAKILL!",
@@ -444,10 +445,11 @@ def run_pipeline(
         "baron":      "BARON STEAL!",
         "dragon":     "DRAGON STEAL!",
     }
-    _forced_hook = _KILL_HOOKS.get(analysis["action_type"], "")
-    if _forced_hook:
-        hook_text = _forced_hook
-        log(f"   🎯 Hook override (label): '{hook_text}'")
+    if not hook_text:
+        _forced_hook = _KILL_HOOKS.get(analysis["action_type"], "")
+        if _forced_hook:
+            hook_text = _forced_hook
+            log(f"   🎯 Hook fallback (label): '{hook_text}'")
 
     # Wybierz peak moment: preferuj main_peak_in_clip z momentum analyzera
     peak_moment_in_clip = analysis.get("main_peak_in_clip",
@@ -725,7 +727,11 @@ def run_pipeline(
 
     # Upload
     log("\n🚀 Publishing to YouTube... [ETAP 5/5]")
-    youtube = get_lol_youtube_service()
+    youtube = get_lol_youtube_service(allow_interactive=True)
+    if not youtube:
+        log("❌ Publikacja niemożliwa: brak aktywnego połączenia z YouTube API (token wygasł lub nie został autoryzowany).")
+        log("   Uruchom ręcznie autoryzację: python run_lol_agent.py --authorize")
+        return None
     result = upload_lol_short(
         video_path=final_video,
         title=metadata["title"],
@@ -739,8 +745,94 @@ def run_pipeline(
     if schedule:
         log(f"\n🎉 SUKCES! Short ZAPLANOWANY do publikacji!")
     else:
-        log(f"\n🎉 SUKCES! Short opublikowany!")
+        log(f"\n🎉 SUKCES! Short opublikowany na YouTube!")
     log(f"   🔗 {result['url']}")
+
+    # ── Per-platform copy generation ──────────────────────────────────────────────────────────────────────────
+    _champion_for_copy = champion or analysis.get("champion", "Katarina") or "Katarina"
+    _action_for_copy   = analysis.get("action_type", "outplay") or "outplay"
+    try:
+        from lol_agent.multi_platform_copywriter import generate_all_platform_copy
+        _platform_copy = generate_all_platform_copy(
+            champion=_champion_for_copy,
+            action_type=_action_for_copy,
+            base_metadata=metadata,           # reuses already-generated YT metadata
+            platforms=["tiktok", "instagram", "facebook"],
+        )
+        log(f"   ✍️  Per-platform copy generated: {list(_platform_copy.keys())}")
+    except Exception as _copy_err:
+        log(f"   ⚠️  multi_platform_copywriter error: {_copy_err} — falling back to YT copy")
+        _platform_copy = {}
+
+    # --- TIKTOK MULTI-PLATFORM PUBLISH ---
+    try:
+        from lol_agent.tiktok_publisher import get_tiktok_token_status, upload_tiktok_short
+        tt_status = get_tiktok_token_status()
+        if tt_status.get("valid"):
+            log("\n🚀 Publishing to TikTok... [Multi-Platform]")
+            _tt_copy = _platform_copy.get("tiktok", {})
+            tt_title  = _tt_copy.get("title") or metadata["title"]
+            tt_tags   = _tt_copy.get("hashtags") or metadata.get("tags", [])
+            log(f"   ✍️  TikTok hook: {tt_title[:60]}...")
+            tt_result = upload_tiktok_short(
+                video_path=final_video,
+                title=tt_title,
+                hashtags=tt_tags
+            )
+            if tt_result.get("success"):
+                log(f"   ✅ TikTok opublikowany pomyslnie! Publish ID: {tt_result.get('publish_id')}")
+                result["tiktok"] = tt_result
+            else:
+                log(f"   ⚠️ Blad publikacji TikTok: {tt_result.get('error')}")
+    except Exception as tt_err:
+        log(f"   ⚠️ Wyjatek TikTok publisher: {tt_err}")
+
+    # --- INSTAGRAM MULTI-PLATFORM PUBLISH ---
+    try:
+        from lol_agent.instagram_publisher import get_instagram_token_status, upload_instagram_reel
+        ig_status = get_instagram_token_status()
+        if ig_status.get("valid"):
+            log("\n📸 Publishing to Instagram Reels... [Multi-Platform]")
+            _ig_copy = _platform_copy.get("instagram", {})
+            ig_caption = _ig_copy.get("caption")
+            if not ig_caption:
+                # Legacy fallback
+                ig_tags = metadata.get("tags", [])
+                tag_str = " ".join(f"#{t.strip('#')}" for t in ig_tags if t.strip())
+                ig_caption = f"{metadata['title']}\n\n{tag_str}".strip() if tag_str else metadata["title"]
+            log(f"   ✍️  IG caption (first 60): {ig_caption[:60]}...")
+            ig_result = upload_instagram_reel(
+                video_path=final_video,
+                caption=ig_caption
+            )
+            if ig_result.get("success"):
+                log(f"   ✅ Instagram Reel opublikowany pomyslnie! URL: {ig_result.get('url')}")
+                result["instagram"] = ig_result
+            else:
+                log(f"   ⚠️ Blad publikacji Instagram: {ig_result.get('error')}")
+    except Exception as ig_err:
+        log(f"   ⚠️ Wyjatek Instagram publisher: {ig_err}")
+
+    # --- FACEBOOK PAGE PUBLISH ---
+    try:
+        from lol_agent.facebook_publisher import get_facebook_token_status, upload_facebook_reel
+        fb_status = get_facebook_token_status()
+        if fb_status.get("valid") and fb_status.get("can_publish"):
+            log("\n📘 Publishing to Facebook Page... [Multi-Platform]")
+            _fb_copy = _platform_copy.get("facebook", {})
+            fb_caption = _fb_copy.get("caption") or metadata["title"]
+            log(f"   ✍️  FB post (first 60): {fb_caption[:60]}...")
+            fb_result = upload_facebook_reel(
+                video_path=final_video,
+                caption=fb_caption
+            )
+            if fb_result.get("success"):
+                log(f"   ✅ Facebook Reel opublikowany pomyslnie! URL: {fb_result.get('url')}")
+                result["facebook"] = fb_result
+            else:
+                log(f"   ⚠️ Blad publikacji Facebook: {fb_result.get('error')}")
+    except Exception as fb_err:
+        log(f"   ⚠️ Wyjatek Facebook publisher: {fb_err}")
 
     # Przypiety komentarz (engagement signal dla algorytmu)
     pinned_comment = (
@@ -759,6 +851,15 @@ def run_pipeline(
         "champion": champion,
         "thumbnail": thumbnail_path,
         "scheduled_publish_at": schedule if schedule else None,
+        # Per-platform IDs for metric collection (used by refresh_token_auto.py 24h+ later)
+        "tiktok_publish_id": result.get("tiktok", {}).get("publish_id"),
+        "instagram_media_id": result.get("instagram", {}).get("media_id"),
+        "facebook_video_id": result.get("facebook", {}).get("video_id"),
+        "platform_copy": {
+            "tiktok_title":    _platform_copy.get("tiktok", {}).get("title"),
+            "instagram_title": _platform_copy.get("instagram", {}).get("title"),
+            "facebook_title":  _platform_copy.get("facebook", {}).get("title"),
+        },
     }
     pub_log_path = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
     with open(pub_log_path, "a", encoding="utf-8") as f:
@@ -912,6 +1013,11 @@ def check_duplicate_clip(source_path: str, original_path: str = None) -> tuple:
                     if not line.strip():
                         continue
                     item = json.loads(line.strip())
+                    # Bezpośrednia weryfikacja source_path (chroni przed publikacją tego samego pliku)
+                    pub_source = os.path.basename(item.get("source_path", "")).lower()
+                    if pub_source and (pub_source in filenames_to_check or any(s in pub_source for s in stems_to_check if len(s) >= 8)):
+                        return True, f"Plik źródłowy był już opublikowany ({pub_source})", item
+
                     thumb = item.get("thumbnail", "").lower()
                     title = item.get("title", "").lower()
                     for stem in stems_to_check:

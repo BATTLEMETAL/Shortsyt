@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 import uuid
 
-# Dodaj lol_agent do path
+# Dodaj lol_agent oraz root projektu do path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 class PipelineStatus(str, Enum):
@@ -245,16 +246,21 @@ def _run_pipeline(
         src_total_dur = frame_count / fps if fps > 0 else 30.0
         cap.release()
 
-        # Jeśli przekazano domyślne okno (clip_start == 0.0 i clip_end <= 15.0), a klip ma > 20s:
-        # Sprawdzamy czy akcja nie toczy się w dalszej części wideo, aby nie uciąć walki ani nie wyrenderować samego biegania!
-        if src_total_dur > 20.0 and clip_start == 0.0 and clip_end <= 15.0:
-            _update("Weryfikacja okna akcji", 7, f"Klip trwa {src_total_dur:.1f}s — sprawdzam pozycję akcji...")
+        # Autocentrowanie okna akcji (Action Hook Guard):
+        # Jeśli przekazano domyślne okno (clip_start == 0.0 i pełny lub domyślny czas wideo) a klip trwa > 10s:
+        # Wykrywamy rzeczywiste ognisko walki, eliminując martwy czas przed walką i po zakończeniu akcji.
+        is_default_window = (clip_start == 0.0 and (clip_end <= 15.0 or clip_end >= 20.0 or clip_end >= src_total_dur - 1.5))
+        if src_total_dur > 10.0 and is_default_window:
+            _update("Weryfikacja okna akcji", 7, f"Klip trwa {src_total_dur:.1f}s — dopasowuję optymalne okno akcji...")
             try:
-                from lol_agent.lol_frag_detector import analyze_clip_frags, compute_optimal_clip_window
+                try:
+                    from lol_agent.lol_frag_detector import analyze_clip_frags, compute_optimal_clip_window
+                except ImportError:
+                    from lol_frag_detector import analyze_clip_frags, compute_optimal_clip_window
                 f_res = analyze_clip_frags(source_path, sample_fps=1.0)
                 auto_s, auto_e, auto_p, auto_segs = compute_optimal_clip_window(f_res, src_total_dur, action_type=action_type)
-                if auto_s > 2.0 or (auto_e - auto_s) > (clip_end - clip_start):
-                    _update("Autocentrowanie na akcję", 8, f"Wykryto akcję poza oknem początkowym! Przesuwam na {auto_s:.1f}s - {auto_e:.1f}s")
+                if auto_s > 1.5 or (auto_e < clip_end - 1.5) or (auto_e - auto_s) > (clip_end - clip_start):
+                    _update("Autocentrowanie na akcję", 8, f"Wykryto ognisko walki: {auto_s:.1f}s - {auto_e:.1f}s (dur={auto_e-auto_s:.1f}s, peak={auto_p:.1f}s)")
                     clip_start = auto_s
                     clip_end = auto_e
                     peak_moment = auto_p
@@ -299,14 +305,16 @@ def _run_pipeline(
             peaks = _detect_events(
                 source_path, clip_start, clip_end,
                 clip_duration=clip_end - clip_start,
-                game_profile=game_type
+                game_profile=game_type,
+                action_type=action_type
             )
             _update("Kill detection gotowa", 12, f"Peaks: {peaks}")
         except Exception as e:
             try:
                 peaks = detect_kill_events(
                     source_path, clip_start, clip_end,
-                    clip_duration=clip_end - clip_start
+                    clip_duration=clip_end - clip_start,
+                    action_type=action_type
                 )
                 _update("Kill detection gotowa (fallback)", 12, f"Peaks: {peaks}")
             except Exception as e2:
@@ -314,15 +322,33 @@ def _run_pipeline(
                 peaks = []
 
 
-        # Sprawdź czy kille mają lukę > 3.5s (martwe bieganie) i czy potrzeba jump-cut
-        # Dla SOLO BOLO oraz klipów o ciągłej akcji <= 26s nie stosujemy jump-cutów
+        # Reżyser AI: Clip-Adaptive Montage Director
+        director_dec = None
+        try:
+            try:
+                from lol_agent.lol_montage_director import direct_clip_montage
+            except ImportError:
+                from lol_montage_director import direct_clip_montage
+            director_dec = direct_clip_montage(
+                action_type=action_type,
+                champion_name=champion_name,
+                duration=clip_end - clip_start,
+                peaks=peaks,
+            )
+            _update(f"Reżyser AI: {director_dec.archetype}", 13, director_dec.rationale)
+            tuning_prof.update(director_dec.tuning_profile)
+        except Exception as de:
+            print(f"[pipeline_runner] Montage director warning: {de}")
+
+        # Sprawdź czy kille mają lukę > 4.0s (martwe bieganie) i czy potrzeba jump-cut
+        # Jeśli reżyser AI zakazał jump-cut (np. CHAOTIC_TEAMFIGHT lub SOLO_DUEL), nie tniemy!
         total_clip_span = clip_end - clip_start
-        if action_type.lower() in ("solo_bolo", "solo", "1v1") or total_clip_span <= 26.0:
+        if (director_dec and not director_dec.allow_jump_cut) or action_type.lower() in ("solo_bolo", "solo", "1v1") or total_clip_span <= 26.0:
             combat_segments = None
         elif not combat_segments and peaks and len(peaks) >= 2:
             sorted_p = sorted(peaks, key=lambda x: x[0])
             gaps = [sorted_p[i+1][0] - sorted_p[i][0] for i in range(len(sorted_p)-1)]
-            if any(g > 3.5 for g in gaps):
+            if any(g > 4.0 for g in gaps):
                 try:
                     from lol_agent.lol_momentum_analyzer import find_combat_segments
                 except ImportError:
@@ -348,8 +374,11 @@ def _run_pipeline(
         smart_cam_track = None
         if use_smart_camera:
             try:
-                from lol_agent.smart_camera import find_action_path
-                smart_cam_track = find_action_path(source_path, clip_start, clip_end)
+                try:
+                    from lol_agent.smart_camera import find_action_path
+                except ImportError:
+                    from smart_camera import find_action_path
+                smart_cam_track = find_action_path(source_path, clip_start, clip_end, peaks=peaks)
             except Exception as se:
                 print(f"Smart Camera QA track err: {se}")
         if validate_pre_flight:
@@ -376,15 +405,28 @@ def _run_pipeline(
 
                 is_solo = action_type.lower() in ("solo_bolo", "solo", "1v1")
                 if not is_solo and qa_res.suggested_combat_segments and not combat_segments:
-                    combat_segments = qa_res.suggested_combat_segments
-                    _update("Jump-Cut z QA", 18, f"QA zaleciło segmenty jump-cut: {combat_segments}")
+                    if director_dec and not director_dec.allow_jump_cut:
+                        print("[pipeline_runner] Jump-cut z QA pominięty — Reżyser AI nakazał montaż ciągły (allow_jump_cut=False)")
+                    elif total_clip_span <= 26.0:
+                        print(f"[pipeline_runner] Jump-cut z QA pominięty — klip trwa {total_clip_span:.1f}s (<=26s), montaż ciągły zachowuje pełną walkę")
+                    else:
+                        combat_segments = qa_res.suggested_combat_segments
+                        _update("Jump-Cut z QA", 18, f"QA zaleciło segmenty jump-cut: {combat_segments}")
                 elif not is_solo and qa_res.suggested_combat_segments is None and combat_segments:
                     # QA wykryło ciągłą walkę (np. zabójstwo w luce bez banera) — anulujemy jump-cut
                     combat_segments = None
                     _update("Płynny montaż z QA", 18, "QA potwierdziło ciągłą walkę — anulowano jump-cut aby zachować wszystkie fragi")
 
-                if not is_solo and qa_res.adjusted_trim_start > clip_start and not combat_segments:
+                if qa_res.adjusted_trim_start > clip_start and not combat_segments:
+                    start_delta = qa_res.adjusted_trim_start - clip_start
                     clip_start = qa_res.adjusted_trim_start
+                    if peaks:
+                        peaks = [(max(0.1, round(p[0] - start_delta, 2)), p[1]) for p in peaks]
+                    if peak_moment > start_delta:
+                        peak_moment = max(0.5, round(peak_moment - start_delta, 1))
+
+                if qa_res.adjusted_trim_end < clip_end and not combat_segments:
+                    clip_end = qa_res.adjusted_trim_end
 
                 if is_solo:
                     combat_segments = None
@@ -399,20 +441,31 @@ def _run_pipeline(
             _update("QA Auto-Retry", 19, f"Score {qa_score}/100 < {QA_RETRY_THRESHOLD} — diagnozuję i próbuję naprawić...")
             fixed = False
             clip_start_orig, clip_end_orig = clip_start, clip_end
-            # 1) Outro za długie — skróć clip_end do last_kill + 2.5s
-            # peaks mogą być tuple (ts, label) lub dict {"timestamp": ts}
+            peaks_orig = list(peaks)
+            peak_moment_orig = peak_moment
+
             def _peak_ts(p):
                 return p[0] if isinstance(p, (tuple, list)) else p["timestamp"]
-            # UWAGA: peaks timestamps są RELATIVE do clip_start; clip_start/clip_end są ABSOLUTNE
-            last_kill_t_rel = max((_peak_ts(p) for p in peaks), default=None)
-            last_kill_t_abs = (clip_start + last_kill_t_rel) if last_kill_t_rel is not None else None
-            # 1) Outro za długie — skróć clip_end do last_kill + 2.5s (tylko dla pojedynczego klipu)
+
+            raw_last_p = max((_peak_ts(p) for p in peaks), default=None)
+            if raw_last_p is not None:
+                last_kill_t_abs = (clip_start + raw_last_p) if raw_last_p < (clip_start - 0.2) else raw_last_p
+            else:
+                last_kill_t_abs = None
+
+            raw_first_p = min((_peak_ts(p) for p in peaks), default=None)
+            if raw_first_p is not None:
+                first_kill_t_abs = (clip_start + raw_first_p) if raw_first_p < (clip_start - 0.2) else raw_first_p
+            else:
+                first_kill_t_abs = None
+
+            # 1) Outro za długie — skróć clip_end do last_kill + 1.8s (tylko dla pojedynczego klipu)
             if not combat_segments:
                 for detail in qa_details:
                     detail_low = detail.lower()
                     if any(kw in detail_low for kw in ("akcja po ostatnim", "pacing", "długość")):
                         if last_kill_t_abs is not None:
-                            new_end = round(last_kill_t_abs + 2.5, 1)
+                            new_end = round(last_kill_t_abs + 1.8, 1)
                             if new_end < clip_end:
                                 _update("QA Fix: Outro", 19, f"Skracam outro: clip_end {clip_end}→{new_end}s")
                                 clip_end = new_end
@@ -423,20 +476,27 @@ def _run_pipeline(
                 for detail in qa_details:
                     detail_low = detail.lower()
                     if any(kw in detail_low for kw in ("poza krawędzią", "poza kadrem")):
-                        if last_kill_t_abs is not None:
-                            first_kill_t_abs = clip_start + min((_peak_ts(p) for p in peaks), default=last_kill_t_rel)
-                            new_start = round(max(clip_start, first_kill_t_abs - 4.0), 1)
+                        if first_kill_t_abs is not None:
+                            new_start = round(max(clip_start, first_kill_t_abs - 3.5), 1)
                             if new_start > clip_start:
+                                start_delta = new_start - clip_start
                                 _update("QA Fix: Intro", 19, f"Przesuwam intro: clip_start {clip_start}→{new_start}s")
                                 clip_start = new_start
+                                if peaks:
+                                    peaks = [(max(0.1, round(p[0] - start_delta, 2)), p[1]) for p in peaks]
+                                if peak_moment > start_delta:
+                                    peak_moment = max(0.5, round(peak_moment - start_delta, 1))
                                 fixed = True
                         break
             if fixed:
                 smart_cam_track2 = smart_cam_track
                 if use_smart_camera:
                     try:
-                        from lol_agent.smart_camera import find_action_path
-                        smart_cam_track2 = find_action_path(source_path, clip_start, clip_end)
+                        try:
+                            from lol_agent.smart_camera import find_action_path
+                        except ImportError:
+                            from smart_camera import find_action_path
+                        smart_cam_track2 = find_action_path(source_path, clip_start, clip_end, peaks=peaks)
                     except Exception:
                         pass
                 try:
@@ -458,9 +518,13 @@ def _run_pipeline(
                         _update("QA Po Naprawie", 19, f"QA {qa_status} ({qa_score}/100) po auto-fix")
                     else:
                         clip_start, clip_end = clip_start_orig, clip_end_orig
+                        peaks = list(peaks_orig)
+                        peak_moment = peak_moment_orig
                         _update("QA Fix Cofnięty", 19, f"Auto-fix pogorszył ({qa_res2.qa_score}) — przywracam oryginał")
                 except Exception as qe2:
                     clip_start, clip_end = clip_start_orig, clip_end_orig
+                    peaks = list(peaks_orig)
+                    peak_moment = peak_moment_orig
                     _update("QA Retry Error", 19, f"QA retry err: {qe2}")
         # ─────────────────────────────────────────────────────────────────────────
 
@@ -476,7 +540,10 @@ def _run_pipeline(
         # Krok 1d — Minimap zone detection (kontekst lokalizacji akcji dla tytułu)
         map_zone_info = {"zone": "unknown", "zone_label": "", "confidence": 0.0}
         try:
-            from lol_agent.lol_minimap_analyzer import detect_map_zone
+            try:
+                from lol_agent.lol_minimap_analyzer import detect_map_zone
+            except ImportError:
+                from lol_minimap_analyzer import detect_map_zone
             # peak_moment może być relative (do clip_start) lub absolute — normalizujemy
             abs_peak = (clip_start + peak_moment) if peak_moment < (clip_end - clip_start + 5) else peak_moment
             abs_peak = min(abs_peak, clip_end - 0.5)
@@ -508,6 +575,37 @@ def _run_pipeline(
         )
 
         check_cancellation()
+
+        # Krok 2b — Post-Flight Quality Validation (realna ocena wyrenderowanego wideo)
+        try:
+            try:
+                from lol_agent.lol_quality_validator import validate_rendered_short
+            except ImportError:
+                from lol_quality_validator import validate_rendered_short
+
+            # Przelicz znaczniki eliminacji na lokalną oś czasu wyrenderowanego wideo (clip_start -> 0.0)
+            rendered_peaks = None
+            if peaks:
+                is_source = any(p[0] > (clip_end - clip_start) for p in peaks)
+                rendered_peaks = [
+                    (round(p[0] - clip_start, 2) if (is_source and p[0] >= clip_start) else round(p[0], 2), p[1])
+                    for p in peaks
+                ]
+
+            post_qa = validate_rendered_short(
+                rendered_path=str(output),
+                peaks=rendered_peaks,
+                action_type=action_type,
+                tuning_profile=tuning_prof,
+            )
+            if post_qa.rejection_code != "FILE_MISSING":
+                qa_status = post_qa.qa_status
+                qa_score = post_qa.qa_score
+                qa_details = post_qa.diagnostic_details
+                _update("Post-Flight QA", 88, f"Realna ocena montażu: {qa_status} ({qa_score}/100)")
+        except Exception as post_qa_err:
+            print(f"[pipeline_runner] Post-flight QA warning: {post_qa_err}")
+
         _update("Generowanie miniaturki & metadanych", 90, "Tworzę miniaturkę 9:16 i tytuł...")
         
         # Miniaturka
@@ -623,18 +721,48 @@ def _run_pipeline(
             _state.description = meta.get("description") or ""
             _state.pinned_comment = meta.get("pinned_comment") or ""
             _state.finished_at = datetime.now().isoformat()
+            _state.qa_status = qa_status
+            _state.qa_score = int(qa_score)
+            _state.qa_details = qa_details
 
             _state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Output: {output}")
 
         # Zapisz w pamięci uczenia (render wygenerowany, oczekuje na decyzję)
         try:
-            from lol_agent.user_learning_memory import record_render_generated
+            try:
+                from lol_agent.user_learning_memory import record_render_generated
+            except ImportError:
+                from user_learning_memory import record_render_generated
             record_render_generated(
                 filename=str(output),
                 action_type=action_type,
                 duration=float(clip_duration or 15.0),
                 qa_score=int(qa_score)
             )
+        except Exception:
+            pass
+
+        # Zapisz metadane renderu do .meta.json obok pliku wyjściowego dla pętli ewaluacji
+        try:
+            from .helpers import _save_meta
+            mei_info = {}
+            if 'post_qa' in locals() and hasattr(post_qa, 'get_mei_dict'):
+                mei_info = post_qa.get_mei_dict()
+            elif 'qa_res' in locals() and hasattr(qa_res, 'get_mei_dict'):
+                mei_info = qa_res.get_mei_dict()
+
+            _save_meta(output_filename, {
+                "qa_score": int(qa_score),
+                "qa_status": qa_status,
+                "qa_details": qa_details,
+                "duration": float(clip_duration or 15.0),
+                "action_type": action_type,
+                "champion_name": champion_name,
+                "rank": rank,
+                "output_path": str(output),
+                "rendered_at": datetime.now().isoformat(),
+                "mei": mei_info,
+            })
         except Exception:
             pass
 

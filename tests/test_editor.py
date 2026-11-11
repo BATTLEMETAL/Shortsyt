@@ -232,3 +232,69 @@ def test_cut_clip_smooth_seams_adds_audio_fade(tmp_path, monkeypatch):
     vf_idx = first_cmd.index("-vf")
     assert "setpts=PTS-STARTPTS" in first_cmd[vf_idx + 1]
 
+
+def test_freeze_frame_skipped_when_action_starts_immediately():
+    """
+    Gdy pierwszy kill następuje w pierwszych 3 sekundach (_first_kill_t <= 3.0s),
+    freeze-frame hook MUSI być pominięty, aby nie niszczyć bezpośredniego uderzenia w widza.
+    """
+    peaks = [(1.8, "DOUBLE KILL"), (7.5, "KILL")]
+    _first_kill_t = min((t_k for (t_k, _) in (peaks or [])), default=999.0)
+    _action_starts_immediately = _first_kill_t <= 3.0
+    _hook = "TRIPLE KILL!"
+    _do_freeze = (bool(_hook) and not _action_starts_immediately and "triple" not in ("solo_bolo", "solo", "1v1"))
+    assert _action_starts_immediately is True
+    assert _do_freeze is False
+
+
+def test_freeze_frame_applied_when_first_kill_is_delayed():
+    """
+    Gdy pierwszy kill następuje dopiero po > 3s (np. 5.5s),
+    freeze-frame hook powinien być aktywny na klatce 0.0s (0.6s stop-klatka zatrzymująca scrollowanie).
+    """
+    peaks = [(5.5, "DOUBLE KILL"), (12.0, "TRIPLE KILL")]
+    _first_kill_t = min((t_k for (t_k, _) in (peaks or [])), default=999.0)
+    _action_starts_immediately = _first_kill_t <= 3.0
+    _hook = "INSANE OUTPLAY!"
+    _do_freeze = (bool(_hook) and not _action_starts_immediately and "outplay" not in ("solo_bolo", "solo", "1v1"))
+    assert _action_starts_immediately is False
+    assert _do_freeze is True
+
+
+def test_freeze_frame_always_skipped_for_solo_bolo():
+    """
+    W trybie Solo Bolo freeze-frame jest ZAWSZE pomijany, ponieważ walka 1v1
+    jest montowana od początku bez sztucznych przerw.
+    """
+    peaks = [(6.0, "SOLO BOLO")]
+    _first_kill_t = 6.0
+    _action_starts_immediately = False
+    _hook = "SOLO BOLO"
+    _do_freeze = (bool(_hook) and not _action_starts_immediately and "solo_bolo" not in ("solo_bolo", "solo", "1v1"))
+    assert _do_freeze is False
+
+
+def test_get_seamless_loop_cta():
+    from lol_agent.lol_editor import get_seamless_loop_cta
+
+    # 1. Wrong move hook loops into ending CTA
+    cta1 = get_seamless_loop_cta("WRONG MOVE - WATCH WHAT HAPPENS", "outplay")
+    assert cta1 == "AND THIS IS WHY IT WAS A..."
+
+    # 2. Solo bolo hook
+    cta2 = get_seamless_loop_cta("Clean Solo Bolo - 1v1 Masterclass", "solo_bolo")
+    assert cta2 == "AND THAT'S HOW YOU PLAY A..."
+
+    # 3. 1v2 / Can he win hook
+    cta3 = get_seamless_loop_cta("1v2 - CAN HE WIN?", "outplay")
+    assert cta3 == "REWATCH TO SEE HOW HE WINS A..."
+
+    # 4. Multikills
+    cta4 = get_seamless_loop_cta("PENTAKILL - DID ENEMY FF?", "pentakill")
+    assert cta4 == "AND THAT'S HOW YOU GET A..."
+
+    cta5 = get_seamless_loop_cta("DOUBLE KILL - CLEAN OR LUCKY?", "double")
+    assert cta5 == "AND THAT'S HOW YOU PULL OFF A..."
+
+
+
