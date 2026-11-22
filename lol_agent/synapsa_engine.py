@@ -48,6 +48,7 @@ _JSON_END = "<<<SYNAPSA_JSON_END>>>"
 _BANNED_TITLE_PHRASES = (
     "bad idea", "hunting grounds", "massacre", "reset machine", "mistake", "regret",
     "rate 1-10", "rate this", "1 to 10", "part #", "road to",
+    "bolo de", "parte ", "em barão", "em barao", "ela pensou", "só havia",
 )
 _SPELL_TERMS = ("flash", "flashed", "ignite", "exhaust", "zhonya", "teleport", "tower dive", "dived")
 _RANK_PREFIX_RE = re.compile(r"^(master|diamond|challenger|grandmaster|emerald|platinum|gold|silver|bronze)\s+", re.I)

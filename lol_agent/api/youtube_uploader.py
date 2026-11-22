@@ -5,6 +5,7 @@ Używa istniejącego client_secret.json i zapisuje token do accounts/lol_token.p
 import copy
 import os
 import pickle
+import threading
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -415,6 +416,42 @@ def infer_frag_type_from_title(title: str) -> str:
     elif "solo bolo" in t or "1v1" in t or "solo" in t:
         return "solo_bolo"
     return "outplay"
+
+
+def _ensure_youtube_thumbnail_after_processing(
+    video_id: str,
+    thumb_path: str,
+    delay_seconds: int = 35,
+) -> bool:
+    """Czeka na zakończenie transkodowania HD przez YouTube i potwierdza miniaturkę 9:16."""
+    if not video_id or not thumb_path or not os.path.exists(thumb_path):
+        return False
+    if delay_seconds > 0:
+        time.sleep(delay_seconds)
+    try:
+        creds = get_valid_credentials(require_token=False, ignore_refresh_error=True)
+        if creds is None:
+            return False
+        youtube = build("youtube", "v3", credentials=creds)
+        for attempt in range(4):
+            try:
+                v_info = youtube.videos().list(part="processingDetails", id=video_id).execute()
+                items = v_info.get("items") or []
+                p_status = (items[0].get("processingDetails") or {}).get("processingStatus", "") if items else ""
+                if p_status == "succeeded" or attempt == 3:
+                    youtube.thumbnails().set(
+                        videoId=video_id,
+                        media_body=MediaFileUpload(str(thumb_path), mimetype="image/jpeg"),
+                    ).execute()
+                    _safe_print(f"[YouTube] ✅ Potwierdzono miniaturkę 9:16 po przetworzeniu HD ({video_id})")
+                    return True
+            except Exception:
+                if attempt == 3:
+                    return False
+            time.sleep(15)
+    except Exception:
+        return False
+    return False
 
 
 def _safe_print(msg: str) -> None:
@@ -951,6 +988,13 @@ def upload_video(
         if not thumb_uploaded:
             print(f"[YouTube] ❌ Nie udało się automatycznie wgrać miniaturki po 3 próbach.")
 
+        if not (os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("TESTING") == "true"):
+            threading.Thread(
+                target=_ensure_youtube_thumbnail_after_processing,
+                args=(video_id, str(thumb_target), 35),
+                daemon=True,
+            ).start()
+
     # 2. Automatyczne dodawanie przypiętego komentarza pod Shortem
     # YouTube API nie pozwala dodawać komentarzy do filmów ze statusem private/scheduled (błąd 403 commentsDisabled).
     # Dla filmów zaplanowanych komentarz trafia do kolejki (pending_comments.json) i zostanie
@@ -982,16 +1026,6 @@ def upload_video(
         "comment_id": comment_id,
         "comment_pending": comment_pending,
     }
-
-
-def _safe_print(msg: str) -> None:
-    try:
-        print(msg)
-    except UnicodeEncodeError:
-        try:
-            print(msg.encode("ascii", errors="replace").decode("ascii"))
-        except Exception:
-            pass
 
 
 def _post_comment_with_retry(youtube, video_id: str, text: str, retries: int = 3) -> Optional[str]:
@@ -1095,6 +1129,15 @@ def flush_pending_comments(queue_path: Optional[Path] = None) -> Dict[str, Any]:
             status = "unknown"
 
         if status == "public":
+            try:
+                saved_thumb = LOL_AGENT_DIR / "thumbnails" / f"{vid}_thumb.jpg"
+                if saved_thumb.is_file():
+                    youtube.thumbnails().set(
+                        videoId=vid,
+                        media_body=MediaFileUpload(str(saved_thumb), mimetype="image/jpeg"),
+                    ).execute()
+            except Exception:
+                pass
             cid = _post_comment_with_retry(youtube, vid, txt, retries=2)
             if cid:
                 sent.append({"video_id": vid, "comment_id": cid})

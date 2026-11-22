@@ -5,7 +5,7 @@ import {
   apiGetOutputMetadata, apiSaveOutputMetadata, OutputMetadata, apiStartPipeline,
   apiRecordCorrection, apiPublishMulti, apiGetLatestOvernight, OvernightBatchManifest,
   apiGetBackendBaseUrl, apiUploadOutputThumbnail, apiRegenerateOutputThumbnail,
-  apiPreviewSocialCopy, parseError
+  apiPreviewSocialCopy, apiGetSocialAnalytics, apiGetTikTokCreatorInfo, TikTokCreatorInfo, parseError
 } from "../lib/api";
 import {
   Video, RefreshCw, Upload, Play, Film, FolderOpen, Image as ImageIcon,
@@ -58,6 +58,19 @@ export default function Outputs() {
   const [selTt, setSelTt] = useState(true);
   const [selIg, setSelIg] = useState(true);
   const [selFb, setSelFb] = useState(true);
+  const [ttPrivacy, setTtPrivacy] = useState<string>("");
+  const [ttAllowComment, setTtAllowComment] = useState(false);
+  const [ttAllowDuet, setTtAllowDuet] = useState(false);
+  const [ttAllowStitch, setTtAllowStitch] = useState(false);
+  const [ttDisclose, setTtDisclose] = useState(false);
+  const [ttYourBrand, setTtYourBrand] = useState(false);
+  const [ttBrandedContent, setTtBrandedContent] = useState(false);
+  const [ttLearningInfo, setTtLearningInfo] = useState<{ analyzed_videos: number; recommended_hashtags: string[] } | null>(null);
+  const [ttCreatorInfo, setTtCreatorInfo] = useState<TikTokCreatorInfo | null>(null);
+  const [ttCreatorLoading, setTtCreatorLoading] = useState(false);
+  const [ttPostMode, setTtPostMode] = useState<'direct' | 'inbox'>('direct');
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
+  const [uploadVideoDurationSec, setUploadVideoDurationSec] = useState<number | null>(null);
   const [multiResults, setMultiResults] = useState<Record<string, any> | null>(null);
 
   const handleSelectPlatformPreset = (preset: 'yt' | 'tt' | 'ig' | 'fb' | 'all') => {
@@ -105,6 +118,24 @@ export default function Outputs() {
   useEffect(() => { fetchOutputs(); }, []);
 
   useEffect(() => {
+    let active = true;
+    apiGetSocialAnalytics("tiktok", false)
+      .then((res) => {
+        const learning = res?.tiktok_learning;
+        if (active && learning) {
+          setTtLearningInfo({
+            analyzed_videos: Number(learning.analyzed_videos || 0),
+            recommended_hashtags: Array.isArray(learning.recommended_hashtags)
+              ? learning.recommended_hashtags.map((t: any) => String(t).replace(/^#/, "").toLowerCase()).filter(Boolean)
+              : [],
+          });
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
     const st = (location.state || {}) as { publishFilename?: string; playFilename?: string };
     const targetPub = st.publishFilename;
     const targetPlay = st.playFilename;
@@ -121,6 +152,9 @@ export default function Outputs() {
     try {
       const url = await apiGetOutputUrl(filename);
       setSelectedVideoUrl(url);
+      setTimeout(() => {
+        document.querySelector("video")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 120);
     } catch { }
   };
 
@@ -224,22 +258,26 @@ export default function Outputs() {
   const [uploadOriginalTitle, setUploadOriginalTitle] = useState("");
   const [uploadModalMeta, setUploadModalMeta] = useState<OutputMetadata | null>(null);
   const [tiktokCopyText, setTiktokCopyText] = useState("");
+  const [igCopyText, setIgCopyText] = useState("");
+  const [fbCopyText, setFbCopyText] = useState("");
   const [tiktokCopied, setTiktokCopied] = useState(false);
 
-  const buildLocalTiktokCopy = (rawTitle: string, champion?: string, actionType?: string) => {
+  const buildLocalTiktokCopy = (rawTitle: string, champion?: string, _actionType?: string) => {
     const clean = (rawTitle || "").replace(/#\S+/g, "").replace(/\s{2,}/g, " ").trim();
     const champTag = (champion || "katarina").replace(/['\s]/g, "").toLowerCase();
-    const actMap: Record<string, string> = {
-      pentakill: "pentakill",
-      quadrakill: "quadrakill",
-      triple: "triplekill",
-      double: "doublekill",
-      solo_bolo: "1v1",
-      clutch: "lolclutch",
-      steal: "dragonsteal",
-    };
-    const actTag = actMap[(actionType || "outplay").toLowerCase()] || "outplay";
-    return `${clean}\n#leagueoflegends #${champTag} #${champTag}mains #${actTag} #fyp`;
+    return `${clean}\n#outplayed #pcgaming #leagueoflegends #lolhighlights #${champTag}`.trim();
+  };
+
+  const buildLocalIgCopy = (rawTitle: string, champion?: string) => {
+    const clean = (rawTitle || "").replace(/#\S+/g, "").replace(/\s{2,}/g, " ").trim();
+    const champTag = (champion || "katarina").replace(/['\s]/g, "").toLowerCase();
+    return `${clean}\n#leagueoflegends #${champTag} #${champTag}mains #loloutplay #reels`.trim();
+  };
+
+  const buildLocalFbCopy = (rawTitle: string, champion?: string) => {
+    const clean = (rawTitle || "").replace(/#\S+/g, "").replace(/\s{2,}/g, " ").trim();
+    const champTag = (champion || "katarina").replace(/['\s]/g, "").toLowerCase();
+    return `${clean} — sprawdź tę akcję! #LeagueOfLegends #${champTag} #Gaming`.trim();
   };
 
   const openUploadModal = async (filename: string) => {
@@ -247,21 +285,49 @@ export default function Outputs() {
     setMultiResults(null);
     setThumbError(null);
     setTiktokCopied(false);
+    setTtPrivacy("");
+    setTtAllowComment(false);
+    setTtAllowDuet(false);
+    setTtAllowStitch(false);
+    setTtDisclose(false);
+    setTtYourBrand(false);
+    setTtBrandedContent(false);
+    setTtPostMode("direct");
+    setTtCreatorInfo(null);
+    setTtCreatorLoading(true);
+    setUploadPreviewUrl(null);
+    setUploadVideoDurationSec(null);
     setUploadModal({ filename });
+
+    apiGetTikTokCreatorInfo()
+      .then((info) => setTtCreatorInfo(info))
+      .catch(() => setTtCreatorInfo(null))
+      .finally(() => setTtCreatorLoading(false));
+    apiGetOutputUrl(filename)
+      .then((u) => setUploadPreviewUrl(u))
+      .catch(() => {});
+
     try {
       const meta = await apiGetOutputMetadata(filename);
       setUploadModalMeta(meta);
+      if (meta.duration && Number(meta.duration) > 0) {
+        setUploadVideoDurationSec(Number(meta.duration));
+      }
       const initialTitle = meta.title || "Sick Play! #Shorts #LoL";
       setUploadTitle(initialTitle);
       setUploadOriginalTitle(initialTitle);
       setUploadDesc(meta.description || "");
       setTiktokCopyText(buildLocalTiktokCopy(initialTitle, meta.champion_name, meta.action_type));
+      setIgCopyText(buildLocalIgCopy(initialTitle, meta.champion_name));
+      setFbCopyText(buildLocalFbCopy(initialTitle, meta.champion_name));
       apiPreviewSocialCopy({
         title: initialTitle,
         champion_name: meta.champion_name || "Katarina",
         action_type: meta.action_type || "outplay",
       }).then((prev) => {
         if (prev?.tiktok_copy_text) setTiktokCopyText(prev.tiktok_copy_text);
+        if (prev?.copies?.instagram?.caption) setIgCopyText(prev.copies.instagram.caption);
+        if (prev?.copies?.facebook?.caption) setFbCopyText(prev.copies.facebook.caption);
       }).catch(() => {});
     } catch {
       setUploadModalMeta(null);
@@ -270,6 +336,8 @@ export default function Outputs() {
       setUploadOriginalTitle(fallbackTitle);
       setUploadDesc("");
       setTiktokCopyText(buildLocalTiktokCopy(fallbackTitle, "Katarina", "outplay"));
+      setIgCopyText(buildLocalIgCopy(fallbackTitle, "Katarina"));
+      setFbCopyText(buildLocalFbCopy(fallbackTitle, "Katarina"));
     }
   };
 
@@ -292,6 +360,25 @@ export default function Outputs() {
       setUploadResult({ ok: false, error: "Wybierz przynajmniej jedną platformę do publikacji!" });
       return;
     }
+    const maxTtSec = ttCreatorInfo?.ok ? ttCreatorInfo.max_video_post_duration_sec : undefined;
+    if (selTt && maxTtSec && uploadVideoDurationSec && uploadVideoDurationSec > maxTtSec) {
+      setUploadResult({ ok: false, error: `Video duration (${Math.round(uploadVideoDurationSec)}s) exceeds creator max (${maxTtSec}s).` });
+      return;
+    }
+    if (selTt && ttPostMode === "direct") {
+      if (!ttPrivacy) {
+        setUploadResult({ ok: false, error: "Wybierz poziom prywatności TikTok (Who can view this video)." });
+        return;
+      }
+      if (ttDisclose && !ttYourBrand && !ttBrandedContent) {
+        setUploadResult({ ok: false, error: "Przy zaznaczonym Disclose video content wybierz Your brand i/lub Branded content." });
+        return;
+      }
+      if (ttDisclose && ttBrandedContent && ttPrivacy === "SELF_ONLY") {
+        setUploadResult({ ok: false, error: "Branded content nie może mieć widoczności Only you (SELF_ONLY)." });
+        return;
+      }
+    }
 
     setUploading(true); setUploadResult(null); setMultiResults(null);
     try {
@@ -303,14 +390,25 @@ export default function Outputs() {
         apiRecordCorrection("title", uploadOriginalTitle, uploadTitle, "ui_upload_modal");
       }
 
+      const effectiveTitle =
+        uploadTitle.trim() ||
+        (selTt ? tiktokCopyText.trim().split("\n")[0] : "") ||
+        (selIg ? igCopyText.trim().split("\n")[0] : "") ||
+        (selFb ? fbCopyText.trim().split("\n")[0] : "") ||
+        "LoL Highlight";
+
+      const effectiveAllowComment = Boolean(ttAllowComment && !ttCreatorInfo?.comment_disabled);
+      const effectiveAllowDuet = Boolean(ttAllowDuet && !ttCreatorInfo?.duet_disabled);
+      const effectiveAllowStitch = Boolean(ttAllowStitch && !ttCreatorInfo?.stitch_disabled);
+
       const res = await apiPublishMulti(uploadModal.filename, {
-        title: uploadTitle,
+        title: effectiveTitle,
         description: uploadDesc,
         tags: uploadModalMeta?.tags && uploadModalMeta.tags.length > 0 ? uploadModalMeta.tags : undefined,
         hashtags: uploadModalMeta?.hashtags && uploadModalMeta.hashtags.length > 0 ? uploadModalMeta.hashtags : undefined,
         platforms,
         privacy_yt: privacy,
-        privacy_tiktok: "PUBLIC_TO_EVERYONE",
+        privacy_tiktok: selTt && ttPostMode === "direct" ? ttPrivacy : undefined,
         share_to_ig_feed: true,
         thumbnail_path: resolvedThumb?.path || undefined,
         publish_at: publishAt,
@@ -319,6 +417,15 @@ export default function Outputs() {
         action_type: uploadModalMeta?.action_type,
         rank: uploadModalMeta?.rank,
         tiktok_caption: selTt ? tiktokCopyText : undefined,
+        instagram_caption: selIg ? igCopyText : undefined,
+        facebook_caption: selFb ? fbCopyText : undefined,
+        tiktok_allow_comment: effectiveAllowComment,
+        tiktok_allow_duet: effectiveAllowDuet,
+        tiktok_allow_stitch: effectiveAllowStitch,
+        tiktok_disclose_content: ttPostMode === "direct" ? ttDisclose : false,
+        tiktok_brand_organic: ttPostMode === "direct" && ttDisclose && ttYourBrand,
+        tiktok_branded_content: ttPostMode === "direct" && ttDisclose && ttBrandedContent,
+        tiktok_post_mode: ttPostMode,
       });
 
       const results = res.results || {};
@@ -502,6 +609,27 @@ export default function Outputs() {
               <button onClick={() => setUploadModal(null)} className="text-[#A0A7B1] hover:text-[#FFFFFF]"><X className="w-4 h-4"/></button>
             </div>
             <div className="text-xs text-[#A0A7B1] bg-[#050505] rounded-lg px-3 py-2 font-mono truncate">{uploadModal.filename}</div>
+
+            {uploadPreviewUrl && (
+              <div className="bg-[#050505] border border-[#272A2F] rounded-lg p-2 space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-[#A0A7B1]">
+                  <span className="font-bold text-[#C8FF3A] flex items-center gap-1"><Play className="w-3 h-3" />Video Preview</span>
+                  {uploadVideoDurationSec ? (
+                    <span className="font-mono">{uploadVideoDurationSec.toFixed(1)}s</span>
+                  ) : null}
+                </div>
+                <video
+                  src={uploadPreviewUrl}
+                  controls
+                  preload="metadata"
+                  onLoadedMetadata={(e) => {
+                    const dur = e.currentTarget.duration;
+                    if (Number.isFinite(dur) && dur > 0) setUploadVideoDurationSec(dur);
+                  }}
+                  className="w-full max-h-52 rounded bg-black object-contain"
+                />
+              </div>
+            )}
 
             {/* Miniaturka 9:16 podpięta do publikacji */}
             <div className="p-3 fk-cut-sm bg-[#050505] border border-[#272A2F] flex items-center gap-3">
@@ -694,24 +822,41 @@ export default function Outputs() {
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-[#C8FF3A]">Tytuł (YouTube Shorts)</label>
-              <input
-                value={uploadTitle}
-                onChange={e => {
-                  const val = e.target.value;
-                  setUploadTitle(val);
-                  setTiktokCopyText(buildLocalTiktokCopy(val, uploadModalMeta?.champion_name, uploadModalMeta?.action_type));
-                }}
-                className="w-full bg-[#050505] border border-[#272A2F] rounded-lg px-3 py-2 text-sm text-[#FFFFFF] focus:border-[#C8FF3A] outline-none"
-                placeholder="Tytuł wideo..."
-              />
-            </div>
-            {selTt && (
-              <div className="space-y-1 bg-[#00F2FE]/5 border border-[#00F2FE]/30 rounded-lg p-2.5">
+            {selYt && (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-[#C8FF3A]">Tytuł (YouTube Shorts)</label>
+                <input
+                  value={uploadTitle}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setUploadTitle(val);
+                    setTiktokCopyText(buildLocalTiktokCopy(val, uploadModalMeta?.champion_name, uploadModalMeta?.action_type));
+                  }}
+                  className="w-full bg-[#050505] border border-[#272A2F] rounded-lg px-3 py-2 text-sm text-[#FFFFFF] focus:border-[#C8FF3A] outline-none"
+                  placeholder="Tytuł wideo..."
+                />
+              </div>
+            )}
+            {selTt && (() => {
+              const PRIVACY_LABELS: Record<string, string> = {
+                PUBLIC_TO_EVERYONE: "Public to everyone",
+                MUTUAL_FOLLOW_FRIENDS: "Friends",
+                FOLLOWER_OF_CREATOR: "Followers",
+                SELF_ONLY: "Only you",
+              };
+              const allowedPrivacies = (ttCreatorInfo?.ok && Array.isArray(ttCreatorInfo.privacy_level_options) && ttCreatorInfo.privacy_level_options.length > 0)
+                ? ttCreatorInfo.privacy_level_options
+                : ["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"];
+              const maxTtSec = ttCreatorInfo?.ok ? ttCreatorInfo.max_video_post_duration_sec : undefined;
+              const ttDurationExceeded = Boolean(maxTtSec && uploadVideoDurationSec && uploadVideoDurationSec > maxTtSec);
+              const commentLocked = Boolean(ttCreatorInfo?.comment_disabled);
+              const duetLocked = Boolean(ttCreatorInfo?.duet_disabled);
+              const stitchLocked = Boolean(ttCreatorInfo?.stitch_disabled);
+              return (
+              <div className="space-y-2.5 bg-[#00F2FE]/5 border border-[#00F2FE]/30 rounded-lg p-3">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-[11px] font-bold text-[#00F2FE] flex items-center gap-1.5">
-                    <Video className="w-3.5 h-3.5" /> Opis + Tagi TikTok (bez #shorts, okładka 9:16 t=0.0s)
+                    <Video className="w-3.5 h-3.5" /> TikTok Content Posting API
                   </label>
                   <button
                     type="button"
@@ -722,20 +867,268 @@ export default function Outputs() {
                     {tiktokCopied ? "Skopiowano!" : "Kopiuj opis + tagi TikTok"}
                   </button>
                 </div>
+
+                {/* Live Creator Info from /v2/post/publish/creator_info/query/ */}
+                <div className="px-2.5 py-2 rounded bg-[#050505] border border-[#272A2F] flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {ttCreatorInfo?.ok && ttCreatorInfo.creator_avatar_url ? (
+                      <img src={ttCreatorInfo.creator_avatar_url} alt="Creator avatar" className="w-7 h-7 rounded-full object-cover border border-[#00F2FE]/40 shrink-0" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-[#FE2C55]/25 text-white flex items-center justify-center text-[10px] font-black shrink-0">DW</div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-bold text-[#FFFFFF] truncate">
+                        {ttCreatorInfo?.ok && ttCreatorInfo.creator_nickname ? ttCreatorInfo.creator_nickname : "Dwannellenga"}{" "}
+                        <span className="text-[#00F2FE] font-mono text-[10px]">
+                          @{ttCreatorInfo?.ok && ttCreatorInfo.creator_username ? ttCreatorInfo.creator_username : "dwannellenga"}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[#A0A7B1]">
+                        {ttCreatorLoading
+                          ? "Querying creator_info..."
+                          : ttCreatorInfo?.ok
+                          ? `creator_info verified • Max video duration: ${ttCreatorInfo.max_video_post_duration_sec}s`
+                          : "TikTok Creator Info ready (sandbox/token check)"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {ttDurationExceeded && (
+                  <div className="px-2.5 py-1.5 rounded bg-[#FF5C5C]/15 border border-[#FF5C5C]/40 text-[10px] text-[#FF5C5C] font-semibold">
+                    Video duration ({uploadVideoDurationSec?.toFixed(1)}s) exceeds creator max limit ({maxTtSec}s).
+                  </div>
+                )}
+
+                {/* Publish Method Toggle: video.publish vs video.upload */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setTtPostMode("direct")}
+                    className={`px-2 py-1.5 rounded border text-[10px] font-bold transition-all ${
+                      ttPostMode === "direct"
+                        ? "bg-[#00F2FE]/20 border-[#00F2FE] text-[#FFFFFF]"
+                        : "bg-[#050505] border-[#272A2F] text-[#A0A7B1] hover:text-[#FFFFFF]"
+                    }`}
+                  >
+                    Direct Post (video.publish)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTtPostMode("inbox")}
+                    className={`px-2 py-1.5 rounded border text-[10px] font-bold transition-all ${
+                      ttPostMode === "inbox"
+                        ? "bg-[#C8FF3A]/20 border-[#C8FF3A] text-[#FFFFFF]"
+                        : "bg-[#050505] border-[#272A2F] text-[#A0A7B1] hover:text-[#FFFFFF]"
+                    }`}
+                  >
+                    Upload as Draft / Inbox (video.upload)
+                  </button>
+                </div>
+
+                <div className="px-2.5 py-1.5 rounded bg-[#050505] border border-[#00F2FE]/25 text-[10px] text-[#A0A7B1]">
+                  <span className="text-[#00F2FE] font-bold">
+                    {ttLearningInfo && ttLearningInfo.analyzed_videos > 0
+                      ? `Synapsa TikTok AI (${ttLearningInfo.analyzed_videos} filmów @dwannellenga)`
+                      : "Synapsa TikTok AI (@dwannellenga)"}
+                  </span>
+                  {" • "}Top tagi TikTok:{" "}
+                  <span className="text-[#C8FF3A] font-mono">
+                    {(() => {
+                      const base = (ttLearningInfo?.recommended_hashtags && ttLearningInfo.recommended_hashtags.length > 0)
+                        ? ttLearningInfo.recommended_hashtags.slice(0, 4)
+                        : ["outplayed", "pcgaming", "leagueoflegends", "lolhighlights"];
+                      const champTag = (uploadModalMeta?.champion_name || "katarina").replace(/['\s]/g, "").toLowerCase();
+                      const combined = Array.from(new Set([...base, champTag]));
+                      return combined.map(t => `#${t}`).join(" ");
+                    })()}
+                  </span>
+                </div>
                 <textarea
                   value={tiktokCopyText}
                   onChange={e => setTiktokCopyText(e.target.value)}
                   rows={2}
                   className="w-full bg-[#050505] border border-[#272A2F] rounded px-2.5 py-1.5 text-[11px] text-[#FFFFFF] focus:border-[#00F2FE] outline-none resize-none font-mono"
                 />
+
+                {ttPostMode === "inbox" ? (
+                  <div className="p-2.5 rounded bg-[#050505] border border-[#C8FF3A]/30 text-[10px] text-[#A0A7B1] space-y-1">
+                    <div className="font-bold text-[#C8FF3A]">Draft Upload Mode (scope: video.upload)</div>
+                    <div>
+                      Uploads video to your TikTok Inbox/Drafts via <span className="font-mono text-[#FFFFFF]">/v2/post/publish/inbox/video/init/</span> so you can finalize audio, privacy, and effects in the TikTok app.
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-semibold text-[#A0A7B1] block mb-1">Who can view this video</label>
+                        <select
+                          value={ttPrivacy}
+                          onChange={e => setTtPrivacy(e.target.value)}
+                          className={`w-full bg-[#050505] border rounded px-2 py-1 text-[11px] text-[#FFFFFF] focus:border-[#00F2FE] outline-none ${ttPrivacy ? "border-[#272A2F]" : "border-[#FE2C55]"}`}
+                        >
+                          <option value="">-- Select privacy level --</option>
+                          {allowedPrivacies.map((opt) => (
+                            <option
+                              key={opt}
+                              value={opt}
+                              disabled={Boolean(opt === "SELF_ONLY" && ttDisclose && ttBrandedContent)}
+                            >
+                              {PRIVACY_LABELS[opt] || opt}
+                              {opt === "SELF_ONLY" && ttDisclose && ttBrandedContent ? " (unavailable for Branded content)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                        {ttDisclose && ttBrandedContent && ttPrivacy === "SELF_ONLY" && (
+                          <div className="text-[10px] text-[#FF5C5C] mt-1">
+                            Branded content visibility cannot be private (Only you).
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-[#A0A7B1] block mb-1">Allow users to</label>
+                        <div className="flex items-center gap-2.5 pt-1 text-[11px] text-[#FFFFFF]">
+                          <label className={`flex items-center gap-1 ${commentLocked ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}>
+                            <input
+                              type="checkbox"
+                              disabled={commentLocked}
+                              checked={!commentLocked && ttAllowComment}
+                              onChange={e => setTtAllowComment(e.target.checked)}
+                              className="accent-[#00F2FE]"
+                            /> Comment
+                          </label>
+                          <label className={`flex items-center gap-1 ${duetLocked ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}>
+                            <input
+                              type="checkbox"
+                              disabled={duetLocked}
+                              checked={!duetLocked && ttAllowDuet}
+                              onChange={e => setTtAllowDuet(e.target.checked)}
+                              className="accent-[#00F2FE]"
+                            /> Duet
+                          </label>
+                          <label className={`flex items-center gap-1 ${stitchLocked ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}>
+                            <input
+                              type="checkbox"
+                              disabled={stitchLocked}
+                              checked={!stitchLocked && ttAllowStitch}
+                              onChange={e => setTtAllowStitch(e.target.checked)}
+                              className="accent-[#00F2FE]"
+                            /> Stitch
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="pt-1 border-t border-white/10 space-y-1.5">
+                      <label className="flex items-center justify-between text-[11px] font-semibold text-[#FFFFFF] cursor-pointer">
+                        <span>Disclose video content</span>
+                        <input
+                          type="checkbox"
+                          checked={ttDisclose}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setTtDisclose(checked);
+                            if (!checked) {
+                              setTtYourBrand(false);
+                              setTtBrandedContent(false);
+                            }
+                          }}
+                          className="accent-[#00F2FE]"
+                        />
+                      </label>
+                      {ttDisclose && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-4 text-[10px] text-[#A0A7B1]">
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input type="checkbox" checked={ttYourBrand} onChange={e => setTtYourBrand(e.target.checked)} className="accent-[#00F2FE]" /> Your brand
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input type="checkbox" checked={ttBrandedContent} onChange={e => setTtBrandedContent(e.target.checked)} className="accent-[#00F2FE]" /> Branded content
+                            </label>
+                          </div>
+                          {ttBrandedContent ? (
+                            <div className="text-[10px] text-[#C8FF3A] font-semibold">
+                              Your video will be labeled as 'Paid partnership'
+                            </div>
+                          ) : ttYourBrand ? (
+                            <div className="text-[10px] text-[#C8FF3A] font-semibold">
+                              Your video will be labeled as 'Promotional content'
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-[#FF5C5C] font-semibold">
+                              You need to indicate if your content promotes yourself, a third party, or both.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-[10px] text-[#A0A7B1] leading-snug">
+                        By posting, you agree to TikTok's{" "}
+                        {ttDisclose && ttBrandedContent ? (
+                          <>
+                            <a
+                              href="https://www.tiktok.com/legal/page/global/bc-policy/en"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[#00F2FE] underline"
+                            >
+                              Branded Content Policy
+                            </a>
+                            {" and "}
+                          </>
+                        ) : null}
+                        <a
+                          href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[#00F2FE] underline"
+                        >
+                          Music Usage Confirmation
+                        </a>
+                        . After publishing, it may take a few minutes for your video to process and appear on your profile.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+              );
+            })()}
+            {selIg && (
+              <div className="space-y-1.5 bg-[#E1306C]/5 border border-[#E1306C]/30 rounded-lg p-3">
+                <label className="text-[11px] font-bold text-[#E1306C] flex items-center gap-1.5">
+                  <Instagram className="w-3.5 h-3.5" /> Instagram Reels (@dwannellenga — osobny opis i tagi IG)
+                </label>
+                <textarea
+                  value={igCopyText}
+                  onChange={e => setIgCopyText(e.target.value)}
+                  rows={2}
+                  className="w-full bg-[#050505] border border-[#272A2F] rounded px-2.5 py-1.5 text-[11px] text-[#FFFFFF] focus:border-[#E1306C] outline-none resize-none font-mono"
+                />
               </div>
             )}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-[#C8FF3A]">Opis / Hashtagi</label>
-              <textarea value={uploadDesc} onChange={e=>setUploadDesc(e.target.value)} rows={3} className="w-full bg-[#050505] border border-[#272A2F] rounded-lg px-3 py-2 text-xs text-[#FFFFFF] focus:border-[#C8FF3A] outline-none resize-none"/>
-            </div>
+            {selFb && (
+              <div className="space-y-1.5 bg-[#1877F2]/5 border border-[#1877F2]/30 rounded-lg p-3">
+                <label className="text-[11px] font-bold text-[#1877F2] flex items-center gap-1.5">
+                  <Share2 className="w-3.5 h-3.5" /> Facebook Fanpage (Dwannellenga — osobny post FB)
+                </label>
+                <textarea
+                  value={fbCopyText}
+                  onChange={e => setFbCopyText(e.target.value)}
+                  rows={2}
+                  className="w-full bg-[#050505] border border-[#272A2F] rounded px-2.5 py-1.5 text-[11px] text-[#FFFFFF] focus:border-[#1877F2] outline-none resize-none font-mono"
+                />
+              </div>
+            )}
+            {selYt && (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-[#C8FF3A]">Opis / Hashtagi (YouTube)</label>
+                <textarea value={uploadDesc} onChange={e=>setUploadDesc(e.target.value)} rows={3} className="w-full bg-[#050505] border border-[#272A2F] rounded-lg px-3 py-2 text-xs text-[#FFFFFF] focus:border-[#C8FF3A] outline-none resize-none"/>
+              </div>
+            )}
             <div className="space-y-2 pt-1">
-              <label className="text-xs font-semibold text-[#A0A7B1] flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-[#C8FF3A]"/>Tryb Publikacji (YouTube):</label>
+              <label className="text-xs font-semibold text-[#A0A7B1] flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#C8FF3A]"/>
+                Tryb Publikacji ({[selYt && 'YouTube', selTt && 'TikTok', selIg && 'Instagram', selFb && 'Facebook'].filter(Boolean).join(' + ') || 'Brak'}):
+              </label>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={()=>setUploadMode("peak")} className={`p-2 fk-cut-sm border text-left transition-all ${uploadMode==="peak"?"bg-[#C8FF3A]/15 border-[#C8FF3A] text-[#FFFFFF]":"bg-[#050505] border-[#272A2F] text-[#A0A7B1] hover:border-[#C8FF3A]/40"}`}>
                   <div className="flex items-center justify-between"><span className="text-xs font-bold text-[#C8FF3A] flex items-center gap-1"><Zap className="w-3 h-3"/>AI Peak Slot</span><span className="text-[9px] bg-[#2ECC71]/20 text-[#2ECC71] px-1 rounded font-bold">TOP</span></div>
@@ -807,24 +1200,55 @@ export default function Outputs() {
 
             <div className="flex gap-3 pt-1">
               <button onClick={()=>setUploadModal(null)} className="flex-1 py-2 fk-cut-sm border border-[#272A2F] text-xs text-[#A0A7B1] hover:text-[#FFFFFF] font-semibold">Anuluj</button>
-              <button onClick={handleUpload} disabled={uploading||!uploadTitle.trim()||(!selYt&&!selTt&&!selIg&&!selFb)} className="flex-1 py-2.5 fk-cut-sm bg-[#C8FF3A] hover:bg-[#C8FF3A] disabled:opacity-50 text-[#050505] text-xs font-bold flex items-center justify-center gap-1.5 transition-all">
-                {uploading?<Loader className="w-3.5 h-3.5 animate-spin"/>:<Share2 className="w-3.5 h-3.5"/>}
-                {uploading
-                  ? "Publikuję..."
-                  : selYt && selTt && selIg && selFb
-                  ? "🚀 Opublikuj na WSZYSTKO (4 platformy)"
-                  : !selYt && !selTt && !selIg && !selFb
-                  ? "⚠️ Zaznacz platformę"
-                  : selYt && !selTt && !selIg && !selFb
-                  ? "🚀 Opublikuj na YouTube Shorts"
-                  : !selYt && selTt && !selIg && !selFb
-                  ? "🚀 Opublikuj na TikTok"
-                  : !selYt && !selTt && selIg && !selFb
-                  ? "🚀 Opublikuj na Instagram Reels"
-                  : !selYt && !selTt && !selIg && selFb
-                  ? "🚀 Opublikuj na Facebook Page"
-                  : `🚀 Opublikuj (${[selYt&&'YT', selTt&&'TT', selIg&&'IG', selFb&&'FB'].filter(Boolean).join(' + ')})`}
-              </button>
+              {(() => {
+                const anyPlatformSelected = selYt || selTt || selIg || selFb;
+                const hasContentForSelected = Boolean(
+                  (selYt && uploadTitle.trim()) ||
+                  (!selYt && (
+                    (selTt && (tiktokCopyText.trim() || uploadTitle.trim())) ||
+                    (selIg && (igCopyText.trim() || uploadTitle.trim())) ||
+                    (selFb && (fbCopyText.trim() || uploadTitle.trim()))
+                  ))
+                );
+                const maxTtSec = ttCreatorInfo?.ok ? ttCreatorInfo.max_video_post_duration_sec : undefined;
+                const ttDurationExceeded = Boolean(selTt && maxTtSec && uploadVideoDurationSec && uploadVideoDurationSec > maxTtSec);
+                const ttPrivacyMissing = Boolean(selTt && ttPostMode === "direct" && !ttPrivacy);
+                const ttDiscloseMissingType = Boolean(selTt && ttPostMode === "direct" && ttDisclose && !ttYourBrand && !ttBrandedContent);
+                const ttBrandedSelfConflict = Boolean(selTt && ttPostMode === "direct" && ttDisclose && ttBrandedContent && ttPrivacy === "SELF_ONLY");
+                const publishDisabled = uploading || !anyPlatformSelected || !hasContentForSelected || ttDurationExceeded || ttPrivacyMissing || ttDiscloseMissingType || ttBrandedSelfConflict;
+                return (
+                  <button
+                    onClick={handleUpload}
+                    disabled={publishDisabled}
+                    className="flex-1 py-2.5 fk-cut-sm bg-[#C8FF3A] hover:bg-[#C8FF3A] disabled:opacity-50 text-[#050505] text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+                  >
+                    {uploading ? <Loader className="w-3.5 h-3.5 animate-spin"/> : <Share2 className="w-3.5 h-3.5"/>}
+                    {uploading
+                      ? "Publikuję..."
+                      : !anyPlatformSelected
+                      ? "⚠️ Zaznacz platformę"
+                      : ttDurationExceeded
+                      ? "Wideo przekracza limit TikTok"
+                      : ttPrivacyMissing
+                      ? "Wybierz prywatność TikTok"
+                      : ttDiscloseMissingType
+                      ? "Wybierz Your brand / Branded content"
+                      : ttBrandedSelfConflict
+                      ? "Zmień prywatność z Only you"
+                      : selYt && selTt && selIg && selFb
+                      ? "🚀 Opublikuj na WSZYSTKO (4 platformy)"
+                      : selYt && !selTt && !selIg && !selFb
+                      ? "🚀 Opublikuj na YouTube Shorts"
+                      : !selYt && selTt && !selIg && !selFb
+                      ? "🚀 Opublikuj na TikTok"
+                      : !selYt && !selTt && selIg && !selFb
+                      ? "🚀 Opublikuj na Instagram Reels"
+                      : !selYt && !selTt && !selIg && selFb
+                      ? "🚀 Opublikuj na Facebook Page"
+                      : `🚀 Opublikuj (${[selYt&&'YT', selTt&&'TT', selIg&&'IG', selFb&&'FB'].filter(Boolean).join(' + ')})`}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -1161,7 +1585,17 @@ export default function Outputs() {
                         </div>
                       </div>
 
-                      <div className="text-xs font-bold text-[#FFFFFF] break-words">{item.title || item.output_filename}</div>
+                      <div className="text-xs font-bold text-[#FFFFFF] break-words">
+                        {(item.title || item.output_filename).replace(/#\S+/g, "").replace(/\s{2,}/g, " ").trim() || item.output_filename}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-mono">
+                        <span className="px-1.5 py-0.5 rounded bg-[#E62117]/15 border border-[#E62117]/30 text-[#FF8A80]">
+                          YT: #shorts #leagueoflegends #lol
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-[#00F2FE]/10 border border-[#00F2FE]/30 text-[#00F2FE]">
+                          TikTok: #outplayed #pcgaming #leagueoflegends #lolhighlights #{(item.champion_name || "katarina").replace(/['\s]/g, "").toLowerCase()}
+                        </span>
+                      </div>
                       <div className="text-[10px] font-mono text-[#686E78] truncate" title={item.source_filename}>
                         {item.match_date ? `${item.match_date} • ` : ""}{item.match_kda ? `KDA ${item.match_kda} • ` : ""}{String(item.event_source || "").startsWith("outplayed_") ? "Riot Outplayed • " : ""}Źródło: {item.source_filename}
                       </div>

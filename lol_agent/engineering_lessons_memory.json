@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_utc": "2026-11-22T07:20:17.083501+00:00",
+  "updated_utc": "2026-11-22T11:55:59.603435+00:00",
   "attribute_deltas": [
     {
       "delta_id": "delta_08488086c4fd",
@@ -2569,6 +2569,595 @@
         "learning_directive.js",
         "yt_viral_patterns_cache.js"
       ]
+    },
+    {
+      "lesson_id": "todo_8cddf9ff7e41",
+      "kind": "todo_completed",
+      "section": "25. Etap 17: Audyt Stanu Modułów i Pętli Uczenia (21.11.2026) + Plan Pełnej Automatyzacji TikToka (Planowanie, Tagi,...",
+      "module": "4. Jakość Zbioru Treningowego Synapsy (hard_cases_memory.json + dataset_shortsyt_titles.jsonl)",
+      "goal": "Sprawdzić czy nowe przykłady uczące QLoRA są czyste i pozbawione szumu",
+      "change": "Przeanalizowano i oczyszczono hard_cases_memory.json oraz odbudowano dataset_shortsyt_titles.jsonl",
+      "measured_result": "Wykryto 37/59 wpisów szumu (0–1 kill bez obiektu), które wcześniej były mnożone x3. Po wdrożeniu bramki w lol_frag_detector.py:1189, prune_noisy_hard_cases() w hard_case_learner.py (before=59, kept=22, removed=37) oraz przebudowie datase...",
+      "expected_effect": "Oczyszczenie hard_cases_memory.json wyłącznie do zweryfikowanych multikilli/obiektów i odbudowa czystego datasetu QLoRA",
+      "affected_files": [
+        "dataset_shortsyt_titles.js",
+        "hard_cases_memory.js"
+      ]
+    },
+    {
+      "lesson_id": "todo_60602a65ee11",
+      "kind": "todo_completed",
+      "section": "25. Etap 17: Audyt Stanu Modułów i Pętli Uczenia (21.11.2026) + Plan Pełnej Automatyzacji TikToka (Planowanie, Tagi,...",
+      "module": "5. Działanie Kolejki Zaplanowanych Publikacji (scheduled_social_queue.json, pending_comments.json, proces uvicorn)",
+      "goal": "Sprawdzić dlaczego zaplanowane posty na TikTok i IG nie wychodzą na czas",
+      "change": "Naprawiono electron/main.js, zaktualizowano Task Scheduler (FlikcutBackend co 15 min), naprawiono endpoint /social/queue/flush (200 OK) i puszczono zaległy slot",
+      "measured_result": "Po restarcie FlikcutBackend (127.0.0.1:8765, /health 200 OK) pętla w tle automatycznie wypchnęła zaległy slot z 21.11.2026 21:30 CET (20:30Z): TikTok (v_inbox_file~v2.7710887182592411650, cover_embedded=True), Instagram (https://www.inst...",
+      "expected_effect": "Backend działający niezależnie od zamknięcia okna UI + aktywny Task Scheduler co 15 min + natychmiastowa wysyłka zaległego slotu",
+      "affected_files": [
+        "electron/main.js",
+        "pending_comments.js",
+        "scheduled_social_queue.js"
+      ]
+    },
+    {
+      "lesson_id": "todo_1b9572a432e3",
+      "kind": "todo_completed",
+      "section": "25. Etap 17: Audyt Stanu Modułów i Pętli Uczenia (21.11.2026) + Plan Pełnej Automatyzacji TikToka (Planowanie, Tagi,...",
+      "module": "6. Przyczyna Powiadomień Inbox na TikToku (SEND_TO_USER_INBOX) oraz Różnych Tagów i Braku Miniaturki",
+      "goal": "Ustalić dlaczego TikTok każe ręcznie wpisywać tytuł, tagi i okładkę w telefonie",
+      "change": "Wdrożono wstrzykiwanie miniatury 9:16 na t=0.0s, naprawiono copywriter + dodano przycisk 1-klik kopiowania i moduł tiktok_web_scheduler.py",
+      "measured_result": "Potwierdzono live 403 unaudited_client na Direct Post -> tryb Inbox ignoruje post_info. Naprawiono multi_platform_copywriter.py (używa prawdziwego tytułu bez #shorts, zero halucynacji \"DRAGON STEAL\", dedykowane tagi #fyp #<champ>mains #d...",
+      "expected_effect": "Automatyczna okładka z _thumb.jpg w 1. klatce wideo, spójny tytuł i dedykowane tagi TikToka + opcja Web Auto-Schedule",
+      "affected_files": [
+        "tiktok_web_scheduler.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_d6acc8c7c1f8",
+      "kind": "todo_completed",
+      "section": "25. Etap 17: Audyt Stanu Modułów i Pętli Uczenia (21.11.2026) + Plan Pełnej Automatyzacji TikToka (Planowanie, Tagi,...",
+      "module": "1. Oczyszczenie hard_cases_memory.json i strażnik jakości przykładów uczących (lol_agent/lol_frag_detector.py, hard_c...",
+      "goal": "Żeby skan folderu nie zaśmiecał pamięci Synapsy klipami 0-kill / 1-kill",
+      "change": "Dodano bramkę len(kills_detected) >= 2 or (objective_secured and len(kills_detected) >= 1) w lol_frag_detector.py:1189, prune_noisy_hard_cases() w hard_case_learner.py, limit maks. 24 przykładów hard-case (bez 3x spamu) w synapsa_title_trainer.py oraz test...",
+      "measured_result": "before=59, kept=22, removed=37 w hard_cases_memory.json; test jednostkowy przechodzi",
+      "expected_effect": "Czysty zbiór QLoRA oparty wyłącznie na zweryfikowanych walkach wielofragowych",
+      "affected_files": [
+        "hard_case_learner.py",
+        "hard_cases_memory.js",
+        "lol_agent/lol_frag_detector.py",
+        "lol_frag_detector.py",
+        "synapsa_title_trainer.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_13eb8b9aeaab",
+      "kind": "todo_completed",
+      "section": "25. Etap 17: Audyt Stanu Modułów i Pętli Uczenia (21.11.2026) + Plan Pełnej Automatyzacji TikToka (Planowanie, Tagi,...",
+      "module": "2. Naprawa Copywritera TikTok/IG, dedykowanych tagów TikToka i korekta 6 wpisów w kolejce (lol_agent/multi_platform_c...",
+      "goal": "Żeby TikTok i IG dostawały Twój prawdziwy tytuł akcji (bez halucynacji \"DRAGON STEAL\") oraz właściwe, zasięgowe hasztagi TikToka różne od tagów #shorts z YT",
+      "change": "W multi_platform_copywriter.py: dodano _extract_clean_base_hook(base_metadata), przekazano base_metadata w generate_all_platform_copy(), dodano \"double\"/\"quadrakill\"/\"steal\" i wiralowe tagi TikTok (#leagueoflegends #<champ> #<champ>mains #<action> #fyp); po...",
+      "measured_result": "39/39 testów w test_multi_platform_copywriter.py (w tym sprawdzenie mock_gemini.assert_not_called() przy base_metadata); kolejka oczyszczona",
+      "expected_effect": "Spójny, mocny tytuł akcji na TikToku + dedykowany zestaw hashtagów TikToka (bez #shorts)",
+      "affected_files": [
+        "accounts/scheduled_social_queue.js",
+        "lol_agent/multi_platform_copywriter.py",
+        "multi_platform_copywriter.py",
+        "multi_publisher.py",
+        "scheduled_social_queue.js"
+      ]
+    },
+    {
+      "lesson_id": "todo_be88e7b01e3a",
+      "kind": "todo_completed",
+      "section": "25. Etap 17: Audyt Stanu Modułów i Pętli Uczenia (21.11.2026) + Plan Pełnej Automatyzacji TikToka (Planowanie, Tagi,...",
+      "module": "3. Automatyczna miniaturka 9:16 na TikToku (_thumb.jpg w 1. klatce + video_cover_timestamp_ms) (lol_agent/tiktok_publ...",
+      "goal": "Żeby na TikToku (zarówno w Inboxie na telefonie, jak i w Direct Post / Web) film miał od razu ustawioną gotową miniaturkę _thumb.jpg bez ręcznego wybierania okładki",
+      "change": "Wdrożono _prepare_tiktok_video_with_cover() w tiktok_publisher.py (nakłada _thumb.jpg w 0.00–0.08s do tymczasowego .mp4 z automatycznym unlink() w finally: i ustawia video_cover_timestamp_ms=50, a bez miniaturki int(peak_moment 1000)); spięto peak_moment i...",
+      "measured_result": "Potwierdzone na żywym uploadzie tiktok_1795201886000: cover_embedded=True, video_cover_timestamp_ms=50, v_inbox_file~v2.7710887182592411650",
+      "expected_effect": "Miniaturka 9:16 z napisem ustawia się jako okładka TikToka w 100% automatycznie",
+      "affected_files": [
+        "lol_agent/tiktok_publisher.py",
+        "multi_publisher.py",
+        "scheduled_queue.py",
+        "tiktok_publisher.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_e736bb9ee658",
+      "kind": "todo_completed",
+      "section": "25. Etap 17: Audyt Stanu Modułów i Pętli Uczenia (21.11.2026) + Plan Pełnej Automatyzacji TikToka (Planowanie, Tagi,...",
+      "module": "4. Niezawodna kolejka i planowanie 24/7 + widok kolejki Social w Kalendarzu i UI (shortsyt-desktop/electron/main.js,...",
+      "goal": "Żeby zaplanowane publikacje TikTok/IG i komentarze YT wychodziły punktualnie o 11:00 i 21:30 CET nawet po zamknięciu okna Flikcut Studio.exe",
+      "change": "W electron/main.js: detached: true + unref(), brak zabijania uvicorn przy zamykaniu okna (chyba że FLIKCUT_KILL_BACKEND_ON_QUIT=1); zaktualizowano FlikcutBackend w Windows Task Scheduler (AtLogOn + co 15 min); dodano GET /social/queue, POST /social/queue/fl...",
+      "measured_result": "LIVE_FLUSH: 200, CALENDAR_STATUS: 200 (18 slotów z powiązaną kolejką social_queue), tsc --noEmit + npm run build + npm run dist:dir + synchronizacja app.asar (35,674,572 B) do C:\\Users\\mz100\\OneDrive\\Pulpit\\Flikcut Studio\\resources\\app.asar",
+      "expected_effect": "Punktualna wysyłka wszystkich zaplanowanych slotów 24/7 i pełny podgląd kolejki TT/IG w Kalendarzu",
+      "affected_files": [
+        "CalendarScheduler.tsx",
+        "Outputs.tsx",
+        "calendar_manager.py",
+        "electron/main.js",
+        "shortsyt-desktop/electron/main.js",
+        "social.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_b54152fc7d6f",
+      "kind": "todo_completed",
+      "section": "25. Etap 17: Audyt Stanu Modułów i Pętli Uczenia (21.11.2026) + Plan Pełnej Automatyzacji TikToka (Planowanie, Tagi,...",
+      "module": "5. [Opcja Pełnego Auto-Postu bez telefonu] Automatyzacja TikTok Studio Web (Playwright) lub Direct Post API (lol_agen...",
+      "goal": "Wyeliminować konieczność ręcznego zatwierdzania powiadomień Inbox na telefonie i korzystać z natywnego harmonogramu TikToka (Schedule video)",
+      "change": "Utworzono moduł lol_agent/tiktok_web_scheduler.py (Playwright Chromium z trwałym profilem accounts/tiktok_web_profile, wpięty warunkowo w scheduled_queue.py pod flagą TIKTOK_USE_WEB_STUDIO=1 z czystym fallbackiem do tiktok_publisher.py API, ponieważ obecnie...",
+      "measured_result": "Moduł Web Studio + fallback API wpięte i przetestowane; domyślnie aktywne API z wstrzykniętą okładką 9:16 + 1-klikowym schowkiem w Outputs.tsx (do czasu instalacji playwright lub zatwierdzenia App Review video.publish)",
+      "expected_effect": "100% automatyczna publikacja i planowanie na TikToku z tytułem, tagami i miniaturką",
+      "affected_files": [
+        "lol_agent/tiktok_web_scheduler.py",
+        "scheduled_queue.py",
+        "tiktok_publisher.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_a1f5927b7d98",
+      "kind": "todo_completed",
+      "section": "26. Etap 18: Profesjonalny Research Viralowych Shorts/TikTok LoL (500k–3M Views), Audyt Beat-Sync (librosa) i Plan Do...",
+      "module": "1. Beat Detector v3: Precyzyjna mapa dropu + Siatka Uderzeń BPM (lol_beat_detector.py, beat_drop_cache.json)",
+      "goal": "Znać zarówno główny moment uderzenia dropu, jak i pełną siatkę uderzeń bitu (BPM / beat times) po dropie",
+      "change": "Dodano get_track_beat_profile(music_path) w lol_beat_detector.py (zbuforowane pod _profiles w beat_drop_cache.json) przy zachowaniu 100% kompatybilności detect_beat_drop() z testami",
+      "measured_result": "Zbuforowano profile BPM i siatkę bitów dla wszystkich 11/11 utworów .mp3 w lol_music/ (34..70 beat timestamps w oknie 25s od dropu, m.in. superhero.mp3: drop=78.54s, bpm=99.4, beat_interval=0.604s, 43 bity)",
+      "expected_effect": "Dokładna znajomość dropu i siatki bitów dla wszystkich podkładów muzycznych",
+      "affected_files": [
+        "beat_drop_cache.js",
+        "lol_beat_detector.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_db83675357fd",
+      "kind": "todo_completed",
+      "section": "26. Etap 18: Profesjonalny Research Viralowych Shorts/TikTok LoL (500k–3M Views), Audyt Beat-Sync (librosa) i Plan Do...",
+      "module": "2. Smart Drop Anchor (first_kill_engage vs climax_final_kill) i Separacja Pasma Audio (lol_editor.py, tuning_manager.py)",
+      "goal": "Żeby w multikillach bit wchodził na początku właściwej walki (1. kill / engage) i uderzał z pełną mocą sub-basu bez zagłuszania przez dźwięk gry",
+      "change": "Dodano drop_anchor do render_short() (first_kill_engage dla multikilli vs climax_final_kill dla 1v1/clutch), filtr highpass=f=130 po [gwarp]loudnorm w merge_music(), głębsze Pre-Drop Vacuum -0.42 (0.38s), boost dropu +0.32, puls kolejnych killi +0.16 oraz p...",
+      "measured_result": "Zmierzono przez librosa STFT (35–160 Hz) na r2_triple: Przed (15.15s): pre_bass=22.50, post_bass=29.89, bass_jump_ratio=1.33x. Po (SPEED_RAMP_FLOW @ 10.68s, 13.40s): pre_bass=5.19, post_bass=37.83, bass_jump_ratio=7.29x, clip_gt_098=0. P...",
+      "expected_effect": "Drop wchodzi na 1. killu/engage i niesie całą walkę przy >6x–7x skoku sub-basu",
+      "affected_files": [
+        "lol_editor.py",
+        "tuning_manager.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_18ffd18c6dcd",
+      "kind": "todo_completed",
+      "section": "26. Etap 18: Profesjonalny Research Viralowych Shorts/TikTok LoL (500k–3M Views), Audyt Beat-Sync (librosa) i Plan Do...",
+      "module": "3. Wizualne Uderzenie w Bit (Beat Impact Pop + Mobile Vibrance) (lol_agent/lol_editor.py)",
+      "goal": "Żeby widz na telefonie nie tylko słyszał, ale też widział wejście bitu i każdy kluczowy reset",
+      "change": "W apply_editor_effects() rozróżniono segmenty zoomu od normalnych (eq=contrast=1.14:saturation=1.42:brightness=0.045 na oknie zoom=True vs contrast=1.08:saturation=1.35:brightness=0.03) przy pełnej zgodności z engine_rules.json",
+      "measured_result": "Testy reguł (test_rules.py) oraz test potoku test_drop_anchor_first_kill_engage_and_highpass_audio przechodzą w 100%",
+      "expected_effect": "Wyraźny impuls kontrastu i nasycenia w momencie wejścia dropu na ekranie 9:16",
+      "affected_files": [
+        "engine_rules.js",
+        "lol_agent/lol_editor.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_73727e549df3",
+      "kind": "todo_completed",
+      "section": "26. Etap 18: Profesjonalny Research Viralowych Shorts/TikTok LoL (500k–3M Views), Audyt Beat-Sync (librosa) i Plan Do...",
+      "module": "4. Doszkolenie Synapsy (Qwen2.5-Coder-7B-LoRA na RTX 3060) na Viral LoL Montage Director & POV Hooks (synapsa_engine....",
+      "goal": "Nauczyć lokalny model Synapsy decydowania o drop_anchor, dynamice bitu oraz generowania viralowych tytułów/hooków POV i Curiosity Gap",
+      "change": "Dodano drop_anchor do PARAM_EFFECT_CONTRACT i decide_montage_with_synapsa(), rozbudowano FALLBACK_YT_PATTERNS i alt_pools o wzorce POV / Curiosity-Gap / Ego-Check, przebudowano dataset_shortsyt_titles.jsonl na oczyszczonym zbiorze i uruchomiono 60-krokowy t...",
+      "measured_result": "Zbiór 270 przykładów (55 montage_director z drop_anchor, max_tok=601 <= 640, over_640={}). Trening RTX 3060 (591.45s): spadek loss 3.0152 -> 0.3928 (średni train_loss=1.1831). Pełne testy po zmianach: 113/113 w engine_tests/ + 269/269 w...",
+      "expected_effect": "Wytrenowana Synapsa QLoRA (adapters_shortsyt_titles) sterująca drop_anchor, beat-syncem i viralowymi hookami",
+      "affected_files": [
+        "dataset_shortsyt_titles.js",
+        "lol_montage_director.py",
+        "lol_yt_pattern_miner.py",
+        "synapsa_engine.py",
+        "synapsa_title_trainer.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_7402bd6f40ad",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "1. Higiena Pamięci Uczenia Synapsy (lol_frag_detector.py, hard_case_learner.py, synapsa_title_trainer.py)",
+      "goal": "Odciąć szum klipów 0–1 kill ze zbioru QLoRA",
+      "change": "Dodano bramkę multikilla/obiektu przy zapisie (lol_frag_detector.py:1189), funkcję prune_noisy_hard_cases() oraz limit maks. 24 przykładów hard-case bez mnożnika 3x",
+      "measured_result": "hard_cases_memory.json: 59 -> 22 (37 wpisów szumu usunięte); odbudowano dataset_shortsyt_titles.jsonl (270 przykładów, max_tok=601 <= 640, over_640={})",
+      "expected_effect": "Czyste dane wejściowe bez degradacji modelu",
+      "affected_files": [
+        "hard_case_learner.py",
+        "lol_frag_detector.py",
+        "synapsa_title_trainer.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_0b7f9b383bc7",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "2. Copywriter TikTok/IG + Okładka 9:16 w t=0.0s (multi_platform_copywriter.py, tiktok_publisher.py, multi_publisher.py)",
+      "goal": "Wyeliminować halucynacje opisów (DRAGON STEAL) oraz ręczne ustawianie okładki i tagów na TikToku",
+      "change": "Przekazano zatwierdzony base_metadata[\"title\"] (bez #shorts), dodano klucze \"double\", \"quadrakill\", \"steal\" i viralowe tagi #fyp #<champ>mains (<=5 szt.); dodano _prepare_tiktok_video_with_cover() wstrzykujący _thumb.jpg w 0.00–0.08s (video_cover_timestamp_...",
+      "measured_result": "39/39 testów copywritera + live upload tiktok_1795201886000 z cover_embedded=True (v_inbox_file~v2.7710887182592411650) i IG DgCOQEnCkcS; dodano opcjonalny tiktok_web_scheduler.py",
+      "expected_effect": "Automatyczna okładka 9:16 i spójny opis bez halucynacji",
+      "affected_files": [
+        "multi_platform_copywriter.py",
+        "multi_publisher.py",
+        "tiktok_publisher.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_edf1282ee69f",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "3. Kolejka 24/7, Tokeny 4 Platform i UI Studio (electron/main.js, FlikcutBackend, social.py, calendar_manager.py, Out...",
+      "goal": "Zapewnić publikację o 11:00 i 21:30 CET po zamknięciu okna aplikacji oraz widoczność kolejki i 1-klikowe kopiowanie w UI",
+      "change": "Ustawiono detached: true + unref() w Electronie, zegar FlikcutBackend co 15 min w Task Schedulerze, dodano /social/queue, /social/queue/flush (200 OK), /social/preview-copy, integrację social_queue w Kalendarzu, edytor + przycisk kopiowania TikTok w Outputs...",
+      "measured_result": "Backend /health: 200 OK, FlikcutBackend: Running; wszystkie 4 tokeny ważne (YT 7 dni, TikTok 347 dni, IG @dwannellenga, FB Dwannellenga); kolejka: 23 łącznie (17 published, 4 pending na dziś 11:00 i 21:30 CET, 2 archiwalne failed); app.a...",
+      "expected_effect": "Stabilna praca i podgląd wszystkich 4 kanałów 24/7",
+      "affected_files": [
+        "CalendarScheduler.tsx",
+        "Outputs.tsx",
+        "calendar_manager.py",
+        "electron/main.js",
+        "social.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_d3c497ba7dc9",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "4. Beat-Sync v3, Separacja Pasma Audio i drop_anchor (lol_beat_detector.py, lol_editor.py, tuning_manager.py)",
+      "goal": "Wyrównać bit do 1. killa/engage w multikillach, usunąć zagłuszanie basu przez dźwięk gry i dodać impuls wizualny",
+      "change": "Wdrożono get_track_beat_profile() + cache _profiles BPM dla 11/11 MP3; filtr highpass=f=130 na audio gry po [gwarp]loudnorm; Pre-Drop Vacuum -0.42, drop boost +0.32, balans 0.74/0.68; parametr drop_anchor=\"first_kill_engage\" oraz eq Beat Impact Pop na oknie...",
+      "measured_result": "Pomiar librosa STFT (35–160 Hz) na r2_triple: Przed (15.15s): bass_jump_ratio=1.33x. Po (SPEED_RAMP_FLOW @ 10.68s): 7.29x (clip_gt_098=0). Po (first_kill_engage @ 4.10s): 6.48x (clip_gt_098=1)",
+      "expected_effect": "Mocny bas i wejście bitu zsynchronizowane z akcją",
+      "affected_files": [
+        "lol_beat_detector.py",
+        "lol_editor.py",
+        "tuning_manager.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_572371742bb9",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "5. Trening Synapsy QLoRA na RTX 3060 i Pełne Testy (synapsa_engine.py, lol_montage_director.py, lol_yt_pattern_miner....",
+      "goal": "Nauczyć Synapsę wyboru drop_anchor i viralowych hooków POV / Curiosity Gap",
+      "change": "Dodano drop_anchor do PARAM_EFFECT_CONTRACT, uzupełniono wzorce viralowe 500k–2.96M, wykonano 60-krokowy trening QLoRA Qwen2.5-Coder-7B-4bit (adapters_shortsyt_titles) i puszczono wszystkie zestawy testów po ostatnich zmianach",
+      "measured_result": "Trening QLoRA (591.45s): loss spadł 3.0152 -> 0.3928 (śr. 1.1831). Pełne testy po zmianach: 113/113 w engine_tests/ (28.90s) + 269/269 w tests/ (73.14s) = 382/382 zielone (100%)",
+      "expected_effect": "Lokalny model AI gotowy do montażu i generowania hooków",
+      "affected_files": [
+        "lol_montage_director.py",
+        "lol_yt_pattern_miner.py",
+        "synapsa_engine.py",
+        "synapsa_title_trainer.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_6adf773b5d8d",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "1. Atomowy claim \"processing\" i Auto-Retry (3x) w Kolejce Social (lol_agent/scheduled_queue.py)",
+      "goal": "Wykluczyć podwójną wysyłkę na TikToka/IG przy jednoczesnym biegu pętli 60s i ręcznego /flush oraz przetrwać chwilowe błędy sieci API",
+      "change": "Dodano _FLUSH_EXEC_LOCK, atomowy zapis stanu \"processing\" pod _QUEUE_LOCK przed uploadem (recovery zawieszonych po 15 min), deduplikację ID wpisów oraz _record_retry_or_fail() z MAX_UPLOAD_RETRIES=3 i 5 min backoffem (next_retry_at)",
+      "measured_result": "Testy jednostkowe w tests/test_tiktok_publisher.py: test_scheduled_queue_atomic_processing_and_retry_backoff i test_scheduled_queue_blocks_concurrent_duplicate_flush PASSED (14/14 w pliku)",
+      "expected_effect": "Zero duplikatów uploadu i automatyczne odzyskiwanie po chwilowych błędach API",
+      "affected_files": [
+        "lol_agent/scheduled_queue.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_718b256f31de",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "2. Automatyczny Rotator Plików Tymczasowych lol_temp/ (lol_agent/temp_cleaner.py, lol_agent/api/main.py)",
+      "goal": "Zwolnić miejsce w OneDrive i zapobiec zapychaniu dysku oraz konfliktom synchronizacji chmury przy renderach FFmpeg",
+      "change": "Utworzono lol_agent/temp_cleaner.py (cleanup_temp_directory): usuwa półprodukty FFmpeg (>30 min) i stare nieopublikowane pliki/podkatalogi (>14 dni), chroniąc kolejkę pending/processing oraz najnowszy batch nocny (28 chronionych ścieżek); podpięto do _track...",
+      "measured_result": "lol_temp/: 1134 plików (9447.21 MB) -> 130 plików (1930.55 MB) — usunięto 1004 pliki, zwolniono 7516.66 MB (7.34 GB); 4/4 zaplanowanych wpisów video_ok=True, thumb_ok=True; test jednostkowy PASSED",
+      "expected_effect": "Stałe ograniczenie rozmiaru lol_temp/ poniżej 2.5 GB z 100% ochroną zaplanowanych publikacji",
+      "affected_files": [
+        "lol_agent/api/main.py",
+        "lol_agent/temp_cleaner.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_c2033fd65b9a",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "3. Naprawa/Migracja Zadań Harmonogramu Windows i Raportu Tygodniowego (refresh_token_auto.py, weekly_channel_analyzer...",
+      "goal": "Usunąć martwe błędy PycharmProjects\\shortsyt i uruchomić niezawodne odświeżanie tokenów OAuth oraz analitykę @Dwannellenga",
+      "change": "Utwardzono refresh_token_auto.py (ścieżki względem ROOT_DIR, aktywny profil z profiles_registry.json) i przepięto ShortsytTokenRefresh na OneDrive\\Michal\\Shortsyt; naprawiono weekly_channel_analyzer.py (playlistItems zamiast błędnego search 400 + profil \"lo...",
+      "measured_result": "ShortsytTokenRefresh: LastTaskResult=0 (5 sukces, 0 bledow + YT=10). FlikcutWeekly: LastTaskResult=0 (logs/weekly_report_2026-11-22.json, 11 shortów). Uwaga UAC: ShortsytMorning, ShortsytEvening, ShortsytWeekly mają RunLevel=Highest (0x8...",
+      "expected_effect": "Czysty Harmonogram Windows: aktywne FlikcutBackend, ShortsytTokenRefresh i FlikcutWeekly działają z kodem 0",
+      "affected_files": [
+        "profiles_registry.js",
+        "refresh_token_auto.py",
+        "weekly_channel_analyzer.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_2d249a1ec63b",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "4. Czyste Źródło Miniaturki 9:16 (Zero Nakładających Się Napisów) (pipeline_runner.py, synapsa_overnight_batch.py, cl...",
+      "goal": "Wyeliminować nakładanie typografii miniaturki na wpalone napisy FINAL KILL 3/3 z gotowego shorta",
+      "change": "Przekazano source_clip_path oraz source_peak_moment do generate_thumbnail() we wszystkich 3 miejscach generowania i regeneracji miniatur",
+      "measured_result": "Zweryfikowano w pipeline_runner.py:943-951, synapsa_overnight_batch.py:1793-1801 i clips.py:684-702 + test endpointów/regresja bez błędów",
+      "expected_effect": "Wyraźne miniaturki 9:16 ze źródłowej klatki bez kolizji z overlayami wideo",
+      "affected_files": [
+        "clips.py",
+        "pipeline_runner.py",
+        "synapsa_overnight_batch.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_6da7b4b1ea64",
+      "kind": "todo_completed",
+      "section": "27. Etap 19: Podsumowanie Wdrożenia Etapów 17–18 oraz Audyt i Plan Niezawodności Produkcyjnej 24/7 (22.11.2026)",
+      "module": "5. Proaktywny Watchdog Zdrowia Systemu i Pełna Regresja (lol_agent/api/routers/system.py, lol_agent/api/main.py, tests/)",
+      "goal": "Mieć jeden endpoint diagnostyki dysku, 4 tokenów, kolejki i GPU VRAM oraz automatyczne podtrzymanie OAuth co 10 min",
+      "change": "Dodano GET /system/reliability (4 tokeny, kolejka, dysk + lol_temp, VRAM z fallbackiem nvidia-smi), POST /system/cleanup-temp, odświeżanie tokenów + rotator w _tracker_loop() i testy integracyjne",
+      "measured_result": "Live GET /system/reliability -> 200 OK, status: \"healthy\" (free_gb=29.11, temp_size_mb=1930.55, RTX 3060 11547/12288 MB, warnings=[]). Po finalnych zmianach: 273/273 w tests/ (70.47s) + 113/113 w engine_tests/ (24.87s) = 386/386 PASSED (...",
+      "expected_effect": "Pełna widoczność zdrowia automatyki 24/7 i 100% przechodzących testów",
+      "affected_files": [
+        "lol_agent/api/main.py",
+        "lol_agent/api/routers/system.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_7986f7fd6eac",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "1. Montaż Beat-Sync v3, Sub-Bass i drop_anchor (lol_editor.py, lol_beat_detector.py, Synapsa QLoRA)",
+      "goal": "Dostosować wejście dropu do momentu 1. killa lub finału walki i sprawić, by bas nie był zagłuszany przez audio z gry",
+      "change": "Profil BPM 11/11 MP3 w beat_drop_cache.json, filtr highpass=f=130 Hz na dźwięku gry, Pre-Drop Vacuum -0.42 + Drop Boost +0.32, parametr drop_anchor oraz 60-krokowy trening QLoRA Synapsy na RTX 3060",
+      "measured_result": "Odpal nocny batch Overnight lub montaż w Flikcut Studio na klipie multikilla (double/triple) i posłuchaj przejścia basu w momencie pierwszego engage'u / głównego killa oraz spójrz na nasycenie kolorów podczas zoomu",
+      "expected_effect": "Głos/efekty z gry brzmią czysto powyżej 130 Hz, przed dropem muzyka na chwilę cichnie, a dokładnie na engage/killu uderza głęboki sub-bass z błyskiem kontrastu",
+      "affected_files": [
+        "beat_drop_cache.js",
+        "lol_beat_detector.py",
+        "lol_editor.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_6d264bb55822",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "2. Kolejka 24/7 TikTok/IG + Okładka 9:16 0.0s + Opis TikTok w UI (scheduled_queue.py, tiktok_publisher.py, Outputs.ts...",
+      "goal": "Wysyłać posty automatycznie o 11:00 i 21:30 bez włączonego okna apki, bez ręcznego dopisywania tagów i bez nachodzących napisów na okładce",
+      "change": "Atomowy claim \"processing\" + retry 3x co 5 min, wtrysk miniaturki 0.00–0.08s (video_cover_timestamp_ms=50), osobny copywriter TikTok (<=5 tagów, bez #shorts) oraz przycisk Kopiuj opis TikTok i podgląd kolejki w UI",
+      "measured_result": "Zamknij okno Flikcut Studio, zajrzyj po 11:00 lub 21:30 do kolejki w Kalendarzu (lub kliknij w Outputs Kopiuj opis TikTok i zaplanuj testowy wpis), sprawdź skrzynkę TikTok / Instagram Reels",
+      "expected_effect": "Wpis przechodzi sam z pending -> processing -> published, na TikToku ma gotową okładkę 9:16 z klatki 0.0s i oddzielny opis viralowy różny od YouTube",
+      "affected_files": [
+        "CalendarScheduler.tsx",
+        "Outputs.tsx",
+        "scheduled_queue.py",
+        "tiktok_publisher.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_af2d073515c0",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "3. Czyste Miniaturki 9:16 (Zero Kolizji Tekstu) (pipeline_runner.py, synapsa_overnight_batch.py, clips.py)",
+      "goal": "Usunąć podwójne napisy (KATARINA / TRIPLE KILL nałożone na wpalone FINAL KILL 3/3)",
+      "change": "Przekazano source_clip_path i source_peak_moment do generate_thumbnail() we wszystkich miejscach renderu i regeneracji miniatur",
+      "measured_result": "W zakładce Outputs kliknij regenerację miniaturki wybranego shorta (lub wyrenderuj nowy) i porównaj jej czytelność z poprzednimi",
+      "expected_effect": "Typografia okładki leży wyłącznie na czystym kadrze z oryginalnej powtórki bez śmieciowych napisów HUD w tle",
+      "affected_files": [
+        "clips.py",
+        "pipeline_runner.py",
+        "synapsa_overnight_batch.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_753db79ab1d9",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "4. Niezawodność 24/7, Tokeny i Zadania Windows (system.py, refresh_token_auto.py, weekly_channel_analyzer.py)",
+      "goal": "Wykrywać awarie zanim padnie publikacja i trzymać świeże tokeny OAuth na 4 platformach oraz raport tygodniowy",
+      "change": "Dodano GET /system/reliability + auto-czyszczenie i refresh co 10 min w _tracker_loop(), naprawiono ShortsytTokenRefresh (LastResult=0) oraz dodano FlikcutWeekly (LastResult=0)",
+      "measured_result": "Sprawdź na żywo http://127.0.0.1:8765/health (lub zalogowany GET /system/reliability) i otwórz Task Scheduler; opcjonalnie jako Administrator wyłącz 3 stare zadania: Disable-ScheduledTask -TaskName ShortsytMorning,ShortsytEvening,Shortsy...",
+      "expected_effect": "/system/reliability zwraca \"status\": \"healthy\", 4/4 tokeny ważne (YT 7d, TikTok 347d, IG, FB), wolny VRAM RTX 3060 ~11.5 GB, a ShortsytTokenRefresh i Flikcut...",
+      "affected_files": [
+        "refresh_token_auto.py",
+        "system.py",
+        "weekly_channel_analyzer.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_cc25a8e91dbd",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "1. Cache Renderów FFmpeg w OneDrive (lol_agent/lol_temp/, Etap 19.2)",
+      "goal": "Odciążyć synchronizację OneDrive i zapobiec przepełnieniu dysku przez półprodukty",
+      "change": "temp_cleaner.py: usunięto pliki pośrednie (>30 min) oraz nieopublikowane rendery i stare podkatalogi debugowe (>14 dni)",
+      "measured_result": "1004 pliki usunięte, 7516.66 MB (7.34 GB) zwolnione (9447.21 MB -> 1930.55 MB)",
+      "expected_effect": "Pozostało 130 aktywnych plików (28 chronionych ścieżek kolejki i najnowszego batcha nienaruszonych)",
+      "affected_files": [
+        "temp_cleaner.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_2077deb38e25",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "2. Build Cache Androida & Desktop Electron + Debugi (shortsyt-app, shortsyt-desktop, lol_agent, scratch, Synapsa)",
+      "goal": "Usunąć tymczasowe paczki APK/Gradle/instalatory (prawdziwa apka działa z Pulpit\\Flikcut Studio), stare katalogi debugowe i kopie datasetu",
+      "change": "Usunięto: Android app/build, .gradle, build (4237.14 MB), Desktop dist-installer + dist-app (641.63 MB), Shortsyt Studio Setup 1.0.0.exe (77.97 MB), lol_agent/{preview_shorts,debug_frames,output_clips,debug_jinx,debug_last_frag} (374.16 MB), scratch + outpu...",
+      "measured_result": "2400 plików usuniętych, 5556.65 MB (5.43 GB) zwolnione (REMAINING EMPTY DIRS: 0); łącznie Etap 19.2 + 20: 13,073.31 MB (12.77 GB), dysk C: urósł do 32.97 GB wolnego",
+      "expected_effect": "Kod źródłowy, venv313, node_modules, Synapsa\\venv (6.2 GB), adapters_shortsyt_titles i modele AI zachowane w 100% (bezpieczne dla pracy 24/7)",
+      "affected_files": []
+    },
+    {
+      "lesson_id": "todo_87fe1d2b10af",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "4. Audyt i Push na GitHub (https://github.com/BATTLEMETAL/Shortsyt.git)",
+      "goal": "Zsychronizować pełny kod, UI Electron, testy (386/386) i dokumentację TODO.md z GitHubem bez wycieku tokenów OAuth",
+      "change": "Wykryto, że origin/main stał od 27.10.2026 (afd3b90) (92 zmodyfikowanych plików + nowe moduły były tylko lokalnie na engine-timeline-fix); uzupełniono .gitignore o cache runtime/archiwa, zacommitowano cały projekt z Etapów 10–20 i wypchnięto gałąź na GitHub...",
+      "measured_result": "Zacommitowano i wypchnięto na origin/engine-timeline-fix (bez sekretów z accounts/, bez plików .pickle/.mp4 i z pełnym TODO.md)",
+      "expected_effect": "Na GitHubie jest teraz aktualna gałąź engine-timeline-fix gotowa do ewentualnego Pull Requesta / scalenia do main",
+      "affected_files": []
+    },
+    {
+      "lesson_id": "todo_c48807f3c332",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "5. Czysty Start Wideo, Dogrywanie Miniatur YT po HD i TikTok Web Chrome (tiktok_publisher.py, tiktok_web_scheduler.py...",
+      "goal": "Chronić retencję początkowych klatek, zapobiegać nadpisaniu miniaturki przez transkoder YT HD oraz wyeliminować powiadomienia na telefonie na TikToku przed końcem audytu",
+      "change": "Wyłączono doklejanie klatki 0.08s (cover_embedded=False, okładka z peak_moment), dodano wątek _ensure_youtube_thumbnail_after_processing() po succeeded + potwierdzenie w flush_pending_comments(), dograno miniaturkę 4Fyn2vIfQv8, zainstalowano playwright (cha...",
+      "measured_result": "29/29 testów (test_tiktok_publisher.py + test_youtube_uploader.py) PASSED; miniaturka 4Fyn2vIfQv8 potwierdzona po HD (_ensure_youtube_thumbnail_after_processing -> True); sesja TikTok Studio Chrome zweryfikowana (IS LOGGED IN: True)",
+      "expected_effect": "Płynny start filmu od pierwszej klatki, niezawodne miniaturki YouTube bez czekania i pełna automatyzacja TikTok Studio przez Chrome",
+      "affected_files": [
+        "tiktok_publisher.py",
+        "tiktok_web_scheduler.py",
+        "youtube_uploader.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_bfb8965076f5",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "6. Pakiet Audytu TikTok Direct Post (video.publish) — Weryfikacja za 1. Razem (Outputs.tsx, generate_tiktok_app_revie...",
+      "goal": "Przejść formalny audyt w developers.tiktok.com w ~7 dni bez odrzucenia i włączyć pełny Direct Post API zamiast powiadomień",
+      "change": "Dodano wszystkie wymagane kontrolki UX TikToka w UI (Creator Info, Who can view, odznaczone domyślnie Comment/Duet/Stitch, Disclose video content, Music Usage Confirmation), przebudowano app.asar na Pulpit (35.68 MB), wyrenderowano angielskie wideo 1080p (4...",
+      "measured_result": "ffprobe: 1920x1080 H.264 + AAC 42.0s (5.47 MB < 50 MB); sprawdzone wizualnie klatki (4.5s, 23.0s, 37.0s); domena i linki prawne 200 OK na shortsyt.salon-prettywoman.pl; pakiet gotowy w Pulpit\\TikTok_Weryfikacja\\",
+      "expected_effect": "Zatwierdzenie video.publish za pierwszym podejściem i bezpieczne przełączenie na Direct Post API po akceptacji",
+      "affected_files": [
+        "Outputs.tsx",
+        "generate_tiktok_app_review_demo.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_658cd0fc3eb8",
+      "kind": "todo_completed",
+      "section": "28. Etap 20: Podsumowanie Wdrożenia, Checklista Testowa Użytkownika, Audyt GitHub i Wielkie Czyszczenie Dysku PC (22....",
+      "module": "6. Pakiet Audytu TikTok Direct Post (video.publish) — Weryfikacja za 1. Razem (Outputs.tsx, generate_tiktok_app_revie...",
+      "goal": "Przejść formalny audyt w developers.tiktok.com w ~7 dni bez odrzucenia i włączyć pełny Direct Post API zamiast powiadomień",
+      "change": "Dodano wszystkie wymagane kontrolki UX TikToka w UI (Creator Info, Who can view, odznaczone domyślnie Comment/Duet/Stitch, Disclose video content, Music Usage Confirmation), przebudowano app.asar na Pulpit (35.68 MB), wyrenderowano angielskie wideo 1080p (5...",
+      "measured_result": "ffprobe: 1920x1080 H.264 + AAC (< 50 MB); domena i linki prawne 200 OK na shortsyt.salon-prettywoman.pl; pakiet w Pulpit\\Wszystko na rozmowe\\tiktok\\ (korekta fake OAuth i czasów w Etapie 21.1)",
+      "expected_effect": "Zatwierdzenie video.publish za pierwszym podejściem i bezpieczne przełączenie na Direct Post API po akceptacji",
+      "affected_files": [
+        "Outputs.tsx",
+        "generate_tiktok_app_review_demo.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_42ead4792a70",
+      "kind": "todo_completed",
+      "section": "29. Audyt Prac z Konwersacji „Gemini Deployment Instruction for Claude” (21–22.11.2026) i Plan Naprawczy — Etap 21 (S...",
+      "module": "1. Weryfikacja folderów i ścieżek pracy (OneDrive\\Michal\\Shortsyt vs PycharmProjects\\shortsyt vs odpal\\Shortsyt)",
+      "goal": "Rozstrzygnąć obawę użytkownika, czy kod był pisany w nieaktualnym folderze",
+      "change": "Przeskanowano log transkryptu 2e80ab36, daty modyfikacji plików w Michal\\Shortsyt, PycharmProjects\\shortsyt, Pulpit\\odpal\\Shortsyt i Pulpit\\Wszystko na rozmowe\\tiktok",
+      "measured_result": "Kod był edytowany we właściwym repozytorium OneDrive\\Michal\\Shortsyt (48/50 edytowanych ścieżek; pozostałe 2 to celowe pliki na Pulpicie: Zaloguj_TikTok_Studio.bat i INSTRUKCJA_WNIOSKU_TIKTOK.txt). PycharmProjects\\shortsyt zawiera już ty...",
+      "expected_effect": "Brak rozproszenia kodu źródłowego między starym a nowym repozytorium",
+      "affected_files": []
+    },
+    {
+      "lesson_id": "todo_b05df818abb5",
+      "kind": "todo_completed",
+      "section": "29. Audyt Prac z Konwersacji „Gemini Deployment Instruction for Claude” (21–22.11.2026) i Plan Naprawczy — Etap 21 (S...",
+      "module": "2. Nieaktualny build app.asar na Pulpicie i żywe procesy (Flikcut Studio.exe, uvicorn)",
+      "goal": "Sprawdzić, czy użytkownik i uruchomiona aplikacja widzą najnowszy kod z 11:34–11:45",
+      "change": "Zbudowano npm run build + npm run dist:dir, zsynchronizowano oba pliki z dist-installer\\win-unpacked (app.asar + Flikcut Studio.exe ze względu na wbudowany zasób ASAR integrity Electron 32) i zrestartowano FlikcutBackend (uvicorn)",
+      "measured_result": "app.asar (SHA256 3DD72961...) i Flikcut Studio.exe (SHA256 63F1D8A3...) w 100% zgodne z win-unpacked (4 procesy żywe od 12:23:37); uvicorn zrestartowany czysto (PID 6004, start 12:22:41), /health 200, /system/reliability healthy",
+      "expected_effect": "Zawsze pełny cykl npm run build + dist:dir + kopia app.asar + Flikcut Studio.exe i restart usług",
+      "affected_files": []
+    },
+    {
+      "lesson_id": "todo_ea550dbef059",
+      "kind": "todo_completed",
+      "section": "29. Audyt Prac z Konwersacji „Gemini Deployment Instruction for Claude” (21–22.11.2026) i Plan Naprawczy — Etap 21 (S...",
+      "module": "3. KRYTYCZNE — Fake okno OAuth TikToka w Settings.tsx i rozjazd pakietu audytowego (Settings.tsx, social.py, Wszystko...",
+      "goal": "Zweryfikować uczciwość i spójność nagrania demo pod weryfikację TikTok Direct Post (video.publish)",
+      "change": "Usunięto makietę HTML OAuth (ttAuthModalOpen + sbaw64ng6612242v0t) z Settings.tsx; wpięto prawdziwy OAuth 2.0 PKCE (http://localhost:8180/callback, .env sbaweq5t0oueol171i); poprawiono scripts/record_real_tiktok_app_demo.py, INSTRUKCJA_WNIOSKU_TIKTOK.txt or...",
+      "measured_result": "GET /social/tiktok/auth-url live zwraca prawdziwy URL tiktok.com/v2/auth/authorize z client_key=sbaweq5t0oueol171i, localhost:8180/callback i S256; POST /social/tiktok/oauth/start uruchamia jednorazowy listener 127.0.0.1:8180 poza pytest...",
+      "expected_effect": "Bezpieczny wniosek TikTok Direct Post oparty na prawdziwym PKCE OAuth w przeglądarce",
+      "affected_files": [
+        "Settings.tsx",
+        "scripts/record_real_tiktok_app_demo.py",
+        "social.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_5e92ad08ca76",
+      "kind": "todo_completed",
+      "section": "29. Audyt Prac z Konwersacji „Gemini Deployment Instruction for Claude” (21–22.11.2026) i Plan Naprawczy — Etap 21 (S...",
+      "module": "4. KRYTYCZNE — Atrapy / niewpięte kontrolki w Outputs.tsx i Dashboard.tsx (Outputs.tsx, Dashboard.tsx, models.py, soc...",
+      "goal": "Sprawdzić, czy wszystkie pola publikacji Multi-Platform i UX TikToka działają realnie end-to-end",
+      "change": "Dodano instagram_caption, facebook_caption oraz tiktok_allow_comment/duet/stitch, tiktok_disclose_content, tiktok_brand_organic, tiktok_branded_content od UI przez FastAPI, multi_publisher.py, tiktok_publisher.py (post_info + extra) po scheduled_queue.py; d...",
+      "measured_result": "test_social_publish_multi_validation_and_flags + test_tiktok_direct_post_flags_and_queue_roundtrip PASSED; UI blokuje wysyłkę bez ttPrivacy, przy Disclose bez typu lub przy Branded content + SELF_ONLY, a opisy IG/FB oraz 5 flag TikToka t...",
+      "expected_effect": "Każda kontrolka w oknie publikacji realnie steruje backendem i kolejką",
+      "affected_files": [
+        "Dashboard.tsx",
+        "Outputs.tsx",
+        "models.py",
+        "multi_publisher.py",
+        "scheduled_queue.py",
+        "social.py",
+        "tiktok_publisher.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_a379d26b0e20",
+      "kind": "todo_completed",
+      "section": "29. Audyt Prac z Konwersacji „Gemini Deployment Instruction for Claude” (21–22.11.2026) i Plan Naprawczy — Etap 21 (S...",
+      "module": "5. Zdrowie silnika, testy automatyczne, kolejka 24/7 i miniaturki 9:16 (engine_tests/, tests/, scheduled_queue.py, sy...",
+      "goal": "Potwierdzić regresję całego projektu po ostatnich edycjach i stan kolejki produkcyjnej",
+      "change": "Uruchomiono 11 plików engine_tests, pełne tests/, npx tsc --noEmit oraz odczytano /system/reliability, /social/queue i /overnight/latest",
+      "measured_result": "113/113 w engine_tests (35.22s) + 275/275 w tests/ (43.70s) = 388/388 PASSED; npx tsc --noEmit = exit 0; live /system/reliability = healthy (4/4 tokeny ważne, dzisiejszy slot 11:00 TT 1795202168977 + IG 1795202168978 opublikowany, 2 pend...",
+      "expected_effect": "Stabilna baza wykonawcza do dalszych prac",
+      "affected_files": [
+        "scheduled_queue.py",
+        "system.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_a68460ee5802",
+      "kind": "todo_completed",
+      "section": "29. Audyt Prac z Konwersacji „Gemini Deployment Instruction for Claude” (21–22.11.2026) i Plan Naprawczy — Etap 21 (S...",
+      "module": "21.1 Prawdziwy TikTok OAuth PKCE + uczciwe Demo + korekta INSTRUKCJA_WNIOSKU_TIKTOK.txt (Settings.tsx, social.py, mod...",
+      "goal": "Wyeliminować makietę HTML OAuth ze złym client_key zanim wyślesz wniosek video.publish do audytora TikToka",
+      "change": "Usunięcie modala ttAuthModalOpen i sbaw64ng6612242v0t; prawdziwe PKCE Hex S256 w social.py (GET /auth-url, POST /oauth/start z listenerem 127.0.0.1:8180/callback, POST /auth-code z code_verifier) + openExternal w Settings.tsx + aktualizacja record_real_tikt...",
+      "measured_result": "Live GET /social/tiktok/auth-url = True (sbaweq5t0oueol171i, localhost:8180/callback, S256); test_tiktok_oauth_pkce_endpoints PASSED; użytkownik przed wysłaniem wniosku nagrywa realny ekran kliknięcia tiktok.com wg KROK 0 w instrukcji",
+      "expected_effect": "Bezpieczny wniosek TikTok Direct Post oparty na prawdziwym kodzie",
+      "affected_files": [
+        "Settings.tsx",
+        "models.py",
+        "record_real_tiktok_app_demo.py",
+        "social.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_464212c7d712",
+      "kind": "todo_completed",
+      "section": "29. Audyt Prac z Konwersacji „Gemini Deployment Instruction for Claude” (21–22.11.2026) i Plan Naprawczy — Etap 21 (S...",
+      "module": "21.2 Pełne spięcie formularza Outputs.tsx <-> Backend (IG/FB copy + flagi UX TikToka) (Outputs.tsx, Dashboard.tsx, mo...",
+      "goal": "Przestać udawać działanie checkboxów TikToka, osobnych opisów IG/FB i tagów w UI",
+      "change": "Rozszerzono MultiPlatformUploadRequest + łańcuch do post_info i scheduled_social_queue.json o instagram_caption, facebook_caption i 5 flag TikToka; walidacja 400 + blokada UI dla pustego ttPrivacy, Disclose bez typu i Branded content + SELF_ONLY; dynamiczne...",
+      "measured_result": "test_social_publish_multi_validation_and_flags + test_tiktok_direct_post_flags_and_queue_roundtrip + pełne engine_tests (113 passed) i tests/ (278 passed) = 391/391 PASSED",
+      "expected_effect": "Każda kontrolka w oknie publikacji realnie steruje backendem",
+      "affected_files": [
+        "Dashboard.tsx",
+        "Outputs.tsx",
+        "models.py",
+        "multi_publisher.py",
+        "scheduled_queue.py",
+        "scheduled_social_queue.js",
+        "social.py",
+        "tiktok_publisher.py"
+      ]
+    },
+    {
+      "lesson_id": "todo_a00fb65ee721",
+      "kind": "todo_completed",
+      "section": "29. Audyt Prac z Konwersacji „Gemini Deployment Instruction for Claude” (21–22.11.2026) i Plan Naprawczy — Etap 21 (S...",
+      "module": "21.3 Rebuild app.asar + .exe na Pulpit i restart procesów (shortsyt-desktop, uvicorn, Flikcut Studio.exe)",
+      "goal": "Udostępnić użytkownikowi aktualny build aplikacji i nowy backend bez błędu integralności ASAR",
+      "change": "npm run build (tsc && vite build, exit 0) + npm run dist:dir (exit 0) + kopia app.asar i Flikcut Studio.exe na Pulpit + restart FlikcutBackend (uvicorn) i uruchomienie Flikcut Studio.exe",
+      "measured_result": "app.asar SHA256 3DD72961... (ASAR_IDENTICAL=True), Flikcut Studio.exe SHA256 63F1D8A3..., 4 procesy żywe po 8 s (PID 29644 12:23:37), uvicorn PID 6004 (12:22:41), live /system/reliability = healthy (4/4 tokeny, 2 pending 21:30 nienaruszone)",
+      "expected_effect": "Zero rozjazdu między kodem źródłowym a działającą aplikacją",
+      "affected_files": []
     }
   ],
   "conversation_fixes": [
@@ -2893,6 +3482,295 @@
       "edit_count": 1,
       "fix_summary": "start_backend.bat: :: Flikcut Backend Auto-Start",
       "verification": []
+    },
+    {
+      "lesson_id": "conv_960cf324de25",
+      "kind": "conversation_fix",
+      "user_request": "rozkmin jak mozemy definiowac double triple itp , zeby mniej wiecej wiedziala na nocnym trybie i aby mogla wybierac najlepsze sposrod danych fragow , klipy sie roznia lokalizacja w zaleznosci od moczu i daty, kazdy kill to pojedynczy kli...",
+      "affected_files": [
+        "lol_agent\\api\\routers\\clips.py",
+        "lol_agent\\api\\routers\\overnight.py",
+        "lol_agent\\engine_tests\\test_outplayed_db.py",
+        "lol_agent\\outplayed_db.py",
+        "lol_agent\\synapsa_overnight_batch.py",
+        "shortsyt-desktop\\src\\lib\\api.ts",
+        "shortsyt-desktop\\src\\screens\\ClipBrowser.tsx",
+        "shortsyt-desktop\\src\\screens\\Dashboard.tsx"
+      ],
+      "edit_count": 48,
+      "fix_summary": "outplayed_db.py: def _norm_path_key(path_str: str) -> str: | outplayed_db.py: combined = _load_backup_records(b_dir) | clips.py: from ..auth import verify_token, verify_token_flexible",
+      "verification": [
+        "102 passed in 19.71s",
+        "108 passed in 19.74s",
+        "109 passed",
+        "109 passed in 14.30s"
+      ]
+    },
+    {
+      "lesson_id": "conv_541694287049",
+      "kind": "conversation_fix",
+      "user_request": "potestuj , czy synapsa daje rade czy montaz i napisy sa dobrze czy zwiekszy sie skutecznosc ostatnio retention time lekko spadlo . Obejrzyj wszystko co zrobi synapsa wlaczajac filmiki zebys sam poprawil jego wytyczne zobacz co jeszcze je...",
+      "affected_files": [
+        "lol_agent\\api\\pipeline_runner.py",
+        "lol_agent\\engine_tests\\test_editor_pipeline.py",
+        "lol_agent\\lol_editor.py",
+        "lol_agent\\lol_frag_detector.py",
+        "lol_agent\\lol_metadata_generator.py",
+        "lol_agent\\lol_montage_director.py",
+        "lol_agent\\smart_camera.py",
+        "lol_agent\\synapsa_conversation_learner.py"
+      ],
+      "edit_count": 41,
+      "fix_summary": "lol_frag_detector.py: def find_combat_start_before( | lol_frag_detector.py: has_real_video = bool(frag_res.video_path and os.path.exists(frag_res.video_path)) | lol_frag_detector.py: obj_sec = bool(getattr(frag_res, \"objective_secured\", False))",
+      "verification": [
+        "15 passed in 5.04s",
+        "16 passed",
+        "16 passed in 4.82s",
+        "16 passed in 5.43s"
+      ]
+    },
+    {
+      "lesson_id": "conv_8c04c48fea19",
+      "kind": "conversation_fix",
+      "user_request": "tak upewnij sie ze film do weryfikacji spelnia wszystkie normy chce zeby weryfikacja przeszla na raz",
+      "affected_files": [
+        "lol_agent\\api\\models.py",
+        "lol_agent\\api\\routers\\social.py",
+        "lol_agent\\learning_engine.py",
+        "lol_agent\\lol_yt_pattern_miner.py",
+        "lol_agent\\multi_publisher.py",
+        "lol_agent\\scheduled_queue.py",
+        "lol_agent\\synapsa_title_trainer.py",
+        "lol_agent\\tiktok_publisher.py"
+      ],
+      "edit_count": 38,
+      "fix_summary": "tiktok_publisher.py: TIKTOK_API_BASE = \"https://open.tiktokapis.com/v2\" | tiktok_publisher.py: def get_tiktok_creator_info() -> Dict[str, Any]: | scheduled_queue.py: return upload_tiktok_short(",
+      "verification": [
+        "video_id\": \"breakout_vid",
+        "video_id\": \"test_pub_999"
+      ]
+    },
+    {
+      "lesson_id": "conv_5348f126ecaa",
+      "kind": "conversation_fix",
+      "user_request": "dobra jestem głupi i zrobiłem sporo nowych rzeczy w gemini deployment instruction for claude zweryfikuj wszyskto . Bedziemy kontynuuowac tytaj . Przeanalizuj wszystkie rzeczy które zrobiliśmy dzisiaj masz być swiadomoy i gotowy do kontyn...",
+      "affected_files": [
+        "lol_agent\\api\\models.py",
+        "lol_agent\\api\\routers\\social.py",
+        "lol_agent\\multi_publisher.py",
+        "lol_agent\\scheduled_queue.py",
+        "lol_agent\\tiktok_publisher.py",
+        "scripts\\record_real_tiktok_app_demo.py",
+        "shortsyt-desktop\\src\\lib\\api.ts",
+        "shortsyt-desktop\\src\\screens\\Dashboard.tsx"
+      ],
+      "edit_count": 33,
+      "fix_summary": "models.py: class TikTokAuthCodeRequest(BaseModel): | tiktok_publisher.py: def upload_tiktok_short( | scheduled_queue.py: return upload_tiktok_short(",
+      "verification": [
+        "112 passed in 100.87s",
+        "113 passed",
+        "113 passed in 26.18s",
+        "113 passed in 35.22s"
+      ]
+    },
+    {
+      "lesson_id": "conv_b9bf396f9075",
+      "kind": "conversation_fix",
+      "user_request": "dobra chce zeby skanowalo wszystkie klipy i wybralo pare najlepszych ktore potem bede mogl wybrac to jest opcja nocna zostawiam na noc skanuje caly folder synapsa wybiera najlepsza najbardziej hypowana akcje i montuje w zasadzie 5 potem...",
+      "affected_files": [
+        "lol_agent\\api\\main.py",
+        "lol_agent\\api\\routers\\overnight.py",
+        "lol_agent\\autonomous\\evaluator.py",
+        "lol_agent\\engine_tests\\test_overnight_batch.py",
+        "lol_agent\\synapsa_engine.py",
+        "lol_agent\\synapsa_overnight_batch.py",
+        "shortsyt-desktop\\src\\lib\\api.ts",
+        "shortsyt-desktop\\src\\screens\\ClipBrowser.tsx"
+      ],
+      "edit_count": 32,
+      "fix_summary": "evaluator.py: def _player_hp_mask(frame: np.ndarray) -> np.ndarray: | synapsa_engine.py: if task_type == \"watchability_compare\": | synapsa_engine.py: is_deterministic = task_type in (\"montage_director\", \"engineering_cause_effect\", \"overn...",
+      "verification": [
+        "265 passed",
+        "265 passed in 102.15s",
+        "265 passed in 105.47s",
+        "265 passed in 157.49s"
+      ]
+    },
+    {
+      "lesson_id": "conv_19af6b2c958b",
+      "kind": "conversation_fix",
+      "user_request": "dobra do nagran nocnych dodawaj miniaturki nie mam skad ich dodac w aplikacji nie widac miniaturek przy shortsach do wyboru",
+      "affected_files": [
+        "lol_agent\\api\\main.py",
+        "lol_agent\\api\\pipeline_runner.py",
+        "lol_agent\\api\\routers\\clips.py",
+        "lol_agent\\api\\routers\\social.py",
+        "lol_agent\\engine_tests\\test_outplayed_db.py",
+        "lol_agent\\lol_editor.py",
+        "lol_agent\\synapsa_overnight_batch.py",
+        "shortsyt-desktop\\src\\lib\\api.ts"
+      ],
+      "edit_count": 32,
+      "fix_summary": "synapsa_overnight_batch.py: _OVERNIGHT_LOCK = threading.Lock() | synapsa_overnight_batch.py: def _thumb_search_dirs(output_path: Optional[str] = None) -> List[Path]: | synapsa_overnight_batch.py: _save_meta(str(out_fn), {",
+      "verification": [
+        "10 passed in 54.67s",
+        "108 passed in 185.82s",
+        "112 passed",
+        "112 passed in 100.87s"
+      ]
+    },
+    {
+      "lesson_id": "conv_f5dde1794547",
+      "kind": "conversation_fix",
+      "user_request": "dobra bardzo czesto ucina zabojstwa na koncu , bit nie synchronizuje sie z akjca mimo tego ze wczesniej zaczelo to juz dzialac",
+      "affected_files": [
+        "lol_agent\\api\\pipeline_runner.py",
+        "lol_agent\\api\\routers\\clips.py",
+        "lol_agent\\engine_tests\\test_editor_pipeline.py",
+        "lol_agent\\engine_tests\\test_outplayed_db.py",
+        "lol_agent\\lol_beat_detector.py",
+        "lol_agent\\lol_editor.py",
+        "lol_agent\\lol_frag_detector.py",
+        "lol_agent\\lol_quality_validator.py"
+      ],
+      "edit_count": 30,
+      "fix_summary": "outplayed_db.py: meta = match_meta or {} | outplayed_db.py: \"best_event_time_s\": best_time_s, | outplayed_db.py: \"best_event_time_s\",",
+      "verification": [
+        "29 passed in 6.29s",
+        "59 passed in 20.12s"
+      ]
+    },
+    {
+      "lesson_id": "conv_82ba3c39e87f",
+      "kind": "conversation_fix",
+      "user_request": "napraw popraw co musisz ulepsz synapse zeby rozmumiala wszystko co zrobilismy i jak wplywaly zmiany wartosci przed ta konwersacja kiedy jeszcze za to odpowiedni skrypt byl",
+      "affected_files": [
+        "lol_agent\\engine_tests\\test_watchability_judge.py",
+        "lol_agent\\facebook_publisher.py",
+        "lol_agent\\hardware_accel.py",
+        "lol_agent\\instagram_publisher.py",
+        "lol_agent\\synapsa_conversation_learner.py",
+        "lol_agent\\synapsa_title_trainer.py",
+        "lol_agent\\synapsa_watchability_judge.py",
+        "shortsyt-desktop\\src\\screens\\RenderMonitor.tsx"
+      ],
+      "edit_count": 29,
+      "fix_summary": "hardware_accel.py: if enc == 'h264_nvenc': | facebook_publisher.py: Obsługuje publikację wideo na fanpage za pomocą Meta Graph API v21.0 (Video Reels & Res... | instagram_publisher.py: import subprocess",
+      "verification": [
+        "10 passed in 21.23s",
+        "250 passed",
+        "264 passed in 102.45s",
+        "265 passed"
+      ]
+    },
+    {
+      "lesson_id": "conv_2db2124a8166",
+      "kind": "conversation_fix",
+      "user_request": "Zweryfikuj wszystkie nowe rzeczy ktrore wprowadzilismy i kazda ingerencje czy sa poprawnie zainicjowane i zamkniete zeby znow nie wywalilo mi aplikacji . Sykofankcja 0",
+      "affected_files": [
+        "lol_agent\\api\\helpers.py",
+        "lol_agent\\api\\main.py",
+        "lol_agent\\api\\routers\\overnight.py",
+        "lol_agent\\api\\routers\\pipeline.py",
+        "lol_agent\\autonomous\\evaluator.py",
+        "lol_agent\\engine_tests\\test_overnight_batch.py",
+        "lol_agent\\lol_metadata_generator.py",
+        "lol_agent\\synapsa_conversation_learner.py"
+      ],
+      "edit_count": 27,
+      "fix_summary": "synapsa_engine.py: import transformers.modeling_utils as mu | pipeline.py: def start_pipeline(req: PipelineStartRequest, payload: dict = Depends(verify_token)): | main.py: stop_event.set()",
+      "verification": [
+        "10 passed in 4.37s",
+        "16 passed in 7.51s",
+        "264 passed in 283.27s",
+        "265 passed"
+      ]
+    },
+    {
+      "lesson_id": "conv_17416282ee1b",
+      "kind": "conversation_fix",
+      "user_request": "dobra zapisz warunek dla synapsy do montazu ruch kamery ma byc plynny badz odrazu skok jeszeli uzywam e na katarinie shampoo, musi wiedziec gdzie moge doskoczyc i ze po doskoku powinno centrowac kamere na katarinie , czesto skacze do szt...",
+      "affected_files": [
+        "lol_agent\\engine_tests\\test_camera.py",
+        "lol_agent\\engine_tests\\test_learning.py",
+        "lol_agent\\smart_camera.py",
+        "lol_agent\\synapsa_conversation_learner.py",
+        "lol_agent\\synapsa_engine.py",
+        "lol_agent\\synapsa_title_trainer.py"
+      ],
+      "edit_count": 17,
+      "fix_summary": "smart_camera.py: track_x = first_x | smart_camera.py: crop_x_a = int(max(0, min(track_x - crop_w_a // 2, analysis_w - crop_w_a))) | smart_camera.py: red_mask = ((r > 150) & (g < 95) & (b < 85) & ((r - g) > 55) & ((r - b) > 65)) & frame_...",
+      "verification": [
+        "10 passed",
+        "43 passed in 39.04s",
+        "44 passed",
+        "44 passed in 26.09s"
+      ]
+    },
+    {
+      "lesson_id": "conv_796ceaa3bd6a",
+      "kind": "conversation_fix",
+      "user_request": "ocen wszystkie klipy co wybrala synapsa i zmontowala jezeli trzeba ulesz ja",
+      "affected_files": [
+        "lol_agent\\engine_tests\\test_overnight_batch.py",
+        "lol_agent\\lol_editor.py",
+        "lol_agent\\lol_quality_validator.py",
+        "lol_agent\\lol_screen_inspector.py",
+        "lol_agent\\smart_camera.py",
+        "lol_agent\\synapsa_engine.py",
+        "lol_agent\\synapsa_overnight_batch.py",
+        "lol_agent\\synapsa_watchability_judge.py"
+      ],
+      "edit_count": 17,
+      "fix_summary": "lol_screen_inspector.py: def _configure_tesseract() -> None: | smart_camera.py: _gold_hits += int(_has_bar(((r > 165) & (g > 130) & (b < 115) & ((r - b) > 50) & ((g -... | synapsa_watchability_judge.py: frame_frac = 1.0",
+      "verification": [
+        "102 passed in 19.71s",
+        "265 passed",
+        "265 passed in 233.96s",
+        "265 passed in 52.19s"
+      ]
+    },
+    {
+      "lesson_id": "conv_a9892829a529",
+      "kind": "conversation_fix",
+      "user_request": "jak skonczysz sprawdz czy synapsa ma wszystko czego potrzebuje , jednoczesnie zweryfikuj wszystkie pliki czy napenwo wszystko jest zamkniete . Daj status aplikacji , i co jeszcze wypadaloby dodac do nastepnego kroku aby zwiekszyc skutecz...",
+      "affected_files": [
+        "lol_agent\\api\\pipeline_runner.py",
+        "lol_agent\\engine_tests\\test_editor_pipeline.py",
+        "lol_agent\\lol_editor.py",
+        "lol_agent\\smart_camera.py",
+        "lol_agent\\synapsa_title_trainer.py",
+        "tests\\test_tiktok_publisher.py"
+      ],
+      "edit_count": 14,
+      "fix_summary": "test_tiktok_publisher.py: def _isolate_external_apis(tmp_path, monkeypatch): | pipeline_runner.py: for entry in os.scandir(search_dir): | smart_camera.py: BIG_SNAP_DELTA = max(SNAP_DELTA, 240.0 / analysis_scale)",
+      "verification": [
+        "10 passed",
+        "5 passed",
+        "5 passed in 38.92s",
+        "78 passed in 14.92s"
+      ]
+    },
+    {
+      "lesson_id": "conv_99e0e501d3bc",
+      "kind": "conversation_fix",
+      "user_request": "naucz go rozrozniac kiedy porownuje shortsy kiedy po zmianach lepiej cos sie oglada, czy cos faktycznie sie zmienilo , czy jest gorzej chce aby potrafil wstepnie wydedykowac co bedzie po zmianie , po ogladnieciu shortsa wertfikuje co sie...",
+      "affected_files": [
+        "lol_agent\\engine_tests\\test_watchability_judge.py",
+        "lol_agent\\lol_editor.py",
+        "lol_agent\\synapsa_conversation_learner.py",
+        "lol_agent\\synapsa_engine.py",
+        "lol_agent\\synapsa_title_trainer.py",
+        "lol_agent\\synapsa_watchability_judge.py"
+      ],
+      "edit_count": 13,
+      "fix_summary": "synapsa_watchability_judge.py: def load_watchability_rubric(rules_path: Optional[Path] = None) -> Dict[str, Any]: | synapsa_engine.py: if task_type == \"engineering_cause_effect\": | synapsa_watchability_judge.py: if cb >= 0.014 and cd >= 0.12 and ce >= 0.035:",
+      "verification": [
+        "15 passed in 17.74s",
+        "2 passed in 0.97s",
+        "23 passed in 10.22s",
+        "4 passed"
+      ]
     }
   ],
   "camera_shunpo_policy": {
@@ -2924,11 +3802,11 @@
       18.6
     ],
     "hook_retention_by_action": {
-      "triple": 88.3,
-      "double": 82.9,
+      "double": 82.6,
+      "outplay": 80.8,
       "clutch": 75.2,
-      "outplay": 76.2,
-      "solo_bolo": 80.2
+      "triple": 86.2,
+      "quadrakill": 88.7
     },
     "top_retention_videos": [
       {
@@ -2990,7 +3868,7 @@
         "director_operation": "SWITCH_STYLE_IN_MEDIA_RES",
         "final_seconds": 7.164,
         "avg_view_pct": null,
-        "views": 1236,
+        "views": 1292,
         "warning": null
       },
       {
@@ -3000,7 +3878,7 @@
         "director_operation": "KEEP_FULL_CONTINUOUS",
         "final_seconds": 16.364,
         "avg_view_pct": null,
-        "views": 4971,
+        "views": 5764,
         "warning": null
       },
       {
@@ -3010,7 +3888,7 @@
         "director_operation": "SWITCH_STYLE_IN_MEDIA_RES",
         "final_seconds": 13.394,
         "avg_view_pct": null,
-        "views": 0,
+        "views": 196,
         "warning": null
       },
       {
@@ -3020,7 +3898,7 @@
         "director_operation": "KEEP_FULL_CONTINUOUS",
         "final_seconds": 23.764,
         "avg_view_pct": 73.5,
-        "views": 1400,
+        "views": 1416,
         "warning": "unconfirmed_cam_jump_484.0px_linked_to_low_avd_73.5pct"
       },
       {
@@ -3050,7 +3928,7 @@
         "director_operation": "KEEP_FULL_CONTINUOUS",
         "final_seconds": 14.964,
         "avg_view_pct": 87.5,
-        "views": 1299,
+        "views": 1305,
         "warning": null
       },
       {
@@ -3060,7 +3938,7 @@
         "director_operation": "KEEP_FULL_CONTINUOUS",
         "final_seconds": 17.964,
         "avg_view_pct": null,
-        "views": 410,
+        "views": 551,
         "warning": null
       }
     ],
@@ -3074,7 +3952,7 @@
       "avoid": "533px_unconfirmed_cam_jump_and_clipped_multi_slowmo_audio"
     }
   },
-  "watchability_verifications_count": 10,
+  "watchability_verifications_count": 12,
   "historical_value_evolution": [
     {
       "history_id": "3a5f00ae353d",
@@ -3207,7 +4085,7 @@
       "era": "pre_conversation",
       "source_artifact": "learning_directive.json:monthly_2026",
       "parameter_change": "Ewolucja pipeline 2026-08 -> 2026-11 (smart camera v37 + balanced pacing + timeline)",
-      "measured_effect": "Mediana AVD wzrosła 88.5% -> 104.9%; mediana wyświetleń kohort 1318 -> 1883",
+      "measured_effect": "Mediana AVD wzrosła 88.5% -> 100.8%; mediana wyświetleń kohort 1350 -> 1883",
       "causal_rule": "Kolejne poprawki kamery, buildupu i dyrektyw realnie podniosły utrzymanie widza i wyświetlenia.",
       "direction": "KEEP_CHANGE"
     },
@@ -3216,16 +4094,16 @@
       "era": "pre_conversation",
       "source_artifact": "learning_directive.json:duration_analysis",
       "parameter_change": "Porównanie długości: short_10_13s vs balanced_14_17s vs cinematic_18_25s",
-      "measured_effect": "balanced_14_17s: med=1830.0 (score=1.21) > short=1580.0 > cinematic=1541.5",
+      "measured_effect": "balanced_14_17s: med=1830.0 (score=1.23) > short=1565 > cinematic=1540",
       "causal_rule": "Przedział 14-17s wygrywa retencją i odsłonami z krótszymi i rozwlekłymi montażami.",
       "direction": "KEEP_CHANGE"
     },
     {
-      "history_id": "ba7ec45c6830",
+      "history_id": "8981aba9b5ae",
       "era": "pre_conversation",
       "source_artifact": "learning_directive.json:action_stats",
-      "parameter_change": "Formaty: solo_bolo (RWI=75.7) vs pentakill (RWI=63.0)",
-      "measured_effect": "solo_bolo med=2097.0 (1.29x) vs pentakill med=1269.5 (0.78x, w=0.91)",
+      "parameter_change": "Formaty: solo_bolo (RWI=75.9) vs pentakill (RWI=63.1)",
+      "measured_effect": "solo_bolo med=2097.0 (1.31x) vs pentakill med=1269.5 (0.79x, w=0.91)",
       "causal_rule": "Chaotyczne pentakille tracą klarowność w 9:16; 1v1 i szybkie trio utrzymują wyższe RWI.",
       "direction": "KEEP_CHANGE"
     },
@@ -3234,17 +4112,8 @@
       "era": "pre_conversation",
       "source_artifact": "learning_directive.json:title_structure",
       "parameter_change": "Struktury tytułów DISRESPECT_1V1 vs CLEAN_OUTPLAY vs QUESTION",
-      "measured_effect": "DISRESPECT_1V1 ratio=1.27, CLEAN_OUTPLAY conv=5.88/1k",
+      "measured_effect": "DISRESPECT_1V1 ratio=1.29, CLEAN_OUTPLAY conv=5.32/1k",
       "causal_rule": "Krótkie prowokujące tytuły biją ogólnikowe pytania typu QUESTION.",
-      "direction": "KEEP_CHANGE"
-    },
-    {
-      "history_id": "c8786dfa74cc",
-      "era": "pre_conversation",
-      "source_artifact": "user_feedback_history.json",
-      "parameter_change": "pacing: cinematic -> balanced (1 korekt użytkownika)",
-      "measured_effect": "Utrwalone preferencje: music=0.55, game=0.85, smooth_win=5, freeze=0.6s",
-      "causal_rule": "Nie wracaj do trybu cinematic ani wolnego wygładzania po ręcznym przestawieniu na balanced.",
       "direction": "KEEP_CHANGE"
     },
     {

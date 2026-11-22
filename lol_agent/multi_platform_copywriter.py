@@ -82,8 +82,23 @@ def _dedup_preserve(items: List[str]) -> List[str]:
     return out
 
 
+_YT_TAG_BLOCKLIST = {"shorts", "shortsfeed", "ytshorts", "youtubeshorts", "short"}
+_TT_LEARNING_PATH = Path(__file__).resolve().parent.parent / "accounts" / "tiktok_learning_directive.json"
+
+
+def _load_tiktok_recommended_tags() -> List[str]:
+    try:
+        if _TT_LEARNING_PATH.is_file():
+            data = json.loads(_TT_LEARNING_PATH.read_text(encoding="utf-8"))
+            tags = data.get("recommended_hashtags") or []
+            return [t.strip().lstrip("#").lower() for t in tags if t and t.strip().lstrip("#").lower() not in _YT_TAG_BLOCKLIST]
+    except Exception:
+        pass
+    return []
+
+
 def _tiktok_hashtags(champion: str, action_type: str) -> List[str]:
-    """TikTok: 5 precyzyjnych viralowych tagów (#leagueoflegends #<champ> #<champ>mains #<action> #fyp)."""
+    """TikTok: 5 najlepszych tagów wyuczonych z @dwannellenga (bez tagów YouTube typu #shorts)."""
     clean = re.sub(r"['\s]", "", champion) if champion else "Katarina"
     clean_low = clean.lower()
     action_map = {
@@ -91,23 +106,32 @@ def _tiktok_hashtags(champion: str, action_type: str) -> List[str]:
         "quadrakill": ["quadrakill", "lolquadra"],
         "triple": ["triplekill", "loltriple"],
         "double": ["doublekill", "loldouble"],
-        "solo_bolo": ["1v1", "solokill"],
-        "outplay": ["outplay", "lolclips"],
-        "clutch": ["lolclutch", "1hp"],
+        "solo_bolo": ["outplayed", "1v1"],
+        "outplay": ["outplayed", "lolhighlights"],
+        "clutch": ["outplayed", "lolhighlights"],
         "steal": ["dragonsteal", "smite"],
     }
-    action_tags = action_map.get(action_type.lower(), ["outplay", "lolclips"])
+    action_tags = action_map.get(action_type.lower(), ["outplayed", "lolhighlights"])
+    learned = _load_tiktok_recommended_tags()
+    if learned:
+        combined: List[str] = []
+        if action_type and action_type.lower() in action_map:
+            combined.append(action_tags[0])
+        if clean_low:
+            combined.append(clean_low)
+        combined.extend(learned[:2])
+        combined.append("fyp")
+        combined.extend(learned[2:])
+        return _dedup_preserve([t for t in combined if t not in _YT_TAG_BLOCKLIST])[:5]
+
     raw = [
-        "leagueoflegends",
-        clean_low,
-        f"{clean_low}mains",
         action_tags[0],
-        "fyp",
-        "foryou",
-        "lolclips",
-        "gaming",
+        "pcgaming",
+        "leagueoflegends",
+        "lolhighlights",
+        clean_low or "katarina",
     ]
-    return _dedup_preserve(raw)[:5]
+    return _dedup_preserve([t for t in raw if t not in _YT_TAG_BLOCKLIST])[:5]
 
 
 def _instagram_hashtags(champion: str, action_type: str) -> List[str]:
@@ -303,9 +327,8 @@ def generate_tiktok_copy(
         }
         gemini_hook = templates.get(action_type.lower(), f"{champion} {action_label} — clean or pure luck? 💀")[:90]
 
-    tag_str = " ".join(f"#{t.lower()}" for t in tags)
-    funnel_cta = "👉 Obserwuj nasz FB po więcej: facebook.com/Dwannellenga"
-    caption = f"{gemini_hook}\n\n{funnel_cta}\n\n{tag_str}"
+    tag_str = " ".join(f"#{t.lower()}" for t in tags if t.lower() not in _YT_TAG_BLOCKLIST)
+    caption = f"{gemini_hook}\n{tag_str}".strip()
 
     return {
         "platform": "tiktok",

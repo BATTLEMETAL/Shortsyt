@@ -40,6 +40,8 @@ TIKTOK_CLIENT_SECRET = os.getenv("TIKTOK_CLIENT_SECRET", "").strip()
 TIKTOK_API_BASE = "https://open.tiktokapis.com/v2"
 TIKTOK_INIT_URL = f"{TIKTOK_API_BASE}/post/publish/video/init/"
 TIKTOK_INBOX_URL = f"{TIKTOK_API_BASE}/post/publish/inbox/video/init/"
+TIKTOK_CREATOR_INFO_URL = f"{TIKTOK_API_BASE}/post/publish/creator_info/query/"
+TIKTOK_USER_INFO_URL = f"{TIKTOK_API_BASE}/user/info/"
 TIKTOK_STATUS_URL = f"{TIKTOK_API_BASE}/post/publish/status/fetch/"
 TIKTOK_TOKEN_URL = f"{TIKTOK_API_BASE}/oauth/token/"
 
@@ -138,6 +140,76 @@ def get_tiktok_token_status() -> Dict[str, Any]:
     }
 
 
+def get_tiktok_creator_info() -> Dict[str, Any]:
+    """Pobiera bieżące limity, prywatności i zablokowane interakcje twórcy z /v2/post/publish/creator_info/query/."""
+    token_data = load_tiktok_token()
+    if not token_data or not token_data.get("access_token"):
+        return {"ok": False, "error": "Brak ważnego tokenu TikTok."}
+
+    headers = {
+        "Authorization": f"Bearer {token_data['access_token']}",
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    try:
+        resp = requests.post(TIKTOK_CREATOR_INFO_URL, headers=headers, json={}, timeout=15)
+        res_json = resp.json()
+    except Exception as exc:
+        return {"ok": False, "error": f"Błąd połączenia z TikTok creator_info: {exc}"}
+
+    err_obj = res_json.get("error") or {}
+    err_code = err_obj.get("code")
+    data = res_json.get("data") or {}
+    if (err_code and err_code != "ok") or not data:
+        return {"ok": False, "error": err_obj.get("message") or str(res_json)}
+
+    return {
+        "ok": True,
+        "creator_username": str(data.get("creator_username") or ""),
+        "creator_nickname": str(data.get("creator_nickname") or ""),
+        "creator_avatar_url": str(data.get("creator_avatar_url") or ""),
+        "privacy_level_options": list(
+            data.get("privacy_level_options")
+            or ["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"]
+        ),
+        "comment_disabled": bool(data.get("comment_disabled", False)),
+        "duet_disabled": bool(data.get("duet_disabled", False)),
+        "stitch_disabled": bool(data.get("stitch_disabled", False)),
+        "max_video_post_duration_sec": int(data.get("max_video_post_duration_sec") or 600),
+    }
+
+
+def get_tiktok_user_info() -> Dict[str, Any]:
+    """Pobiera profil twórcy dozwolony przez scope user.info.basic z /v2/user/info/."""
+    token_data = load_tiktok_token()
+    if not token_data or not token_data.get("access_token"):
+        return {"ok": False, "error": "Brak ważnego tokenu TikTok."}
+
+    headers = {"Authorization": f"Bearer {token_data['access_token']}"}
+    try:
+        resp = requests.get(
+            TIKTOK_USER_INFO_URL,
+            params={"fields": "open_id,avatar_url,display_name"},
+            headers=headers,
+            timeout=15,
+        )
+        res_json = resp.json()
+    except Exception as exc:
+        return {"ok": False, "error": f"Błąd połączenia z TikTok user_info: {exc}"}
+
+    err_obj = res_json.get("error") or {}
+    err_code = err_obj.get("code")
+    user = (res_json.get("data") or {}).get("user") or {}
+    if (err_code and err_code != "ok") or not user:
+        return {"ok": False, "error": err_obj.get("message") or str(res_json)}
+
+    return {
+        "ok": True,
+        "open_id": str(user.get("open_id") or ""),
+        "display_name": str(user.get("display_name") or ""),
+        "avatar_url": str(user.get("avatar_url") or ""),
+    }
+
+
 def _prepare_tiktok_video_with_cover(
     video_path: Path,
     thumbnail_path: Optional[str],
@@ -222,12 +294,17 @@ def upload_tiktok_short(
     publish_at: Optional[str] = None,
     thumbnail_path: Optional[str] = None,
     peak_moment: Optional[float] = None,
+    brand_organic_toggle: bool = False,
+    brand_content_toggle: bool = False,
+    post_mode: str = "direct",
 ) -> Dict[str, Any]:
     """
     Publikuje plik wideo na TikTok przez Content Posting API v2.
     video_path: ścieżka do lokalnego pliku MP4
     title: tytuł / opis filmu (max 2200 znaków)
+    post_mode: 'direct' (/video/init/ -> video.publish) lub 'inbox' (/inbox/video/init/ -> video.upload)
     """
+    normalized_post_mode = "inbox" if str(post_mode or "direct").strip().lower() == "inbox" else "direct"
     vp = Path(video_path)
     if not vp.exists():
         return {"success": False, "error": f"Plik wideo nie istnieje: {video_path}"}
@@ -241,6 +318,7 @@ def upload_tiktok_short(
             if scheduled_ts > int(time.time()) + 600:
                 try:
                     from lol_agent.scheduled_queue import queue_scheduled_post
+                    embed_intro = os.environ.get("TIKTOK_EMBED_INTRO_COVER", "").strip() == "1"
                     queue_scheduled_post(
                         platform="tiktok",
                         video_path=str(vp),
@@ -251,9 +329,19 @@ def upload_tiktok_short(
                         extra={
                             "hashtags": hashtags,
                             "privacy_level": privacy_level,
+                            "disable_comment": bool(disable_comment),
+                            "disable_duet": bool(disable_duet),
+                            "disable_stitch": bool(disable_stitch),
+                            "brand_organic_toggle": bool(brand_organic_toggle),
+                            "brand_content_toggle": bool(brand_content_toggle),
+                            "post_mode": normalized_post_mode,
                             "video_cover_timestamp_ms": (
-                                50 if (thumbnail_path and os.path.exists(thumbnail_path))
-                                else (max(50, int(float(peak_moment) * 1000)) if peak_moment else video_cover_timestamp_ms)
+                                50 if (embed_intro and thumbnail_path and os.path.exists(thumbnail_path))
+                                else (
+                                    max(500, int(float(peak_moment) * 1000))
+                                    if (peak_moment is not None and float(peak_moment) > 0)
+                                    else max(2000, int(video_cover_timestamp_ms or 2000))
+                                )
                             ),
                         }
                     )
@@ -278,12 +366,16 @@ def upload_tiktok_short(
         }
 
     access_token = token_data["access_token"]
-    upload_vp, temp_cover_path = _prepare_tiktok_video_with_cover(vp, thumbnail_path)
+    embed_intro = os.environ.get("TIKTOK_EMBED_INTRO_COVER", "").strip() == "1"
+    if embed_intro:
+        upload_vp, temp_cover_path = _prepare_tiktok_video_with_cover(vp, thumbnail_path)
+    else:
+        upload_vp, temp_cover_path = vp, None
     has_embedded_cover = temp_cover_path is not None
     effective_cover_ms = 50 if has_embedded_cover else (
-        max(50, int(float(peak_moment) * 1000))
+        max(500, int(float(peak_moment) * 1000))
         if (peak_moment is not None and float(peak_moment) > 0)
-        else video_cover_timestamp_ms
+        else max(2000, int(video_cover_timestamp_ms or 2000))
     )
 
     try:
@@ -316,50 +408,60 @@ def upload_tiktok_short(
             "Content-Type": "application/json; charset=UTF-8"
         }
 
-        init_payload = {
-            "post_info": {
-                "title": full_title,
-                "privacy_level": privacy_level,
-                "disable_duet": disable_duet,
-                "disable_comment": disable_comment,
-                "disable_stitch": disable_stitch,
-                "video_cover_timestamp_ms": effective_cover_ms
-            },
-            "source_info": {
-                "source": "FILE_UPLOAD",
-                "video_size": file_size,
-                "chunk_size": chunk_size,
-                "total_chunk_count": total_chunks
+        init_data: Dict[str, Any] = {}
+        publish_id = None
+        upload_url = None
+        is_inbox_mode = normalized_post_mode == "inbox"
+
+        if not is_inbox_mode:
+            init_payload = {
+                "post_info": {
+                    "title": full_title,
+                    "privacy_level": privacy_level,
+                    "disable_duet": disable_duet,
+                    "disable_comment": disable_comment,
+                    "disable_stitch": disable_stitch,
+                    "brand_organic_toggle": bool(brand_organic_toggle),
+                    "brand_content_toggle": bool(brand_content_toggle),
+                    "video_cover_timestamp_ms": effective_cover_ms
+                },
+                "source_info": {
+                    "source": "FILE_UPLOAD",
+                    "video_size": file_size,
+                    "chunk_size": chunk_size,
+                    "total_chunk_count": total_chunks
+                }
             }
-        }
 
-        try:
-            init_res = requests.post(TIKTOK_INIT_URL, headers=init_headers, json=init_payload, timeout=30)
-            init_data = init_res.json()
-        except Exception as e:
-            return {"success": False, "error": f"Błąd połączenia z TikTok API: {e}"}
+            try:
+                init_res = requests.post(TIKTOK_INIT_URL, headers=init_headers, json=init_payload, timeout=30)
+                init_data = init_res.json()
+            except Exception as e:
+                return {"success": False, "error": f"Błąd połączenia z TikTok API: {e}"}
 
-        data_block = init_data.get("data", {})
-        publish_id = data_block.get("publish_id")
-        upload_url = data_block.get("upload_url")
+            data_block = init_data.get("data", {})
+            publish_id = data_block.get("publish_id")
+            upload_url = data_block.get("upload_url")
 
-        if (not upload_url or not publish_id) and init_payload["post_info"]["privacy_level"] != "SELF_ONLY":
-            err_msg = str(init_data.get("error", {}).get("message", "")).lower()
-            if "unaudited" in err_msg or "private" in err_msg or "privacy" in err_msg or "scope" in err_msg:
-                print("   ℹ️ [Sandbox] Wykryto ograniczenie widoczności TikToka — ponawiam jako SELF_ONLY...")
-                init_payload["post_info"]["privacy_level"] = "SELF_ONLY"
-                try:
-                    init_res = requests.post(TIKTOK_INIT_URL, headers=init_headers, json=init_payload, timeout=30)
-                    init_data = init_res.json()
-                    data_block = init_data.get("data", {})
-                    publish_id = data_block.get("publish_id")
-                    upload_url = data_block.get("upload_url")
-                except Exception as e:
-                    return {"success": False, "error": f"Błąd ponownego połączenia z TikTok API: {e}"}
+            if (not upload_url or not publish_id) and init_payload["post_info"]["privacy_level"] != "SELF_ONLY":
+                err_msg = str(init_data.get("error", {}).get("message", "")).lower()
+                if "unaudited" in err_msg or "private" in err_msg or "privacy" in err_msg or "scope" in err_msg:
+                    print("   ℹ️ [Sandbox] Wykryto ograniczenie widoczności TikToka — ponawiam jako SELF_ONLY...")
+                    init_payload["post_info"]["privacy_level"] = "SELF_ONLY"
+                    try:
+                        init_res = requests.post(TIKTOK_INIT_URL, headers=init_headers, json=init_payload, timeout=30)
+                        init_data = init_res.json()
+                        data_block = init_data.get("data", {})
+                        publish_id = data_block.get("publish_id")
+                        upload_url = data_block.get("upload_url")
+                    except Exception as e:
+                        return {"success": False, "error": f"Błąd ponownego połączenia z TikTok API: {e}"}
 
-        is_inbox_mode = False
         if not upload_url or not publish_id:
-            print("   ℹ️ [TikTok] Direct Post wymaga audytu profilu publicznego — przełączam na Share to TikTok (Inbox/Drafts)...", flush=True)
+            if not is_inbox_mode:
+                print("   ℹ️ [TikTok] Direct Post wymaga audytu profilu publicznego — przełączam na Share to TikTok (Inbox/Drafts)...", flush=True)
+            else:
+                print("   📥 [TikTok] Tryb Draft / Inbox (video.upload -> /v2/post/publish/inbox/video/init/)...", flush=True)
             inbox_payload = {
                 "source_info": {
                     "source": "FILE_UPLOAD",
@@ -375,6 +477,8 @@ def upload_tiktok_short(
                 publish_id = data_block.get("publish_id")
                 upload_url = data_block.get("upload_url")
                 is_inbox_mode = True
+                if not init_data:
+                    init_data = inbox_data
             except Exception as e:
                 return {"success": False, "error": f"Błąd połączenia z TikTok Inbox API: {e}"}
 
@@ -442,7 +546,8 @@ def upload_tiktok_short(
                         "publish_id": publish_id,
                         "title": full_title,
                         "status": status_code,
-                        "inbox": (status_code == "SEND_TO_USER_INBOX"),
+                        "inbox": (status_code == "SEND_TO_USER_INBOX") or is_inbox_mode,
+                        "post_mode": "inbox" if is_inbox_mode else "direct",
                         "cover_embedded": has_embedded_cover,
                     }
                 elif status_code == "FAILED":
@@ -458,6 +563,8 @@ def upload_tiktok_short(
             "platform": "tiktok",
             "publish_id": publish_id,
             "status": "PROCESSING",
+            "inbox": is_inbox_mode,
+            "post_mode": "inbox" if is_inbox_mode else "direct",
             "cover_embedded": has_embedded_cover,
             "message": "Wideo przesłane do TikTok i przetwarzane w tle."
         }

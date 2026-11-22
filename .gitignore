@@ -169,3 +169,23 @@ lol_agent/overnight_batches/
 lol_agent/overnight_scan_cache.json
 lol_agent/recipes_archive/
 
+# Website / Hosting deploy files in repo root (Etap 21.5 — keep on disk, ignore in Git)
+/.htaccess
+/*.html
+/send_mail.php
+/deploy_ovh.ps1
+/deploy_all.bat
+/css/
+/screenshots/
+/tiktok*.txt
+/robots.txt
+/sitemap.xml
+/favicon.ico
+/favicon.png
+/app_icon.png
+/app_icon_1024.png
+/apple-touch-icon.png
+/icon.jpg
+/icon.png
+/live_stats.json
+

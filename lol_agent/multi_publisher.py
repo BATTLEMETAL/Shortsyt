@@ -81,6 +81,12 @@ def publish_multi_platform(
     action_type: Optional[str] = None,
     rank: Optional[str] = None,
     peak_moment: Optional[float] = None,
+    tiktok_disable_comment: bool = False,
+    tiktok_disable_duet: bool = False,
+    tiktok_disable_stitch: bool = False,
+    tiktok_brand_organic: bool = False,
+    tiktok_brand_content: bool = False,
+    tiktok_post_mode: str = "direct",
 ) -> Dict[str, Any]:
     """
     Równoległa publikacja na YouTube Shorts, TikTok, Instagram Reels oraz Facebook Page.
@@ -177,6 +183,12 @@ def publish_multi_platform(
                 title=tt_title,
                 hashtags=tt_tags,
                 privacy_level=privacy_tiktok,
+                disable_comment=tiktok_disable_comment,
+                disable_duet=tiktok_disable_duet,
+                disable_stitch=tiktok_disable_stitch,
+                brand_organic_toggle=tiktok_brand_organic,
+                brand_content_toggle=tiktok_brand_content,
+                post_mode=tiktok_post_mode,
                 publish_at=publish_at,
                 thumbnail_path=resolved_thumb,
                 peak_moment=peak_moment,

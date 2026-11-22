@@ -9,6 +9,7 @@ import {
   apiGetOvernightStatus,
   apiGetOutputUrl,
   apiGetBackendBaseUrl,
+  apiGetSocialAnalytics,
   OvernightBatchManifest,
   OvernightStatusResponse,
   PipelineStateResponse,
@@ -77,6 +78,7 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
   const [previewFilename, setPreviewFilename] = useState<string | null>(null);
   const [backendUrl, setBackendUrl] = useState<string>('http://localhost:8765');
   const [brokenThumbs, setBrokenThumbs] = useState<Record<string, boolean>>({});
+  const [ttTopTags, setTtTopTags] = useState<string[]>([]);
 
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef<boolean>(true);
@@ -160,6 +162,14 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
     apiGetBackendBaseUrl().then((u) => {
       if (mountedRef.current && u) setBackendUrl(u.replace(/\/$/, ''));
     }).catch(() => {});
+    apiGetSocialAnalytics('tiktok', false)
+      .then((res) => {
+        const rec = res?.tiktok_learning?.recommended_hashtags;
+        if (mountedRef.current && Array.isArray(rec)) {
+          setTtTopTags(rec.map((t: any) => String(t).replace(/^#/, '').toLowerCase()).filter(Boolean).slice(0, 4));
+        }
+      })
+      .catch(() => {});
     fetchData();
   }, []);
 
@@ -404,7 +414,17 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
                         </div>
                       </div>
 
-                      <div className="text-xs font-bold text-[#FFFFFF] break-words">{item.title || item.output_filename}</div>
+                      <div className="text-xs font-bold text-[#FFFFFF] break-words">
+                        {(item.title || item.output_filename).replace(/#\S+/g, '').replace(/\s{2,}/g, ' ').trim() || item.output_filename}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-mono">
+                        <span className="px-1.5 py-0.5 rounded bg-[#E62117]/15 border border-[#E62117]/30 text-[#FF8A80]">
+                          YT: #shorts #leagueoflegends #lol
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-[#00F2FE]/10 border border-[#00F2FE]/30 text-[#00F2FE]">
+                          TikTok: {(ttTopTags.length > 0 ? ttTopTags : ['outplayed', 'pcgaming', 'leagueoflegends', 'lolhighlights']).map((t) => `#${t}`).join(' ')} #{(item.champion_name || 'katarina').replace(/['\s]/g, '').toLowerCase()}
+                        </span>
+                      </div>
                       <div className="text-[10px] font-mono text-[#686E78] truncate" title={item.source_filename}>
                         {item.match_date ? `${item.match_date} • ` : ''}{item.match_kda ? `KDA ${item.match_kda} • ` : ''}{item.source_filename}
                       </div>

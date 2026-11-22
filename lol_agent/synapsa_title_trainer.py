@@ -557,6 +557,73 @@ def _build_director_training_examples(directive: Dict[str, Any], lol_dir: Path) 
             },
         )
 
+    # 4. Wnioski strukturalne z zewnętrznych wirali (yt_viral_patterns_cache.json) + legacy-protected pentakill
+    try:
+        from lol_agent.lol_yt_pattern_miner import mine_top_youtube_patterns
+        viral_patterns = mine_top_youtube_patterns(max_results=16, force_refresh=False)[:8]
+        for pat in viral_patterns:
+            bp = pat.get("edit_blueprint") or {}
+            anchor = str(bp.get("recommended_drop_anchor") or "climax_final_kill")
+            buildup = float(bp.get("recommended_buildup_sec") or 1.2)
+            target_dur = float(bp.get("target_duration_s") or pat.get("duration_s") or 15.0)
+            act_v = "pentakill" if anchor == "first_kill_engage" else "outplay"
+            ts_v = [1.5, 4.0, 6.8, 9.5, 12.2] if act_v == "pentakill" else [5.2, 8.8]
+            gaps_v = [round(b - a, 2) for a, b in zip(ts_v, ts_v[1:])]
+            _add_case(
+                {
+                    "action_type": act_v,
+                    "champion": "Katarina",
+                    "duration": min(24.0, max(11.0, target_dur)),
+                    "kill_timestamps": ts_v,
+                    "gaps": gaps_v,
+                    "gap_has_combat": act_v == "pentakill",
+                    "objective_secured": False,
+                    "ally_banner_blocked": False,
+                    "viral_reference_title": pat.get("title", ""),
+                    "viral_hook_type": bp.get("hook_type") or pat.get("hook_type") or "DIRECT",
+                    "viral_pacing_bucket": bp.get("pacing_bucket") or "balanced_13_20s",
+                },
+                custom_ans={
+                    "operation": "KEEP_FULL_CONTINUOUS" if act_v == "pentakill" else "SPEED_RAMP_FLOW",
+                    "style": "AGGRESSIVE_ZOOM" if act_v == "pentakill" else "SPEED_RAMP_FLOW",
+                    "buildup_sec": round(min(2.2, max(0.4, buildup)), 2),
+                    "outro_sec": 1.3,
+                    "zoom_aggression": 1.20,
+                    "slowmo_duration": 0.9,
+                    "camera_mode": "tight_player",
+                    "drop_anchor": anchor,
+                    "rationale": f"Wzorzec wirala LoL ({pat.get('views', 0)} wyśw., pacing={bp.get('pacing_bucket', 'balanced_13_20s')}, hook={bp.get('hook_type', 'DIRECT')}) — zachowaj multikill i wejście na {anchor}.",
+                },
+            )
+    except Exception:
+        pass
+
+    # Jawne przypadki ochrony Pentakill/Quadrakill przed starymi ucięciami sprzed Etapu 16
+    _add_case(
+        {
+            "action_type": "pentakill",
+            "champion": "Katarina",
+            "duration": 22.5,
+            "kill_timestamps": [2.2, 5.1, 8.4, 12.0, 16.5],
+            "gaps": [2.9, 3.3, 3.6, 4.5],
+            "gap_has_combat": True,
+            "objective_secured": False,
+            "ally_banner_blocked": True,
+            "historical_note": "legacy_pentakill_protected_after_etap16",
+        },
+        custom_ans={
+            "operation": "KEEP_FULL_CONTINUOUS",
+            "style": "AGGRESSIVE_ZOOM",
+            "buildup_sec": 1.4,
+            "outro_sec": 1.6,
+            "zoom_aggression": 1.18,
+            "slowmo_duration": 1.0,
+            "camera_mode": "tight_player",
+            "drop_anchor": "first_kill_engage",
+            "rationale": "Pentakill po poprawkach Etapu 16 nie może być zdegradowany przez historyczne ucięcia — pełna ciągłość i pewne zakończenie.",
+        },
+    )
+
     return out
 
 

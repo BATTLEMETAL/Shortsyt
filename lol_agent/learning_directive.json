@@ -1,170 +1,198 @@
 {
-  "timestamp": "2026-11-20T19:24:54.561821+00:00",
+  "timestamp": "2026-11-22T11:49:25.656192+00:00",
   "schema_version": "2.0",
   "total_videos_analyzed": 250,
-  "total_videos_valid": 208,
-  "zero_views_filtered": 42,
-  "channel_avg_views": 2272.8,
-  "channel_median_views": 1628.5,
-  "channel_trimmed_mean_views": 1798.4,
+  "total_videos_valid": 212,
+  "zero_views_filtered": 38,
+  "channel_avg_views": 2267.2,
+  "channel_median_views": 1606.0,
+  "channel_trimmed_mean_views": 1788.8,
   "channel_avg_engagement_rate": 0.95,
   "top_action_type": "solo_bolo",
   "action_weights": {
-    "pentakill": 0.91,
+    "pentakill": 1.0,
     "solo_bolo": 1.0,
     "clutch": 1.2,
     "triple": 1.0,
-    "quadrakill": 1.02,
+    "quadrakill": 1.0,
     "double": 1.0,
     "outplay": 1.0,
     "multikill": 1.0
   },
   "action_stats": {
-    "double": {
-      "count": 31,
-      "count_valid": 31,
-      "avg_views": 1846.4,
-      "median_views": 1485,
-      "trimmed_mean_views": 1621.1,
-      "performance_ratio_mean": 0.81,
-      "performance_ratio_median": 0.91,
-      "composite_watchability_ratio": 0.94,
-      "avg_rwi_48h": 73.2,
-      "avg_conversion_per_1k": 3.49,
+    "quadrakill": {
+      "count": 9,
+      "count_valid": 9,
+      "legacy_count": 9,
+      "post_etap16_count": 0,
+      "avg_views": 1720.5,
+      "median_views": 1510,
+      "trimmed_mean_views": 1738.3,
+      "performance_ratio_mean": 0.76,
+      "performance_ratio_median": 0.94,
+      "composite_watchability_ratio": 0.91,
+      "avg_rwi_48h": 63.7,
+      "avg_conversion_per_1k": 3.13,
       "ratio_ci90": [
-        0.83,
-        1.27
+        0.78,
+        1.52
       ],
       "reliable": false,
-      "avg_engagement_rate": 0.59,
+      "avg_engagement_rate": 0.79,
       "weight": 1.0,
-      "weight_source": "median_shrunk_n31_breakout_floor"
+      "effective_weight": 1.0,
+      "legacy_protected": false,
+      "weight_source": "median_shrunk_n9_breakout_floor"
     },
     "triple": {
-      "count": 45,
-      "count_valid": 45,
-      "avg_views": 2452.2,
-      "median_views": 1798,
-      "trimmed_mean_views": 1927.9,
-      "performance_ratio_mean": 1.08,
-      "performance_ratio_median": 1.1,
-      "composite_watchability_ratio": 1.01,
-      "avg_rwi_48h": 67.9,
-      "avg_conversion_per_1k": 2.81,
+      "count": 46,
+      "count_valid": 46,
+      "legacy_count": 46,
+      "post_etap16_count": 0,
+      "avg_views": 2416.4,
+      "median_views": 1797.0,
+      "trimmed_mean_views": 1911.6,
+      "performance_ratio_mean": 1.07,
+      "performance_ratio_median": 1.12,
+      "composite_watchability_ratio": 1.02,
+      "avg_rwi_48h": 67.7,
+      "avg_conversion_per_1k": 2.8,
       "ratio_ci90": [
-        0.96,
-        1.35
+        0.97,
+        1.37
       ],
       "reliable": false,
       "avg_engagement_rate": 0.6,
       "weight": 1.0,
-      "weight_source": "median_shrunk_n45_breakout_floor"
+      "effective_weight": 1.0,
+      "legacy_protected": false,
+      "weight_source": "median_shrunk_n46_breakout_floor"
+    },
+    "double": {
+      "count": 31,
+      "count_valid": 31,
+      "legacy_count": 31,
+      "post_etap16_count": 0,
+      "avg_views": 1856.1,
+      "median_views": 1485,
+      "trimmed_mean_views": 1621.2,
+      "performance_ratio_mean": 0.82,
+      "performance_ratio_median": 0.92,
+      "composite_watchability_ratio": 0.95,
+      "avg_rwi_48h": 73.3,
+      "avg_conversion_per_1k": 3.49,
+      "ratio_ci90": [
+        0.85,
+        1.29
+      ],
+      "reliable": false,
+      "avg_engagement_rate": 0.59,
+      "weight": 1.0,
+      "effective_weight": 1.0,
+      "legacy_protected": false,
+      "weight_source": "median_shrunk_n31_breakout_floor"
     },
     "clutch": {
       "count": 2,
       "count_valid": 2,
+      "legacy_count": 2,
+      "post_etap16_count": 0,
       "avg_views": 3285.0,
       "median_views": 3285.0,
       "trimmed_mean_views": 3285,
       "performance_ratio_mean": 1.45,
-      "performance_ratio_median": 2.02,
-      "composite_watchability_ratio": 1.51,
+      "performance_ratio_median": 2.05,
+      "composite_watchability_ratio": 1.53,
       "avg_rwi_48h": 75.0,
       "avg_conversion_per_1k": 2.28,
       "ratio_ci90": [
-        1.81,
-        2.23
+        1.83,
+        2.26
       ],
       "reliable": false,
       "avg_engagement_rate": 0.34,
       "weight": 1.2,
+      "effective_weight": 1.2,
+      "legacy_protected": false,
       "weight_source": "default_small_sample_n2"
     },
     "outplay": {
       "count": 98,
       "count_valid": 98,
+      "legacy_count": 98,
+      "post_etap16_count": 0,
       "avg_views": 2361.8,
       "median_views": 1425.0,
       "trimmed_mean_views": 1804.0,
       "performance_ratio_mean": 1.04,
-      "performance_ratio_median": 0.88,
-      "composite_watchability_ratio": 1.11,
-      "avg_rwi_48h": 73.9,
-      "avg_conversion_per_1k": 8.43,
+      "performance_ratio_median": 0.89,
+      "composite_watchability_ratio": 1.12,
+      "avg_rwi_48h": 73.6,
+      "avg_conversion_per_1k": 7.51,
       "ratio_ci90": [
-        0.77,
-        1.04
+        0.78,
+        1.06
       ],
       "reliable": false,
       "avg_engagement_rate": 1.33,
       "weight": 1.0,
+      "effective_weight": 1.0,
+      "legacy_protected": false,
       "weight_source": "median_shrunk_n98_breakout_floor"
     },
     "solo_bolo": {
       "count": 12,
       "count_valid": 12,
-      "avg_views": 3030.6,
+      "legacy_count": 12,
+      "post_etap16_count": 0,
+      "avg_views": 3030.7,
       "median_views": 2097.0,
-      "trimmed_mean_views": 2418.9,
-      "performance_ratio_mean": 1.33,
-      "performance_ratio_median": 1.29,
-      "composite_watchability_ratio": 1.14,
-      "avg_rwi_48h": 75.7,
+      "trimmed_mean_views": 2419,
+      "performance_ratio_mean": 1.34,
+      "performance_ratio_median": 1.31,
+      "composite_watchability_ratio": 1.15,
+      "avg_rwi_48h": 75.9,
       "avg_conversion_per_1k": 1.54,
       "ratio_ci90": [
-        1.12,
-        1.87
+        1.14,
+        1.9
       ],
       "reliable": true,
       "avg_engagement_rate": 0.43,
       "weight": 1.0,
+      "effective_weight": 1.0,
+      "legacy_protected": false,
       "weight_source": "median_shrunk_n12_breakout_floor"
     },
     "pentakill": {
       "count": 10,
       "count_valid": 10,
+      "legacy_count": 10,
+      "post_etap16_count": 0,
       "avg_views": 1411.6,
       "median_views": 1269.5,
       "trimmed_mean_views": 1436.6,
       "performance_ratio_mean": 0.62,
-      "performance_ratio_median": 0.78,
-      "composite_watchability_ratio": 0.81,
-      "avg_rwi_48h": 63.0,
+      "performance_ratio_median": 0.79,
+      "composite_watchability_ratio": 0.82,
+      "avg_rwi_48h": 63.1,
       "avg_conversion_per_1k": 8.21,
       "ratio_ci90": [
-        0.7,
-        1.12
+        0.71,
+        1.13
       ],
       "reliable": false,
       "avg_engagement_rate": 0.96,
       "weight": 0.91,
+      "effective_weight": 1.0,
+      "legacy_protected": true,
       "weight_source": "median_shrunk_n10"
-    },
-    "quadrakill": {
-      "count": 8,
-      "count_valid": 8,
-      "avg_views": 1796.6,
-      "median_views": 1897.5,
-      "trimmed_mean_views": 1792,
-      "performance_ratio_mean": 0.79,
-      "performance_ratio_median": 1.17,
-      "composite_watchability_ratio": 1.1,
-      "avg_rwi_48h": 64.8,
-      "avg_conversion_per_1k": 3.25,
-      "ratio_ci90": [
-        0.62,
-        1.52
-      ],
-      "reliable": false,
-      "avg_engagement_rate": 0.82,
-      "weight": 1.02,
-      "weight_source": "median_shrunk_n8_breakout_floor"
     }
   },
   "duration_analysis": {
     "best_bucket": "balanced_14_17s",
     "viral_avg_duration_s": 15.0,
-    "viral_count": 83,
+    "viral_count": 84,
     "recommended_pacing": "balanced",
     "zoom_aggression": 1.2,
     "slowmo_duration": 1.4,
@@ -174,27 +202,27 @@
     "user_notes": "Balanced (14-17s): optymalny buildup 1.8s, zoom 1.20x, zwolnienie 1.4s.",
     "bucket_stats": {
       "short_10_13s": {
-        "count": 66,
-        "median_views": 1580.0,
-        "avg_engagement_rate": 0.66,
-        "avg_duration_s": 11.1,
-        "composite_score": 1.03,
+        "count": 67,
+        "median_views": 1565,
+        "avg_engagement_rate": 0.65,
+        "avg_duration_s": 11.0,
+        "composite_score": 1.04,
         "reliable": true
       },
       "balanced_14_17s": {
-        "count": 82,
+        "count": 84,
         "median_views": 1830.0,
         "avg_engagement_rate": 0.78,
         "avg_duration_s": 15.5,
-        "composite_score": 1.21,
+        "composite_score": 1.23,
         "reliable": true
       },
       "cinematic_18_25s": {
-        "count": 60,
-        "median_views": 1541.5,
-        "avg_engagement_rate": 1.52,
-        "avg_duration_s": 61.3,
-        "composite_score": 1.09,
+        "count": 61,
+        "median_views": 1540,
+        "avg_engagement_rate": 1.5,
+        "avg_duration_s": 60.6,
+        "composite_score": 1.1,
         "reliable": true
       }
     },
@@ -209,49 +237,131 @@
   },
   "retention_analysis": {
     "status": "success",
-    "total_curves_analyzed": 13,
-    "channel_avg_swiped_away_pct": 17.5,
-    "channel_avg_hook_retention_pct": 82.5,
-    "channel_avg_view_pct": 98.1,
+    "total_curves_analyzed": 11,
+    "channel_avg_swiped_away_pct": 17.1,
+    "channel_avg_hook_retention_pct": 82.9,
+    "channel_avg_view_pct": 98.3,
     "videos": [
+      {
+        "video_id": "GF1P5hZEw4Q",
+        "title": "Pixel-Perfect Reset Execution ⚡ #shorts #leagueoflegends #lol",
+        "action_type": "outplay",
+        "duration_s": 24.0,
+        "views": 1416,
+        "swiped_away_pct": 11.3,
+        "hook_retention_pct": 88.7,
+        "avg_view_pct": 73.5,
+        "diagnosis": "🎯 Stabilna retencja (73.5% AVD). Utrzymanie widza w normie kanału.",
+        "top_drop_offs": [
+          {
+            "time_s": 1.0,
+            "elapsed_pct": 4,
+            "drop_pct": 3.1,
+            "watch_pct_after": 119.4,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 10.6,
+            "elapsed_pct": 44,
+            "drop_pct": 2.5,
+            "watch_pct_after": 74.5,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 10.8,
+            "elapsed_pct": 45,
+            "drop_pct": 2.3,
+            "watch_pct_after": 71.6,
+            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+          },
+          {
+            "time_s": 0.7,
+            "elapsed_pct": 3,
+            "drop_pct": 2.1,
+            "watch_pct_after": 123.3,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          }
+        ]
+      },
+      {
+        "video_id": "TU-kBfhnZhw",
+        "title": "Three Down Before They Reacted ⚡ #shorts #leagueoflegends #lol",
+        "action_type": "outplay",
+        "duration_s": 15.0,
+        "views": 1305,
+        "swiped_away_pct": 14.1,
+        "hook_retention_pct": 85.9,
+        "avg_view_pct": 87.5,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 85.9% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "top_drop_offs": [
+          {
+            "time_s": 10.5,
+            "elapsed_pct": 70,
+            "drop_pct": 2.9,
+            "watch_pct_after": 72.4,
+            "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
+          },
+          {
+            "time_s": 0.8,
+            "elapsed_pct": 5,
+            "drop_pct": 2.6,
+            "watch_pct_after": 125.2,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 10.6,
+            "elapsed_pct": 71,
+            "drop_pct": 2.2,
+            "watch_pct_after": 69.5,
+            "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
+          },
+          {
+            "time_s": 10.3,
+            "elapsed_pct": 69,
+            "drop_pct": 2.1,
+            "watch_pct_after": 76.2,
+            "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
+          }
+        ]
+      },
       {
         "video_id": "nnKwQS9hwUg",
         "title": "Two Down Before They Reacted ⚡ #shorts #leagueoflegends #lol",
         "action_type": "outplay",
         "duration_s": 22.0,
         "views": 1883,
-        "swiped_away_pct": 19.8,
-        "hook_retention_pct": 80.2,
-        "avg_view_pct": 86.1,
-        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 80.2% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "swiped_away_pct": 20.6,
+        "hook_retention_pct": 79.4,
+        "avg_view_pct": 87.1,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 79.4% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
         "top_drop_offs": [
           {
-            "time_s": 0.8,
+            "time_s": 0.9,
             "elapsed_pct": 4,
-            "drop_pct": 5.2,
-            "watch_pct_after": 134.0,
+            "drop_pct": 5.7,
+            "watch_pct_after": 133.4,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 0.6,
+            "time_s": 0.7,
             "elapsed_pct": 3,
-            "drop_pct": 3.9,
-            "watch_pct_after": 141.9,
+            "drop_pct": 4.2,
+            "watch_pct_after": 142.1,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 1.0,
+            "time_s": 1.1,
             "elapsed_pct": 5,
-            "drop_pct": 3.1,
-            "watch_pct_after": 129.3,
+            "drop_pct": 2.8,
+            "watch_pct_after": 129.1,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 4.2,
-            "elapsed_pct": 21,
+            "time_s": 0.4,
+            "elapsed_pct": 2,
             "drop_pct": 2.3,
-            "watch_pct_after": 113.9,
-            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
+            "watch_pct_after": 148.5,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           }
         ]
       },
@@ -261,37 +371,37 @@
         "action_type": "outplay",
         "duration_s": 20.0,
         "views": 843,
-        "swiped_away_pct": 19.6,
-        "hook_retention_pct": 80.4,
-        "avg_view_pct": 91.2,
-        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 80.4% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "swiped_away_pct": 18.5,
+        "hook_retention_pct": 81.5,
+        "avg_view_pct": 89.7,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 81.5% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
         "top_drop_offs": [
           {
-            "time_s": 0.7,
+            "time_s": 0.8,
             "elapsed_pct": 4,
-            "drop_pct": 4.9,
-            "watch_pct_after": 134.7,
+            "drop_pct": 5.0,
+            "watch_pct_after": 132.6,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 17.2,
+            "time_s": 19.0,
             "elapsed_pct": 95,
-            "drop_pct": 3.5,
-            "watch_pct_after": 60.5,
+            "drop_pct": 3.2,
+            "watch_pct_after": 57.6,
             "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
           },
           {
-            "time_s": 0.9,
+            "time_s": 1.0,
             "elapsed_pct": 5,
-            "drop_pct": 3.3,
-            "watch_pct_after": 129.8,
+            "drop_pct": 2.8,
+            "watch_pct_after": 128.5,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 0.5,
+            "time_s": 0.6,
             "elapsed_pct": 3,
-            "drop_pct": 3.0,
-            "watch_pct_after": 141.9,
+            "drop_pct": 2.6,
+            "watch_pct_after": 139.8,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           }
         ]
@@ -301,39 +411,39 @@
         "title": "Chasing Down the Double Kill CHAOS ⚡ #shorts #leagueoflegends #lol",
         "action_type": "double",
         "duration_s": 16.0,
-        "views": 2289,
-        "swiped_away_pct": 13.6,
-        "hook_retention_pct": 86.4,
-        "avg_view_pct": 109.7,
-        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 86.4% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "views": 2290,
+        "swiped_away_pct": 13.8,
+        "hook_retention_pct": 86.2,
+        "avg_view_pct": 106.8,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 86.2% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
         "top_drop_offs": [
           {
             "time_s": 0.8,
             "elapsed_pct": 5,
-            "drop_pct": 3.1,
-            "watch_pct_after": 151.0,
+            "drop_pct": 3.3,
+            "watch_pct_after": 147.7,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 6.8,
+            "time_s": 0.6,
+            "elapsed_pct": 4,
+            "drop_pct": 1.9,
+            "watch_pct_after": 153.0,
+            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+          },
+          {
+            "time_s": 7.2,
             "elapsed_pct": 45,
-            "drop_pct": 2.0,
-            "watch_pct_after": 117.2,
+            "drop_pct": 1.9,
+            "watch_pct_after": 113.8,
             "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
           },
           {
-            "time_s": 6.9,
+            "time_s": 7.4,
             "elapsed_pct": 46,
-            "drop_pct": 2.0,
-            "watch_pct_after": 114.0,
+            "drop_pct": 1.8,
+            "watch_pct_after": 110.9,
             "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
-          },
-          {
-            "time_s": 0.4,
-            "elapsed_pct": 3,
-            "drop_pct": 1.7,
-            "watch_pct_after": 158.9,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           }
         ]
       },
@@ -343,37 +453,37 @@
         "action_type": "clutch",
         "duration_s": 15.0,
         "views": 3627,
-        "swiped_away_pct": 31.3,
-        "hook_retention_pct": 68.7,
-        "avg_view_pct": 112.5,
-        "diagnosis": "🎯 Stabilna retencja (112.5% AVD). Utrzymanie widza w normie kanału.",
+        "swiped_away_pct": 31.4,
+        "hook_retention_pct": 68.6,
+        "avg_view_pct": 112.6,
+        "diagnosis": "🎯 Stabilna retencja (112.6% AVD). Utrzymanie widza w normie kanału.",
         "top_drop_offs": [
           {
             "time_s": 0.9,
             "elapsed_pct": 6,
-            "drop_pct": 7.2,
+            "drop_pct": 7.1,
             "watch_pct_after": 157.8,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
             "time_s": 0.8,
             "elapsed_pct": 5,
-            "drop_pct": 4.0,
-            "watch_pct_after": 171.3,
+            "drop_pct": 4.1,
+            "watch_pct_after": 171.2,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
             "time_s": 1.1,
             "elapsed_pct": 7,
             "drop_pct": 3.7,
-            "watch_pct_after": 150.9,
+            "watch_pct_after": 150.8,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
             "time_s": 0.6,
             "elapsed_pct": 4,
             "drop_pct": 3.1,
-            "watch_pct_after": 178.8,
+            "watch_pct_after": 178.9,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           }
         ]
@@ -390,32 +500,32 @@
         "diagnosis": "🔥 Perfekcyjna Retencja! Niski Swiped Away (12.5%) oraz średni czas 124.0% (widzowie zapętlają film). Parametry montażu idealne.",
         "top_drop_offs": [
           {
-            "time_s": 0.7,
+            "time_s": 0.8,
             "elapsed_pct": 7,
             "drop_pct": 2.8,
             "watch_pct_after": 157.4,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 3.7,
+            "time_s": 4.3,
             "elapsed_pct": 36,
             "drop_pct": 2.4,
             "watch_pct_after": 141.9,
             "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
           },
           {
-            "time_s": 9.4,
+            "time_s": 10.9,
             "elapsed_pct": 91,
             "drop_pct": 1.9,
             "watch_pct_after": 92.3,
             "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
           },
           {
-            "time_s": 0.6,
-            "elapsed_pct": 6,
-            "drop_pct": 1.6,
-            "watch_pct_after": 162.2,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
+            "time_s": 11.0,
+            "elapsed_pct": 92,
+            "drop_pct": 1.7,
+            "watch_pct_after": 89.4,
+            "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
           }
         ]
       },
@@ -427,7 +537,7 @@
         "views": 2943,
         "swiped_away_pct": 18.3,
         "hook_retention_pct": 81.7,
-        "avg_view_pct": 104.9,
+        "avg_view_pct": 104.8,
         "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 81.7% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
         "top_drop_offs": [
           {
@@ -466,34 +576,34 @@
         "action_type": "outplay",
         "duration_s": 23.0,
         "views": 1886,
-        "swiped_away_pct": 10.3,
-        "hook_retention_pct": 89.7,
-        "avg_view_pct": 89.5,
-        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 89.7% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "swiped_away_pct": 10.2,
+        "hook_retention_pct": 89.8,
+        "avg_view_pct": 89.6,
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 89.8% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
         "top_drop_offs": [
           {
-            "time_s": 0.6,
+            "time_s": 0.7,
             "elapsed_pct": 3,
             "drop_pct": 2.4,
             "watch_pct_after": 137.2,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 13.7,
+            "time_s": 15.0,
             "elapsed_pct": 65,
             "drop_pct": 2.1,
             "watch_pct_after": 76.7,
             "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
           },
           {
-            "time_s": 4.0,
+            "time_s": 4.4,
             "elapsed_pct": 19,
             "drop_pct": 1.9,
             "watch_pct_after": 123.5,
             "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
           },
           {
-            "time_s": 4.8,
+            "time_s": 5.3,
             "elapsed_pct": 23,
             "drop_pct": 1.9,
             "watch_pct_after": 115.3,
@@ -507,34 +617,34 @@
         "action_type": "solo_bolo",
         "duration_s": 15.0,
         "views": 1473,
-        "swiped_away_pct": 19.4,
-        "hook_retention_pct": 80.6,
+        "swiped_away_pct": 19.2,
+        "hook_retention_pct": 80.8,
         "avg_view_pct": 96.7,
-        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 80.6% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 80.8% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
         "top_drop_offs": [
           {
-            "time_s": 0.8,
+            "time_s": 0.9,
             "elapsed_pct": 6,
             "drop_pct": 3.2,
             "watch_pct_after": 137.1,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 0.5,
+            "time_s": 0.6,
             "elapsed_pct": 4,
             "drop_pct": 3.1,
             "watch_pct_after": 145.2,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 1.1,
+            "time_s": 1.2,
             "elapsed_pct": 8,
             "drop_pct": 2.5,
             "watch_pct_after": 131.1,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 9.0,
+            "time_s": 10.1,
             "elapsed_pct": 67,
             "drop_pct": 2.5,
             "watch_pct_after": 86.7,
@@ -548,13 +658,13 @@
         "action_type": "outplay",
         "duration_s": 20.0,
         "views": 2843,
-        "swiped_away_pct": 18.0,
-        "hook_retention_pct": 82.0,
+        "swiped_away_pct": 17.7,
+        "hook_retention_pct": 82.3,
         "avg_view_pct": 109.5,
-        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 82.0% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
+        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 82.3% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
         "top_drop_offs": [
           {
-            "time_s": 0.7,
+            "time_s": 0.8,
             "elapsed_pct": 4,
             "drop_pct": 3.5,
             "watch_pct_after": 151.0,
@@ -568,209 +678,45 @@
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 0.9,
+            "time_s": 1.0,
             "elapsed_pct": 5,
             "drop_pct": 2.8,
             "watch_pct_after": 146.5,
             "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
           },
           {
-            "time_s": 17.9,
+            "time_s": 19.2,
             "elapsed_pct": 96,
             "drop_pct": 2.3,
             "watch_pct_after": 85.0,
             "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
           }
         ]
-      },
-      {
-        "video_id": "HhEAqRFYnTM",
-        "title": "Thinking 1v1 Was Safe 👑 SOLO BOLO #shorts #leagueoflegends #lol",
-        "action_type": "solo_bolo",
-        "duration_s": 15.0,
-        "views": 2066,
-        "swiped_away_pct": 19.8,
-        "hook_retention_pct": 80.2,
-        "avg_view_pct": 108.2,
-        "diagnosis": "✅ Dobra Retencja. Hook zatrzymuje 80.2% widzów. Zwróć uwagę na punkty opuszczenia pod koniec walki.",
-        "top_drop_offs": [
-          {
-            "time_s": 0.6,
-            "elapsed_pct": 4,
-            "drop_pct": 3.1,
-            "watch_pct_after": 148.7,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
-          },
-          {
-            "time_s": 0.9,
-            "elapsed_pct": 6,
-            "drop_pct": 2.7,
-            "watch_pct_after": 140.7,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
-          },
-          {
-            "time_s": 0.8,
-            "elapsed_pct": 5,
-            "drop_pct": 2.4,
-            "watch_pct_after": 144.9,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
-          },
-          {
-            "time_s": 13.3,
-            "elapsed_pct": 89,
-            "drop_pct": 1.9,
-            "watch_pct_after": 81.8,
-            "reason": "Outro Drop: Widz opuszcza film po zakończeniu walki przed końcem shorta."
-          }
-        ]
-      },
-      {
-        "video_id": "HaFAzEfolhQ",
-        "title": "Disrespectful Mechanics 👑 CHECK #shorts #leagueoflegends #lol",
-        "action_type": "outplay",
-        "duration_s": 15.0,
-        "views": 1342,
-        "swiped_away_pct": 28.1,
-        "hook_retention_pct": 71.9,
-        "avg_view_pct": 105.8,
-        "diagnosis": "🎯 Stabilna retencja (105.8% AVD). Utrzymanie widza w normie kanału.",
-        "top_drop_offs": [
-          {
-            "time_s": 0.9,
-            "elapsed_pct": 6,
-            "drop_pct": 5.2,
-            "watch_pct_after": 151.9,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
-          },
-          {
-            "time_s": 0.6,
-            "elapsed_pct": 4,
-            "drop_pct": 4.1,
-            "watch_pct_after": 167.3,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
-          },
-          {
-            "time_s": 0.8,
-            "elapsed_pct": 5,
-            "drop_pct": 3.4,
-            "watch_pct_after": 161.2,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
-          },
-          {
-            "time_s": 1.2,
-            "elapsed_pct": 8,
-            "drop_pct": 2.4,
-            "watch_pct_after": 144.0,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
-          }
-        ]
-      },
-      {
-        "video_id": "3eOD1I3jV0w",
-        "title": "Relentless Triple Kill Chase 💀 CHECK #shorts #leagueoflegends #lol",
-        "action_type": "triple",
-        "duration_s": 15.0,
-        "views": 424,
-        "swiped_away_pct": 12.2,
-        "hook_retention_pct": 87.8,
-        "avg_view_pct": 71.3,
-        "diagnosis": "🎯 Stabilna retencja (71.3% AVD). Utrzymanie widza w normie kanału.",
-        "top_drop_offs": [
-          {
-            "time_s": 4.3,
-            "elapsed_pct": 28,
-            "drop_pct": 3.7,
-            "watch_pct_after": 100.7,
-            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
-          },
-          {
-            "time_s": 4.2,
-            "elapsed_pct": 28,
-            "drop_pct": 2.7,
-            "watch_pct_after": 105.4,
-            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
-          },
-          {
-            "time_s": 8.5,
-            "elapsed_pct": 56,
-            "drop_pct": 2.7,
-            "watch_pct_after": 63.1,
-            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
-          },
-          {
-            "time_s": 9.3,
-            "elapsed_pct": 62,
-            "drop_pct": 2.7,
-            "watch_pct_after": 53.7,
-            "reason": "Action Drop: Spadek dynamiki montażu / zmiana tempa."
-          }
-        ]
-      },
-      {
-        "video_id": "-pDUfw6csgk",
-        "title": "River Chase And Easy Pickings 💀 #shorts #leagueoflegends #lol",
-        "action_type": "outplay",
-        "duration_s": 19.0,
-        "views": 222,
-        "swiped_away_pct": 4.0,
-        "hook_retention_pct": 96.0,
-        "avg_view_pct": 66.3,
-        "diagnosis": "🎯 Stabilna retencja (66.3% AVD). Utrzymanie widza w normie kanału.",
-        "top_drop_offs": [
-          {
-            "time_s": 6.3,
-            "elapsed_pct": 33,
-            "drop_pct": 6.0,
-            "watch_pct_after": 90.5,
-            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
-          },
-          {
-            "time_s": 8.0,
-            "elapsed_pct": 42,
-            "drop_pct": 6.0,
-            "watch_pct_after": 69.0,
-            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
-          },
-          {
-            "time_s": 10.5,
-            "elapsed_pct": 55,
-            "drop_pct": 6.0,
-            "watch_pct_after": 52.4,
-            "reason": "Mid-Fight Drop: Zbyt długi buildup / brak dynamiki przed pierwszym uderzeniem."
-          },
-          {
-            "time_s": 0.6,
-            "elapsed_pct": 3,
-            "drop_pct": 4.0,
-            "watch_pct_after": 114.3,
-            "reason": "Hook Drop: Początek nie przykuł natychmiast uwagi (zbyt wolne wejście w akcję)."
-          }
-        ]
       }
     ],
     "insights": [
-      "Analiza YouTube Analytics API objęła 13 filmów z pełną krzywą retencji.",
-      "Średni wskaźnik Swiped Away na kanale: 17.5% (utrzymanie hooka: 82.5%).",
-      "Średnia retencja odtworzeń (AVD): 98.1%.",
+      "Analiza YouTube Analytics API objęła 11 filmów z pełną krzywą retencji.",
+      "Średni wskaźnik Swiped Away na kanale: 17.1% (utrzymanie hooka: 82.9%).",
+      "Średnia retencja odtworzeń (AVD): 98.3%.",
       "Filmy z czasem 10-13s wykazują o ~14% niższy Swiped Away niż filmy >18s."
     ]
   },
   "retention_robust": {
-    "videos_used": 13,
+    "videos_used": 11,
     "avg_view_pct": {
-      "count": 13,
-      "median": 104.9,
-      "mean": 98.1,
-      "trimmed_mean": 98.7,
+      "count": 11,
+      "median": 96.7,
+      "mean": 98.3,
+      "trimmed_mean": 98.3,
       "outliers": []
     },
     "swiped_away_pct": {
-      "count": 13,
-      "median": 18.3,
-      "mean": 17.5,
-      "trimmed_mean": 17.4,
+      "count": 11,
+      "median": 17.7,
+      "mean": 17.1,
+      "trimmed_mean": 16.2,
       "outliers": [
-        31.3
+        31.4
       ]
     },
     "note": "Podawaj medianę. Średnia jest tu tylko dla porównania ze starymi raportami."
@@ -778,60 +724,60 @@
   "retention_by_action": {
     "status": "ok",
     "by_action": {
-      "triple": {
-        "count": 5,
-        "avg_swiped_away_pct": 11.7,
-        "avg_hook_retention_pct": 88.3
-      },
       "double": {
         "count": 3,
-        "avg_swiped_away_pct": 17.1,
-        "avg_hook_retention_pct": 82.9
+        "avg_swiped_away_pct": 17.4,
+        "avg_hook_retention_pct": 82.6
+      },
+      "outplay": {
+        "count": 1,
+        "avg_swiped_away_pct": 19.2,
+        "avg_hook_retention_pct": 80.8
       },
       "clutch": {
         "count": 2,
-        "avg_swiped_away_pct": 24.8,
+        "avg_swiped_away_pct": 24.9,
         "avg_hook_retention_pct": 75.2
       },
-      "outplay": {
-        "count": 2,
-        "avg_swiped_away_pct": 23.8,
-        "avg_hook_retention_pct": 76.2
+      "triple": {
+        "count": 4,
+        "avg_swiped_away_pct": 13.8,
+        "avg_hook_retention_pct": 86.2
       },
-      "solo_bolo": {
+      "quadrakill": {
         "count": 1,
-        "avg_swiped_away_pct": 19.8,
-        "avg_hook_retention_pct": 80.2
+        "avg_swiped_away_pct": 11.3,
+        "avg_hook_retention_pct": 88.7
       }
     }
   },
   "youtube_analytics_v2": {
     "status": "success",
     "period_30d": {
-      "views": 49434,
-      "engaged_views": 23448,
-      "engaged_view_rate_pct": 47.4,
+      "views": 49707,
+      "engaged_views": 23689,
+      "engaged_view_rate_pct": 47.7,
       "avg_view_duration_s": 18.0,
-      "avg_view_pct": 112.7,
-      "est_minutes_watched": 7553.0,
-      "watch_time_hours": 125.9,
-      "likes": 181,
-      "comments": 13,
+      "avg_view_pct": 110.5,
+      "est_minutes_watched": 7612.0,
+      "watch_time_hours": 126.9,
+      "likes": 168,
+      "comments": 15,
       "shares": 0,
-      "subscribers_gained": 3,
+      "subscribers_gained": 2,
       "subscribers_lost": 0,
-      "subscribers_net": 3
+      "subscribers_net": 2
     },
     "period_365d": {
-      "views": 170667,
-      "engaged_views": 82067,
+      "views": 173911,
+      "engaged_views": 83645,
       "engaged_view_rate_pct": 48.1,
       "avg_view_duration_s": 17.0,
-      "avg_view_pct": 97.2,
-      "est_minutes_watched": 24857.0,
-      "watch_time_hours": 414.3,
-      "likes": 723,
-      "comments": 32,
+      "avg_view_pct": 96.9,
+      "est_minutes_watched": 25315.0,
+      "watch_time_hours": 421.9,
+      "likes": 735,
+      "comments": 34,
       "shares": 5,
       "subscribers_gained": 23,
       "subscribers_lost": 11,
@@ -840,45 +786,45 @@
     "traffic_sources_30d": [
       {
         "source": "SHORTS",
-        "views": 46410,
-        "share_pct": 94.3,
-        "est_minutes_watched": 6530.0,
-        "avg_view_pct": 103.4
+        "views": 46941,
+        "share_pct": 94.5,
+        "est_minutes_watched": 6626.0,
+        "avg_view_pct": 101.5
       },
       {
         "source": "YT_OTHER_PAGE",
-        "views": 1730,
+        "views": 1754,
         "share_pct": 3.5,
-        "est_minutes_watched": 858.0,
-        "avg_view_pct": 344.1
+        "est_minutes_watched": 867.0,
+        "avg_view_pct": 335.3
       },
       {
         "source": "YT_SEARCH",
-        "views": 807,
+        "views": 771,
         "share_pct": 1.6,
-        "est_minutes_watched": 86.0,
-        "avg_view_pct": 96.8
+        "est_minutes_watched": 83.0,
+        "avg_view_pct": 95.3
       },
       {
         "source": "YT_CHANNEL",
-        "views": 149,
+        "views": 133,
         "share_pct": 0.3,
-        "est_minutes_watched": 20.0,
-        "avg_view_pct": 87.6
+        "est_minutes_watched": 18.0,
+        "avg_view_pct": 86.0
       },
       {
         "source": "SUBSCRIBER",
-        "views": 54,
+        "views": 48,
         "share_pct": 0.1,
-        "est_minutes_watched": 6.0,
-        "avg_view_pct": 114.1
+        "est_minutes_watched": 5.0,
+        "avg_view_pct": 95.5
       },
       {
         "source": "NOTIFICATION",
-        "views": 34,
+        "views": 32,
         "share_pct": 0.1,
-        "est_minutes_watched": 8.0,
-        "avg_view_pct": 195.7
+        "est_minutes_watched": 7.0,
+        "avg_view_pct": 165.2
       },
       {
         "source": "EXT_URL",
@@ -912,73 +858,73 @@
     "top_countries_30d": [
       {
         "country": "PL",
-        "views": 7541,
-        "share_pct": 15.3,
-        "avg_view_pct": 105.6,
-        "engaged_views": 3378
+        "views": 7414,
+        "share_pct": 14.9,
+        "avg_view_pct": 105.0,
+        "engaged_views": 3355
       },
       {
         "country": "KR",
-        "views": 6391,
-        "share_pct": 12.9,
-        "avg_view_pct": 99.7,
-        "engaged_views": 2691
+        "views": 7031,
+        "share_pct": 14.1,
+        "avg_view_pct": 95.3,
+        "engaged_views": 2985
       },
       {
         "country": "JP",
-        "views": 3466,
-        "share_pct": 7.0,
-        "avg_view_pct": 129.8,
-        "engaged_views": 1550
+        "views": 3450,
+        "share_pct": 6.9,
+        "avg_view_pct": 128.8,
+        "engaged_views": 1544
       },
       {
         "country": "US",
-        "views": 3173,
-        "share_pct": 6.4,
-        "avg_view_pct": 114.2,
-        "engaged_views": 1589
+        "views": 3322,
+        "share_pct": 6.7,
+        "avg_view_pct": 112.4,
+        "engaged_views": 1674
       },
       {
         "country": "VN",
-        "views": 2353,
+        "views": 2365,
         "share_pct": 4.8,
-        "avg_view_pct": 94.7,
-        "engaged_views": 1171
+        "avg_view_pct": 94.5,
+        "engaged_views": 1180
       },
       {
         "country": "BR",
-        "views": 2096,
-        "share_pct": 4.2,
-        "avg_view_pct": 113.8,
-        "engaged_views": 1022
-      },
-      {
-        "country": "TR",
-        "views": 1867,
-        "share_pct": 3.8,
-        "avg_view_pct": 99.4,
-        "engaged_views": 919
+        "views": 2027,
+        "share_pct": 4.1,
+        "avg_view_pct": 102.4,
+        "engaged_views": 998
       },
       {
         "country": "DE",
-        "views": 1787,
+        "views": 1857,
+        "share_pct": 3.7,
+        "avg_view_pct": 95.7,
+        "engaged_views": 927
+      },
+      {
+        "country": "TR",
+        "views": 1813,
         "share_pct": 3.6,
-        "avg_view_pct": 95.8,
-        "engaged_views": 890
+        "avg_view_pct": 99.7,
+        "engaged_views": 903
       },
       {
         "country": "FR",
-        "views": 1392,
-        "share_pct": 2.8,
-        "avg_view_pct": 99.0,
-        "engaged_views": 709
+        "views": 1363,
+        "share_pct": 2.7,
+        "avg_view_pct": 97.9,
+        "engaged_views": 707
       },
       {
         "country": "TW",
-        "views": 1371,
-        "share_pct": 2.8,
-        "avg_view_pct": 105.4,
-        "engaged_views": 619
+        "views": 1302,
+        "share_pct": 2.6,
+        "avg_view_pct": 106.1,
+        "engaged_views": 584
       }
     ],
     "demographics_365d": [
@@ -990,7 +936,7 @@
       {
         "age_group": "age18-24",
         "gender": "male",
-        "viewer_pct": 24.0
+        "viewer_pct": 24.1
       },
       {
         "age_group": "age35-44",
@@ -1010,7 +956,7 @@
       {
         "age_group": "age25-34",
         "gender": "female",
-        "viewer_pct": 0.9
+        "viewer_pct": 1.0
       },
       {
         "age_group": "age18-24",
@@ -1023,20 +969,20 @@
         "viewer_pct": 0.1
       },
       {
-        "age_group": "age65-",
-        "gender": "male",
-        "viewer_pct": 0.1
-      },
-      {
         "age_group": "age35-44",
         "gender": "female",
         "viewer_pct": 0.0
+      },
+      {
+        "age_group": "age65-",
+        "gender": "male",
+        "viewer_pct": 0.0
       }
     ],
-    "fetched_at": "2026-11-20T19:24:52.624186+00:00"
+    "fetched_at": "2026-11-22T11:48:57.442295+00:00"
   },
   "learning_progression": {
-    "total_dated_videos": 208,
+    "total_dated_videos": 212,
     "monthly_2026": {
       "2026-08": {
         "count": 18,
@@ -1069,45 +1015,45 @@
           "2026-10-30"
         ],
         "median_views": 1537,
-        "mean_views": 1686,
+        "mean_views": 1687,
         "median_avd_pct": 97.2,
         "median_engaged_rate_pct": 46.0,
         "subscribers_gained": 8
       },
       "2026-11": {
-        "count": 17,
+        "count": 21,
         "date_range": [
           "2026-11-01",
-          "2026-11-19"
+          "2026-11-22"
         ],
-        "median_views": 1826,
-        "mean_views": 1771,
-        "median_avd_pct": 104.9,
-        "median_engaged_rate_pct": 49.7,
+        "median_views": 1547,
+        "mean_views": 1810,
+        "median_avd_pct": 100.8,
+        "median_engaged_rate_pct": 50.6,
         "subscribers_gained": 1
       }
     },
     "cohorts": {
       "first_half": {
-        "count": 104,
+        "count": 106,
         "date_range": [
           "2022-09-06",
-          "2025-08-20"
+          "2025-08-22"
         ],
-        "median_views": 1318,
-        "mean_views": 2634,
+        "median_views": 1350,
+        "mean_views": 2612,
         "median_avd_pct": 102.0,
         "median_engaged_rate_pct": 99.9,
-        "subscribers_gained": 63
+        "subscribers_gained": 62
       },
       "second_half": {
-        "count": 104,
+        "count": 106,
         "date_range": [
-          "2025-08-21",
-          "2026-11-19"
+          "2025-08-23",
+          "2026-11-22"
         ],
         "median_views": 1681,
-        "mean_views": 2162,
+        "mean_views": 2168,
         "median_avd_pct": 96.9,
         "median_engaged_rate_pct": 47.5,
         "subscribers_gained": 21
@@ -1115,44 +1061,51 @@
       "last_15_videos": {
         "count": 15,
         "date_range": [
-          "2026-11-02",
-          "2026-11-19"
+          "2026-11-05",
+          "2026-11-22"
         ],
         "median_views": 1883,
-        "mean_views": 1783,
-        "median_avd_pct": 104.9,
-        "median_engaged_rate_pct": 50.6,
+        "mean_views": 2040,
+        "median_avd_pct": 96.7,
+        "median_engaged_rate_pct": 51.0,
         "subscribers_gained": 1
       }
     },
     "is_improving": true,
-    "summary": "Mediana AVD% (2026): 88.5% (2026-08) -> 104.9% (2026-11). 1. połowa kanału vs ostatnie 15: AVD 102.0% -> 104.9%, mediana wyśw. 1318 -> 1883."
+    "summary": "Mediana AVD% (2026): 88.5% (2026-08) -> 100.8% (2026-11). 1. połowa kanału vs ostatnie 15: AVD 102.0% -> 96.7%, mediana wyśw. 1350 -> 1883."
   },
   "post_48h_gate_summary": {
     "status": "active",
-    "total_verified_48h": 206,
-    "pending_under_48h": 2,
-    "avg_rwi_score": 71.7,
+    "total_verified_48h": 208,
+    "pending_under_48h": 4,
+    "avg_rwi_score": 71.5,
     "median_rwi_score": 72.8,
     "verdict_counts": {
-      "FALSE_POSITIVE_MONTAGE": 64,
+      "FALSE_POSITIVE_MONTAGE": 66,
       "FIT_CONFIRMED": 142
     },
-    "fit_confirmed_pct": 68.9,
-    "false_positive_pct": 31.1,
+    "fit_confirmed_pct": 68.3,
+    "false_positive_pct": 31.7,
     "by_action_type": {
-      "double": {
-        "count": 31,
-        "avg_rwi": 73.2,
-        "median_rwi": 73.9,
-        "fit_confirmed_pct": 71.0,
-        "top_verdict": "FIT_CONFIRMED"
+      "quadrakill": {
+        "count": 9,
+        "avg_rwi": 63.7,
+        "median_rwi": 59.6,
+        "fit_confirmed_pct": 33.3,
+        "top_verdict": "FALSE_POSITIVE_MONTAGE"
       },
       "triple": {
-        "count": 45,
-        "avg_rwi": 67.9,
+        "count": 46,
+        "avg_rwi": 67.7,
         "median_rwi": 69.7,
-        "fit_confirmed_pct": 60.0,
+        "fit_confirmed_pct": 58.7,
+        "top_verdict": "FIT_CONFIRMED"
+      },
+      "double": {
+        "count": 31,
+        "avg_rwi": 73.3,
+        "median_rwi": 73.9,
+        "fit_confirmed_pct": 71.0,
         "top_verdict": "FIT_CONFIRMED"
       },
       "clutch": {
@@ -1164,39 +1117,44 @@
       },
       "outplay": {
         "count": 98,
-        "avg_rwi": 73.9,
-        "median_rwi": 75.7,
+        "avg_rwi": 73.6,
+        "median_rwi": 75.8,
         "fit_confirmed_pct": 75.5,
         "top_verdict": "FIT_CONFIRMED"
       },
       "solo_bolo": {
         "count": 12,
-        "avg_rwi": 75.7,
-        "median_rwi": 77.3,
+        "avg_rwi": 75.9,
+        "median_rwi": 77.5,
         "fit_confirmed_pct": 83.3,
         "top_verdict": "FIT_CONFIRMED"
       },
       "pentakill": {
         "count": 10,
-        "avg_rwi": 63.0,
-        "median_rwi": 60.9,
+        "avg_rwi": 63.1,
+        "median_rwi": 61.1,
         "fit_confirmed_pct": 40.0,
-        "top_verdict": "FALSE_POSITIVE_MONTAGE"
-      },
-      "quadrakill": {
-        "count": 8,
-        "avg_rwi": 64.8,
-        "median_rwi": 61.0,
-        "fit_confirmed_pct": 37.5,
         "top_verdict": "FALSE_POSITIVE_MONTAGE"
       }
     },
-    "by_director_operation": {},
+    "by_director_operation": {
+      "KEEP_FULL_CONTINUOUS": {
+        "count": 2,
+        "avg_rwi": 55.2,
+        "median_rwi": 55.2,
+        "fit_confirmed_pct": 0.0
+      }
+    },
     "director_adjustments_by_action": {
+      "quadrakill": {
+        "outro_sec_delta": -0.4,
+        "prefer_style": "SPEED_RAMP_FLOW",
+        "sample_size": 9
+      },
       "triple": {
         "outro_sec_delta": -0.4,
         "prefer_style": "SPEED_RAMP_FLOW",
-        "sample_size": 45
+        "sample_size": 46
       },
       "clutch": {
         "buildup_sec_delta": -0.3,
@@ -1212,11 +1170,6 @@
         "outro_sec_delta": -0.4,
         "prefer_style": "SPEED_RAMP_FLOW",
         "sample_size": 10
-      },
-      "quadrakill": {
-        "outro_sec_delta": -0.4,
-        "prefer_style": "SPEED_RAMP_FLOW",
-        "sample_size": 8
       }
     },
     "high_rwi_video_ids": [
@@ -1241,6 +1194,7 @@
       "uqOJGXSN5H4",
       "UjF923R_0sE",
       "eGnLu4hPAJM",
+      "IJORYOCrELc",
       "836Zv-jqOxc",
       "eMfSJy9dS60",
       "jtTa72ENbd0",
@@ -1306,23 +1260,23 @@
       "dhJzCEXkzJ8",
       "azNk9v8CQxk"
     ],
-    "hard_cases_count": 46,
+    "hard_cases_count": 22,
     "synapsa_director_insights": [
       {
         "target": "solo_bolo",
-        "observation": "Najwyższe średnie RWI 75.7 (83.3% FIT na 12 filmach).",
+        "observation": "Najwyższe średnie RWI 75.9 (83.3% FIT na 12 filmach).",
         "action_taken": "KEEP_FULL_CONTINUOUS (zachowaj naturalny rytm akcji)",
         "expected_impact": "Stabilne utrzymanie widowni i wyższa retencja."
       },
       {
         "target": "pentakill",
-        "observation": "Najniższe RWI 63.0 (40.0% FIT na 10 filmach).",
+        "observation": "Najniższe RWI 63.1 (40.0% FIT na 10 filmach).",
         "action_taken": "Korekta stylu na SPEED_RAMP_FLOW + ostrzejszy buildup/outro.",
         "expected_impact": "Skrócenie martwego początku i eliminacja zbyt długiego outro."
       },
       {
         "target": "hard_cases_memory",
-        "observation": "Zarejestrowano 46 trudnych klipów (m.in. zatkane banery / kradzież smoka).",
+        "observation": "Zarejestrowano 22 trudnych klipów (m.in. zatkane banery / kradzież smoka).",
         "action_taken": "Aktywny Rollback Guard przed FFmpeg + wymuszone KEEP_FULL_CONTINUOUS dla teamfightów z obiektem.",
         "expected_impact": "Zero uciętych wielofazowych akcji w kolejnych renderach."
       }
@@ -1330,7 +1284,7 @@
   },
   "publication_cadence": {
     "status": "excellent",
-    "avg_gap_days": 0.95,
+    "avg_gap_days": 1.03,
     "median_gap_days": 0.71,
     "max_gap_days": 3.54,
     "gap_warning": false,
@@ -1351,19 +1305,19 @@
     "best_hour_cet_clear": false,
     "best_weekday_clear": true,
     "hour_stats": {
-      "11": {
+      "10": {
         "count": 13,
-        "median_views": 1374,
+        "median_views": 1405,
         "reliable": true
       },
       "20": {
-        "count": 14,
-        "median_views": 1301,
+        "count": 16,
+        "median_views": 1310,
         "reliable": true
       },
-      "10": {
-        "count": 11,
-        "median_views": 1595,
+      "11": {
+        "count": 13,
+        "median_views": 1416,
         "reliable": true
       },
       "13": {
@@ -1471,7 +1425,7 @@
         "median_views": 6008,
         "mean_views": 6008,
         "median_avd_pct": 99.4,
-        "median_engaged_rate_pct": 70.0,
+        "median_engaged_rate_pct": 70.6,
         "reliable": false
       },
       "3": {
@@ -1531,19 +1485,19 @@
         "reliable": true
       },
       "11": {
-        "count": 6,
-        "median_views": 2162,
-        "mean_views": 2399,
+        "count": 8,
+        "median_views": 1975,
+        "mean_views": 1891,
         "median_avd_pct": 99.2,
-        "median_engaged_rate_pct": 50.8,
+        "median_engaged_rate_pct": 51.3,
         "reliable": true
       },
       "12": {
         "count": 16,
-        "median_views": 1361,
-        "mean_views": 1819,
-        "median_avd_pct": 98.3,
-        "median_engaged_rate_pct": 81.0,
+        "median_views": 1410,
+        "mean_views": 1825,
+        "median_avd_pct": 98.1,
+        "median_engaged_rate_pct": 62.2,
         "reliable": true
       },
       "13": {
@@ -1598,24 +1552,24 @@
         "count": 15,
         "median_views": 1537,
         "mean_views": 3706,
-        "median_avd_pct": 97.2,
-        "median_engaged_rate_pct": 99.4,
+        "median_avd_pct": 99.7,
+        "median_engaged_rate_pct": 77.0,
         "reliable": true
       },
       "20": {
         "count": 9,
         "median_views": 1692,
         "mean_views": 1707,
-        "median_avd_pct": 113.3,
-        "median_engaged_rate_pct": 93.6,
+        "median_avd_pct": 125.2,
+        "median_engaged_rate_pct": 72.0,
         "reliable": true
       },
       "21": {
-        "count": 18,
-        "median_views": 1224,
-        "mean_views": 1673,
-        "median_avd_pct": 95.6,
-        "median_engaged_rate_pct": 70.5,
+        "count": 20,
+        "median_views": 1235,
+        "mean_views": 1860,
+        "median_avd_pct": 94.9,
+        "median_engaged_rate_pct": 55.5,
         "reliable": true
       },
       "22": {
@@ -1645,19 +1599,19 @@
         "reliable": true
       },
       "09:00-11:59": {
-        "count": 21,
-        "median_views": 2289,
-        "mean_views": 2407,
+        "count": 23,
+        "median_views": 2258,
+        "mean_views": 2229,
         "median_avd_pct": 102.1,
         "median_engaged_rate_pct": 66.5,
         "reliable": true
       },
       "12:00-14:59": {
         "count": 25,
-        "median_views": 1405,
-        "mean_views": 2104,
-        "median_avd_pct": 98.3,
-        "median_engaged_rate_pct": 55.7,
+        "median_views": 1416,
+        "mean_views": 2108,
+        "median_avd_pct": 98.1,
+        "median_engaged_rate_pct": 53.9,
         "reliable": true
       },
       "15:00-17:59": {
@@ -1680,16 +1634,16 @@
         "count": 24,
         "median_views": 1588,
         "mean_views": 2956,
-        "median_avd_pct": 105.1,
-        "median_engaged_rate_pct": 96.3,
+        "median_avd_pct": 110.0,
+        "median_engaged_rate_pct": 74.1,
         "reliable": true
       },
       "21:00-23:59": {
-        "count": 40,
-        "median_views": 1258,
-        "mean_views": 2102,
-        "median_avd_pct": 96.5,
-        "median_engaged_rate_pct": 59.7,
+        "count": 42,
+        "median_views": 1276,
+        "mean_views": 2170,
+        "median_avd_pct": 96.3,
+        "median_engaged_rate_pct": 59.5,
         "reliable": true
       }
     },
@@ -1698,6 +1652,21 @@
       "21:30"
     ],
     "weekday_stats": {
+      "Nd": {
+        "count": 24,
+        "median_views": 2118,
+        "reliable": true
+      },
+      "Sob": {
+        "count": 28,
+        "median_views": 1400,
+        "reliable": true
+      },
+      "Pt": {
+        "count": 39,
+        "median_views": 1677,
+        "reliable": true
+      },
       "Czw": {
         "count": 23,
         "median_views": 1798,
@@ -1717,21 +1686,6 @@
         "count": 31,
         "median_views": 1543,
         "reliable": true
-      },
-      "Nd": {
-        "count": 23,
-        "median_views": 2300,
-        "reliable": true
-      },
-      "Sob": {
-        "count": 26,
-        "median_views": 1453,
-        "reliable": true
-      },
-      "Pt": {
-        "count": 38,
-        "median_views": 1672,
-        "reliable": true
       }
     },
     "note": "Mediana wyświetleń per godzina/okno/dzień (UTC i CET). Slot wygrywa dopiero od 5 filmów i przewagi 15 % nad drugim; best_*_clear mówi, czy zwycięzca jest wyraźny."
@@ -1742,9 +1696,9 @@
     "experiments": [],
     "title_structure_benchmark": {
       "CLEAN_OUTPLAY": {
-        "count": 146,
-        "median_views": 1545,
-        "avg_views": 2423
+        "count": 150,
+        "median_views": 1542,
+        "avg_views": 2411
       },
       "DISRESPECT_1V1": {
         "count": 15,
@@ -1778,58 +1732,58 @@
   "top_title_structure": "DISRESPECT_1V1",
   "title_structure_stats": {
     "CLEAN_OUTPLAY": {
-      "count": 146,
-      "avg_ratio": 1.49,
-      "median_ratio": 0.95,
+      "count": 150,
+      "avg_ratio": 1.5,
+      "median_ratio": 0.96,
       "median_ratio_within_action": 0.95,
-      "avg_conversion_per_1k": 5.88,
+      "avg_conversion_per_1k": 5.32,
       "reliable": true
     },
     "DISRESPECT_1V1": {
       "count": 15,
-      "avg_ratio": 1.34,
-      "median_ratio": 1.27,
+      "avg_ratio": 1.36,
+      "median_ratio": 1.29,
       "median_ratio_within_action": 1.03,
       "avg_conversion_per_1k": 2.62,
       "reliable": true
     },
     "CLUTCH_1HP": {
       "count": 2,
-      "avg_ratio": 2.02,
-      "median_ratio": 2.02,
+      "avg_ratio": 2.05,
+      "median_ratio": 2.05,
       "median_ratio_within_action": 1.0,
       "avg_conversion_per_1k": 2.28,
       "reliable": false
     },
     "EGO_CHECK": {
       "count": 19,
-      "avg_ratio": 1.41,
-      "median_ratio": 0.91,
+      "avg_ratio": 1.43,
+      "median_ratio": 0.92,
       "median_ratio_within_action": 1.0,
       "avg_conversion_per_1k": 3.32,
       "reliable": true
     },
     "QUESTION": {
       "count": 8,
-      "avg_ratio": 0.67,
-      "median_ratio": 0.85,
+      "avg_ratio": 0.68,
+      "median_ratio": 0.86,
       "median_ratio_within_action": 0.84,
       "avg_conversion_per_1k": 13.97,
       "reliable": true
     },
     "RAMPAGE": {
       "count": 18,
-      "avg_ratio": 1.82,
-      "median_ratio": 1.05,
+      "avg_ratio": 1.84,
+      "median_ratio": 1.06,
       "median_ratio_within_action": 1.16,
       "avg_conversion_per_1k": 6.64,
       "reliable": true
     }
   },
   "winning_keywords": [
+    "FREE",
     "EPIC",
     "BARON",
-    "FREE",
     "LOLSHORTS",
     "CHAOS",
     "SOLO",
@@ -1854,21 +1808,21 @@
   "recommended_pacing": "balanced",
   "evaluator_config": {
     "base_kill_weights": {
-      "PENTAKILL": 62.4,
-      "QUADRAKILL": 81.6,
-      "TRIPLE KILL": 55.2,
-      "DOUBLE KILL": 25.5,
-      "SOLO BOLO": 96.6,
-      "OUTPLAY": 56.9,
+      "PENTAKILL": 80.0,
+      "QUADRAKILL": 65.8,
+      "TRIPLE KILL": 55.9,
+      "DOUBLE KILL": 25.9,
+      "SOLO BOLO": 97.9,
+      "OUTPLAY": 57.7,
       "CLUTCH": 80.0,
       "KILL": 10.0
     },
     "action_multipliers": {
-      "pentakill": 0.91,
+      "pentakill": 1.0,
       "solo_bolo": 1.0,
       "clutch": 1.2,
       "triple": 1.0,
-      "quadrakill": 1.02,
+      "quadrakill": 1.0,
       "double": 1.0,
       "outplay": 1.0,
       "multikill": 1.0
@@ -1888,9 +1842,9 @@
     "correlation_qs_views": 0.29
   },
   "recipe_experiments": {
-    "total_recipes": 31,
-    "matched_videos": 8,
-    "channel_median_views": 1302.5,
+    "total_recipes": 36,
+    "matched_videos": 15,
+    "channel_median_views": 1292.0,
     "min_sample_per_bucket": 8,
     "min_lead_to_win": 0.15,
     "reliable_dimensions": [],
@@ -1900,11 +1854,18 @@
         "reliable": false,
         "lead_pct": 0.0,
         "buckets": {
+          "IN_MEDIA_RES": {
+            "count": 4,
+            "median_views": 737.5,
+            "performance_ratio_median": 0.57,
+            "avg_conversion_per_1k": 9.36,
+            "reliable": false
+          },
           "PRIMARY": {
-            "count": 8,
-            "median_views": 1302.5,
-            "performance_ratio_median": 1.0,
-            "avg_conversion_per_1k": 3.24,
+            "count": 11,
+            "median_views": 1305.0,
+            "performance_ratio_median": 1.01,
+            "avg_conversion_per_1k": 4.35,
             "reliable": true
           }
         }
@@ -1915,11 +1876,18 @@
         "lead_pct": 0.0,
         "buckets": {
           "KEEP_FULL_CONTINUOUS": {
-            "count": 8,
-            "median_views": 1302.5,
-            "performance_ratio_median": 1.0,
-            "avg_conversion_per_1k": 3.24,
+            "count": 11,
+            "median_views": 1305.0,
+            "performance_ratio_median": 1.01,
+            "avg_conversion_per_1k": 4.35,
             "reliable": true
+          },
+          "SWITCH_STYLE_IN_MEDIA_RES": {
+            "count": 4,
+            "median_views": 737.5,
+            "performance_ratio_median": 0.57,
+            "avg_conversion_per_1k": 9.36,
+            "reliable": false
           }
         }
       },
@@ -1929,10 +1897,10 @@
         "lead_pct": 0.0,
         "buckets": {
           "tight_player": {
-            "count": 8,
-            "median_views": 1302.5,
+            "count": 15,
+            "median_views": 1292.0,
             "performance_ratio_median": 1.0,
-            "avg_conversion_per_1k": 3.24,
+            "avg_conversion_per_1k": 5.68,
             "reliable": true
           }
         }
@@ -1943,10 +1911,10 @@
         "lead_pct": 0.0,
         "buckets": {
           "default": {
-            "count": 8,
-            "median_views": 1302.5,
+            "count": 15,
+            "median_views": 1292.0,
             "performance_ratio_median": 1.0,
-            "avg_conversion_per_1k": 3.24,
+            "avg_conversion_per_1k": 5.68,
             "reliable": true
           }
         }
@@ -1957,17 +1925,31 @@
         "lead_pct": 0.0,
         "buckets": {
           "debate_choke": {
-            "count": 4,
-            "median_views": 1302.5,
-            "performance_ratio_median": 1.0,
-            "avg_conversion_per_1k": 2.3,
-            "reliable": false
+            "count": 8,
+            "median_views": 1298.5,
+            "performance_ratio_median": 1.01,
+            "avg_conversion_per_1k": 5.78,
+            "reliable": true
           },
           "debate_panicked": {
             "count": 2,
             "median_views": 1883.0,
-            "performance_ratio_median": 1.45,
+            "performance_ratio_median": 1.46,
             "avg_conversion_per_1k": 4.78,
+            "reliable": false
+          },
+          "debate_survive": {
+            "count": 2,
+            "median_views": 551.0,
+            "performance_ratio_median": 0.43,
+            "avg_conversion_per_1k": 10.89,
+            "reliable": false
+          },
+          "debate_turn": {
+            "count": 1,
+            "median_views": 5764.0,
+            "performance_ratio_median": 4.46,
+            "avg_conversion_per_1k": 0.52,
             "reliable": false
           },
           "sub_resets": {
@@ -1984,25 +1966,53 @@
         "reliable": false,
         "lead_pct": 0.0,
         "buckets": {
+          "ncs_alex_skrindo_euphoria.mp3": {
+            "count": 1,
+            "median_views": 5764.0,
+            "performance_ratio_median": 4.46,
+            "avg_conversion_per_1k": 0.52,
+            "reliable": false
+          },
+          "ncs_cartoon_on_and_on.mp3": {
+            "count": 2,
+            "median_views": 551.0,
+            "performance_ratio_median": 0.43,
+            "avg_conversion_per_1k": 10.89,
+            "reliable": false
+          },
+          "ncs_different_heaven_my_heart.mp3": {
+            "count": 2,
+            "median_views": 1292.0,
+            "performance_ratio_median": 1.0,
+            "avg_conversion_per_1k": 2.32,
+            "reliable": false
+          },
+          "ncs_elektronomia_sky_high.mp3": {
+            "count": 2,
+            "median_views": 183.0,
+            "performance_ratio_median": 0.14,
+            "avg_conversion_per_1k": 16.39,
+            "reliable": false
+          },
           "ncs_jim_yosef_link.mp3": {
             "count": 2,
             "median_views": 1883.0,
-            "performance_ratio_median": 1.45,
+            "performance_ratio_median": 1.46,
             "avg_conversion_per_1k": 4.78,
             "reliable": false
           },
           "ncs_robin_hustin_light_it_up.mp3": {
             "count": 2,
-            "median_views": 1317.0,
-            "performance_ratio_median": 1.01,
-            "avg_conversion_per_1k": 2.28,
+            "median_views": 1416.0,
+            "performance_ratio_median": 1.1,
+            "avg_conversion_per_1k": 2.12,
             "reliable": false
           },
           "ncs_unknown_brain_superhero.mp3": {
             "count": 4,
-            "median_views": 1065.5,
-            "performance_ratio_median": 0.82,
-            "avg_conversion_per_1k": 2.94,
+            "median_views": 1074.0,
+            "performance_ratio_median": 0.83,
+            "avg_conversion_per_1k": 2.93,
             "reliable": false
           }
         }
@@ -2013,10 +2023,10 @@
         "lead_pct": 0.0,
         "buckets": {
           "smart": {
-            "count": 8,
-            "median_views": 1302.5,
+            "count": 15,
+            "median_views": 1292.0,
             "performance_ratio_median": 1.0,
-            "avg_conversion_per_1k": 3.24,
+            "avg_conversion_per_1k": 5.68,
             "reliable": true
           }
         }
@@ -2027,10 +2037,10 @@
         "lead_pct": 0.0,
         "buckets": {
           "no": {
-            "count": 8,
-            "median_views": 1302.5,
+            "count": 15,
+            "median_views": 1292.0,
             "performance_ratio_median": 1.0,
-            "avg_conversion_per_1k": 3.24,
+            "avg_conversion_per_1k": 5.68,
             "reliable": true
           }
         }
@@ -2049,32 +2059,32 @@
     "reason": "Za mała próba (0 < 8)"
   },
   "insights": [
-    "Przeanalizowano 250 filmów (208 z >= 50 views, 42 odrzucono jako zera/drafty). Mediana kanału: 1628 views, trimmed mean: 1798 views (eng: 1.0%).",
-    "Format o najwyższym performance ratio (mediana): SOLO_BOLO (1.29x mediany). Wagi bazują na min 3 próbkach — bez tego → waga domyślna.",
-    "Closed Pacing Loop (mediana): Kohorta viral_hit (83 filmów) → bucket 'balanced_14_17s' (pewna: short_10_13s, balanced_14_17s, cinematic_18_25s). Profil: 'balanced'.",
-    "Title Reinforcement: Najlepsza struktura (mediana ratio): DISRESPECT_1V1. CTR słowa: EPIC, BARON, FREE, LOLSHORTS. Avoid: MONTAGE, CHAMPION, CHASE, TRIPPLE.",
-    "Evaluator: Solo Bolo=96.6pkt, Pentakill=62.4pkt. Zdegradowane: brak (wymaga N>=4).",
+    "Przeanalizowano 250 filmów (212 z >= 50 views, 38 odrzucono jako zera/drafty). Mediana kanału: 1606 views, trimmed mean: 1788 views (eng: 0.9%).",
+    "Format o najwyższym performance ratio (mediana): SOLO_BOLO (1.31x mediany). Wagi bazują na min 3 próbkach — bez tego → waga domyślna.",
+    "Closed Pacing Loop (mediana): Kohorta viral_hit (84 filmów) → bucket 'balanced_14_17s' (pewna: short_10_13s, balanced_14_17s, cinematic_18_25s). Profil: 'balanced'.",
+    "Title Reinforcement: Najlepsza struktura (mediana ratio): DISRESPECT_1V1. CTR słowa: FREE, EPIC, BARON, LOLSHORTS. Avoid: MONTAGE, CHAMPION, CHASE, TRIPPLE.",
+    "Evaluator: Solo Bolo=97.9pkt, Pentakill=80.0pkt. Zdegradowane: brak (wymaga N>=4).",
     "Feedback Loop: Przetestowano 112 filmów pod kątem jakości. Trafność predykcji: 68.5% (korelacja QS vs Views: +0.29).",
     "A/B Title Testing: 0 testów w toku. Winning structure: 'CLUTCH_1HP'.",
-    "Rytm: excellent (śr. 0.95 dni).",
+    "Rytm: excellent (śr. 1.03 dni).",
     "Tytuły: różnorodne.",
-    "YouTube Analytics API: 13 filmów z pełną krzywą retencji. Średni Swiped Away: 17.5%, AVD: 98.1%.",
-    "Rozwój algorytmu: Mediana AVD% (2026): 88.5% (2026-08) -> 104.9% (2026-11). 1. połowa kanału vs ostatnie 15: AVD 102.0% -> 104.9%, mediana wyśw. 1318 -> 1883.",
-    "Geografia 30d (Top 5): PL:15.3%, KR:12.9%, JP:7.0%, US:6.4%, VN:4.8%. Zalecane sloty CET: 11:00, 21:30.",
-    "Bramka 48h: 206 zweryfikowanych filmów (śr. RWI 71.7/100, FIT_CONFIRMED 68.9%, FALSE_POSITIVE 31.1%)."
+    "YouTube Analytics API: 11 filmów z pełną krzywą retencji. Średni Swiped Away: 17.1%, AVD: 98.3%.",
+    "Rozwój algorytmu: Mediana AVD% (2026): 88.5% (2026-08) -> 100.8% (2026-11). 1. połowa kanału vs ostatnie 15: AVD 102.0% -> 96.7%, mediana wyśw. 1350 -> 1883.",
+    "Geografia 30d (Top 5): PL:14.9%, KR:14.1%, JP:6.9%, US:6.7%, VN:4.8%. Zalecane sloty CET: 11:00, 21:30.",
+    "Bramka 48h: 208 zweryfikowanych filmów (śr. RWI 71.5/100, FIT_CONFIRMED 68.3%, FALSE_POSITIVE 31.7%)."
   ],
   "synapsa_retrain_status": {
     "dataset_path": "C:\\Users\\mz100\\PycharmProjects\\Synapsa\\dataset_shortsyt_titles.jsonl",
     "dataset_written": true,
-    "total_examples": 381,
-    "director_examples": 177,
+    "total_examples": 269,
+    "director_examples": 64,
     "engineering_cause_effect_examples": 40,
     "watchability_examples": 18,
     "historical_evolution_examples": 14,
-    "last_trained_examples": 261,
-    "new_examples_since_train": 120,
+    "last_trained_examples": 270,
+    "new_examples_since_train": 0,
     "min_new_for_retrain": 5,
-    "retrain_ready": true,
-    "trained_at": "2026-11-19T13:45:13.114620+00:00"
+    "retrain_ready": false,
+    "trained_at": "2026-11-22T07:15:18.069872+00:00"
   }
 }

@@ -358,5 +358,240 @@ def test_temp_cleaner_protects_pending_queue_and_removes_stale_and_intermediate(
     assert not inter_raw.exists()
 
 
+def test_tiktok_upload_skips_intro_cover_embedding_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("TIKTOK_EMBED_INTRO_COVER", raising=False)
+    token_file = tmp_path / "tt_tok.json"
+    token_file.write_text(json.dumps({"access_token": "act.valid", "expires_at": 9999999999}))
+    monkeypatch.setattr("lol_agent.tiktok_publisher._token_path", lambda: token_file)
+
+    fake_video = tmp_path / "clean_short.mp4"
+    fake_video.write_bytes(b"0" * 50000)
+    fake_thumb = tmp_path / "clean_short_thumb.jpg"
+    fake_thumb.write_bytes(b"jpgdata")
+
+    captured_payloads = []
+
+    def _mock_post(url, headers=None, json=None, timeout=None):
+        resp = MagicMock()
+        if "video/init" in url:
+            captured_payloads.append(json)
+            resp.json.return_value = {"data": {"publish_id": "pub_1", "upload_url": "https://upload.tiktok.test/put"}}
+        else:
+            resp.json.return_value = {"data": {"status": "SEND_TO_USER_INBOX"}}
+        return resp
+
+    def _mock_put(url, headers=None, data=None, timeout=None):
+        r = MagicMock()
+        r.status_code = 200
+        return r
+
+    monkeypatch.setattr("lol_agent.tiktok_publisher.requests.post", _mock_post)
+    monkeypatch.setattr("lol_agent.tiktok_publisher.requests.put", _mock_put)
+    monkeypatch.setattr("lol_agent.tiktok_publisher.time.sleep", lambda s: None)
+
+    with patch("lol_agent.tiktok_publisher._prepare_tiktok_video_with_cover") as mock_prep:
+        res = upload_tiktok_short(
+            video_path=str(fake_video),
+            title="Clean Start",
+            thumbnail_path=str(fake_thumb),
+            peak_moment=6.5,
+        )
+        mock_prep.assert_not_called()
+
+    assert res["success"] is True
+    assert res["cover_embedded"] is False
+    assert captured_payloads[0]["post_info"]["video_cover_timestamp_ms"] == 6500
+
+
+def test_tiktok_direct_post_flags_and_queue_roundtrip(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from lol_agent.scheduled_queue import check_and_flush_scheduled_posts
+
+    token_file = tmp_path / "tt_tok.json"
+    token_file.write_text(json.dumps({"access_token": "act.valid", "expires_at": 9999999999}))
+    monkeypatch.setattr("lol_agent.tiktok_publisher._token_path", lambda: token_file)
+
+    fake_video = tmp_path / "direct_flags.mp4"
+    fake_video.write_bytes(b"0" * 50000)
+
+    captured_payloads = []
+
+    def _mock_post(url, headers=None, json=None, timeout=None):
+        resp = MagicMock()
+        if "video/init" in url:
+            captured_payloads.append(json)
+            resp.json.return_value = {"data": {"publish_id": "pub_flags_1", "upload_url": "https://upload.tiktok.test/put"}}
+        else:
+            resp.json.return_value = {"data": {"status": "PUBLISH_COMPLETE"}}
+        return resp
+
+    def _mock_put(url, headers=None, data=None, timeout=None):
+        r = MagicMock()
+        r.status_code = 200
+        return r
+
+    monkeypatch.setattr("lol_agent.tiktok_publisher.requests.post", _mock_post)
+    monkeypatch.setattr("lol_agent.tiktok_publisher.requests.put", _mock_put)
+    monkeypatch.setattr("lol_agent.tiktok_publisher.time.sleep", lambda s: None)
+
+    res = upload_tiktok_short(
+        video_path=str(fake_video),
+        title="Flags Direct",
+        privacy_level="MUTUAL_FOLLOW_FRIENDS",
+        disable_comment=True,
+        disable_duet=True,
+        disable_stitch=False,
+        brand_organic_toggle=True,
+        brand_content_toggle=False,
+    )
+    assert res["success"] is True
+    post_info = captured_payloads[0]["post_info"]
+    assert post_info["privacy_level"] == "MUTUAL_FOLLOW_FRIENDS"
+    assert post_info["disable_comment"] is True
+    assert post_info["disable_duet"] is True
+    assert post_info["disable_stitch"] is False
+    assert post_info["brand_organic_toggle"] is True
+    assert post_info["brand_content_toggle"] is False
+
+    # Queue roundtrip preserves all 5 flags through scheduled_queue._execute_single_upload
+    queue_file = tmp_path / "scheduled_social_queue.json"
+    monkeypatch.setattr("lol_agent.scheduled_queue.QUEUE_FILE", queue_file)
+    monkeypatch.setenv("TIKTOK_USE_WEB_STUDIO", "0")
+
+    future_time = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    sched = upload_tiktok_short(
+        video_path=str(fake_video),
+        title="Queued Flags",
+        privacy_level="PUBLIC_TO_EVERYONE",
+        disable_comment=True,
+        disable_duet=False,
+        disable_stitch=True,
+        brand_organic_toggle=False,
+        brand_content_toggle=True,
+        publish_at=future_time,
+    )
+    assert sched["is_scheduled"] is True
+
+    items = json.loads(queue_file.read_text(encoding="utf-8"))
+    extra = items[0]["extra"]
+    assert extra["disable_comment"] is True
+    assert extra["disable_duet"] is False
+    assert extra["disable_stitch"] is True
+    assert extra["brand_organic_toggle"] is False
+    assert extra["brand_content_toggle"] is True
+
+    # Rewind publish_at and flush via scheduled_queue
+    items[0]["publish_at"] = "2020-01-01T00:00:00Z"
+    queue_file.write_text(json.dumps(items), encoding="utf-8")
+
+    with patch("lol_agent.tiktok_publisher.upload_tiktok_short", return_value={"success": True, "publish_id": "q_ok"}) as mock_upload:
+        flushed = check_and_flush_scheduled_posts()
+        assert flushed == 1
+        kw = mock_upload.call_args.kwargs
+        assert kw["disable_comment"] is True
+        assert kw["disable_duet"] is False
+        assert kw["disable_stitch"] is True
+        assert kw["brand_organic_toggle"] is False
+        assert kw["brand_content_toggle"] is True
+
+
+def test_tiktok_creator_and_user_info_and_inbox_mode(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from lol_agent.tiktok_publisher import get_tiktok_creator_info, get_tiktok_user_info
+    from lol_agent.scheduled_queue import check_and_flush_scheduled_posts
+
+    token_file = tmp_path / "tt_tok.json"
+    token_file.write_text(json.dumps({"access_token": "act.valid", "expires_at": 9999999999}))
+    monkeypatch.setattr("lol_agent.tiktok_publisher._token_path", lambda: token_file)
+
+    posted_urls = []
+
+    def _mock_post(url, headers=None, json=None, timeout=None):
+        posted_urls.append(url)
+        resp = MagicMock()
+        if "creator_info/query" in url:
+            resp.json.return_value = {
+                "data": {
+                    "creator_username": "dwannellenga",
+                    "creator_nickname": "Dwannellenga",
+                    "creator_avatar_url": "https://cdn.example.com/av.jpg",
+                    "privacy_level_options": ["PUBLIC_TO_EVERYONE", "SELF_ONLY"],
+                    "comment_disabled": False,
+                    "duet_disabled": True,
+                    "stitch_disabled": False,
+                    "max_video_post_duration_sec": 600,
+                },
+                "error": {"code": "ok", "message": ""},
+            }
+        elif "inbox/video/init" in url:
+            resp.json.return_value = {
+                "data": {"publish_id": "inbox_pub_1", "upload_url": "https://upload.tiktok.test/inbox_put"},
+                "error": {"code": "ok", "message": ""},
+            }
+        else:
+            resp.json.return_value = {"data": {"status": "SEND_TO_USER_INBOX"}, "error": {"code": "ok", "message": ""}}
+        return resp
+
+    def _mock_get(url, params=None, headers=None, timeout=None):
+        assert "username" not in str((params or {}).get("fields", ""))
+        resp = MagicMock()
+        resp.json.return_value = {
+            "data": {"user": {"open_id": "oid_1", "display_name": "Dwannellenga", "avatar_url": "https://cdn.example.com/av.jpg"}},
+            "error": {"code": "ok", "message": ""},
+        }
+        return resp
+
+    def _mock_put(url, headers=None, data=None, timeout=None):
+        r = MagicMock()
+        r.status_code = 200
+        return r
+
+    monkeypatch.setattr("lol_agent.tiktok_publisher.requests.post", _mock_post)
+    monkeypatch.setattr("lol_agent.tiktok_publisher.requests.get", _mock_get)
+    monkeypatch.setattr("lol_agent.tiktok_publisher.requests.put", _mock_put)
+    monkeypatch.setattr("lol_agent.tiktok_publisher.time.sleep", lambda s: None)
+
+    cinfo = get_tiktok_creator_info()
+    assert cinfo["ok"] is True
+    assert cinfo["duet_disabled"] is True
+    assert cinfo["privacy_level_options"] == ["PUBLIC_TO_EVERYONE", "SELF_ONLY"]
+
+    uinfo = get_tiktok_user_info()
+    assert uinfo["ok"] is True
+    assert uinfo["display_name"] == "Dwannellenga"
+
+    fake_video = tmp_path / "inbox_short.mp4"
+    fake_video.write_bytes(b"0" * 50000)
+
+    inbox_res = upload_tiktok_short(
+        video_path=str(fake_video),
+        title="Draft Short",
+        post_mode="inbox",
+    )
+    assert inbox_res["success"] is True
+    assert inbox_res["post_mode"] == "inbox"
+    assert inbox_res["inbox"] is True
+    assert any("inbox/video/init" in u for u in posted_urls)
+    assert not any("post/publish/video/init" in u for u in posted_urls)
+
+    # Queue roundtrip preserves post_mode='inbox'
+    queue_file = tmp_path / "scheduled_social_queue.json"
+    monkeypatch.setattr("lol_agent.scheduled_queue.QUEUE_FILE", queue_file)
+    monkeypatch.setenv("TIKTOK_USE_WEB_STUDIO", "0")
+    future_time = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    upload_tiktok_short(video_path=str(fake_video), title="Queued Inbox", post_mode="inbox", publish_at=future_time)
+    items = json.loads(queue_file.read_text(encoding="utf-8"))
+    assert items[0]["extra"]["post_mode"] == "inbox"
+    items[0]["publish_at"] = "2020-01-01T00:00:00Z"
+    queue_file.write_text(json.dumps(items), encoding="utf-8")
+
+    with patch("lol_agent.tiktok_publisher.upload_tiktok_short", return_value={"success": True, "publish_id": "q_inb"}) as mock_upload:
+        assert check_and_flush_scheduled_posts() == 1
+        assert mock_upload.call_args.kwargs["post_mode"] == "inbox"
+
+
+
+
+
 
 

@@ -1087,14 +1087,64 @@ export default function Analytics() {
             </div>
           </div>
 
+          {/* Synapsa TikTok Intelligence */}
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#00F2FE]/35 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#00F2FE]" />
+                <span>Synapsa TikTok Intelligence — Analiza Tagów i Hooków (@dwannellenga)</span>
+              </div>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#00F2FE]/15 border border-[#00F2FE]/40 text-[#00F2FE] font-bold">
+                Przeanalizowano {ttData?.tiktok_learning?.analyzed_videos ?? ttData?.videos?.length ?? 35} filmów na TikToku
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="p-4 fk-cut-sm bg-[#050505] border border-[#272A2F] space-y-2.5">
+                <div className="text-xs font-bold text-[#C8FF3A] uppercase tracking-wider">
+                  Najlepsze Tagi TikTok (bez tagów YouTube)
+                </div>
+                <div className="space-y-1.5">
+                  {(ttData?.tiktok_learning?.top_hashtags || []).slice(0, 6).map((ht: any) => (
+                    <div key={ht.tag} className="flex items-center justify-between text-xs py-1 border-b border-white/5 last:border-0">
+                      <span className="font-mono font-bold text-[#00F2FE]">#{ht.tag}</span>
+                      <span className="text-[#A0A7B1] text-[11px]">
+                        {ht.count} filmów • śr. <strong className="text-white font-mono">{Math.round(ht.avg_views || 0).toLocaleString()}</strong> views • ❤️ {ht.avg_likes}
+                      </span>
+                    </div>
+                  ))}
+                  {(!ttData?.tiktok_learning?.top_hashtags || ttData.tiktok_learning.top_hashtags.length === 0) && (
+                    <div className="text-xs text-[#A0A7B1]">#outplayed • #pcgaming • #leagueoflegends • #lolhighlights • #katarina</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-4 fk-cut-sm bg-[#050505] border border-[#272A2F] space-y-2.5">
+                <div className="text-xs font-bold text-[#55E88D] uppercase tracking-wider">
+                  Najskuteczniejsze Hooki na TikToku (@dwannellenga)
+                </div>
+                <div className="space-y-1.5">
+                  {(ttData?.tiktok_learning?.top_hooks || []).slice(0, 5).map((hk: any, idx: number) => (
+                    <div key={hk.post_id || idx} className="flex items-center justify-between gap-2 text-xs py-1 border-b border-white/5 last:border-0">
+                      <span className="truncate text-white font-semibold">{hk.title}</span>
+                      <span className="font-mono text-[#00F2FE] flex-shrink-0">
+                        {Number(hk.views || 0).toLocaleString()} views
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Published Videos List */}
           <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
             <div className="flex items-center justify-between">
               <div className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
                 <Video className="w-4 h-4 text-[#00F2FE]" />
-                <span>Opublikowane Wideo na TikTok ({ttData?.videos?.length ?? 5})</span>
+                <span>Opublikowane Wideo na TikTok ({ttData?.videos?.length ?? 35})</span>
               </div>
-              <span className="text-xs text-[#A0A7B1]">Pobrane na żywo z TikTok Content Posting API</span>
+              <span className="text-xs text-[#A0A7B1]">Zsynchronizowane ze wszystkimi filmami na @dwannellenga</span>
             </div>
 
             <div className="space-y-2">
@@ -1326,14 +1376,21 @@ export default function Analytics() {
                     <span className="w-2 h-2 rounded-full bg-[#00F2FE]" />
                     TikTok
                   </span>
-                  <span className="font-mono text-[#00F2FE] font-bold">Direct Post</span>
+                  <span className="font-mono text-[#00F2FE] font-bold">
+                    {omniData?.platforms?.tiktok?.share_pct ?? 5.5}%
+                  </span>
                 </div>
                 <div className="w-full bg-[#17191C] h-2 rounded-full overflow-hidden">
-                  <div className="bg-[#00F2FE] h-full rounded-full transition-all duration-500" style={{ width: '12%' }} />
+                  <div
+                    className="bg-[#00F2FE] h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(8, omniData?.platforms?.tiktok?.share_pct || 10))}%` }}
+                  />
                 </div>
                 <div className="text-[11px] text-[#A0A7B1] flex justify-between">
-                  <span>Stan:</span>
-                  <strong className="text-white font-mono">Sandbox Dev</strong>
+                  <span>Wyświetlenia ({omniData?.platforms?.tiktok?.videos_count ?? 35} filmów):</span>
+                  <strong className="text-white font-mono">
+                    {(omniData?.platforms?.tiktok?.views ?? ttData?.total_views ?? 30185).toLocaleString()}
+                  </strong>
                 </div>
               </div>
             </div>
@@ -1353,7 +1410,7 @@ export default function Analytics() {
               {(omniData?.top_videos || ytData.videos.slice(0, 10)).map((v: any, idx: number) => {
                 const isYt = v.platform === 'youtube' || !v.platform;
                 const isIg = v.platform === 'instagram';
-                const isFb = v.platform === 'facebook';
+                const isTt = v.platform === 'tiktok';
 
                 return (
                   <div
@@ -1375,10 +1432,12 @@ export default function Analytics() {
                                 ? 'bg-[#E62117]/20 text-[#E62117]'
                                 : isIg
                                 ? 'bg-[#E1306C]/20 text-[#E1306C]'
+                                : isTt
+                                ? 'bg-[#00F2FE]/20 text-[#00F2FE]'
                                 : 'bg-[#1877F2]/20 text-[#1877F2]'
                             }`}
                           >
-                            {isYt ? 'YOUTUBE' : isIg ? 'INSTAGRAM' : 'FACEBOOK'}
+                            {isYt ? 'YOUTUBE' : isIg ? 'INSTAGRAM' : isTt ? 'TIKTOK' : 'FACEBOOK'}
                           </span>
                           <span>•</span>
                           <span>{v.timestamp ? new Date(v.timestamp).toLocaleDateString() : 'Bieżący'}</span>

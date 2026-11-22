@@ -328,3 +328,168 @@ def test_system_reliability_and_cleanup_temp(client, auth_headers):
     assert dry_res.json().get("dry_run") is True
 
 
+def test_tiktok_oauth_pkce_endpoints(client, auth_headers, monkeypatch):
+    """Verify real TikTok OAuth 2.0 PKCE URL generation, start endpoint, and verifier forwarding."""
+    monkeypatch.setenv("TIKTOK_CLIENT_KEY", "sbaweq5t0oueol171i")
+
+    url_res = client.get("/social/tiktok/auth-url", headers=auth_headers)
+    assert url_res.status_code == 200
+    url_data = url_res.json()
+    assert "auth_url" in url_data and "state" in url_data
+    assert "http%3A%2F%2Flocalhost%3A8180%2Fcallback" in url_data["auth_url"]
+    assert "code_challenge=" in url_data["auth_url"]
+    assert "code_challenge_method=S256" in url_data["auth_url"]
+    assert "battlemetal.github.io" not in url_data["auth_url"]
+
+    start_res = client.post("/social/tiktok/oauth/start", headers=auth_headers)
+    assert start_res.status_code == 200
+    start_data = start_res.json()
+    assert start_data["listening_port"] == 8180
+    assert start_data["listener_started"] is False  # Guarded under PYTEST_CURRENT_TEST
+    assert "client_key=sbaweq5t0oueol171i" in start_data["auth_url"]
+
+    captured = {}
+
+    def _mock_exchange(code: str, verifier: str):
+        captured["code"] = code
+        captured["verifier"] = verifier
+        return {"open_id": "oid_test", "scope": "user.info.basic,video.publish,video.upload"}
+
+    with patch("scripts.authorize_tiktok.exchange_code_for_token", side_effect=_mock_exchange):
+        ex_res = client.post(
+            "/social/tiktok/auth-code",
+            json={"code": "auth_code_123", "state": start_data["state"]},
+            headers=auth_headers,
+        )
+        assert ex_res.status_code == 200
+        assert ex_res.json()["success"] is True
+        assert captured["code"] == "auth_code_123"
+        assert len(captured["verifier"]) == 64
+
+
+def test_social_publish_multi_validation_and_flags(client, auth_headers, tmp_path, monkeypatch):
+    """Verify strict TikTok Direct Post UX validation and IG/FB caption + Direct Post flag forwarding."""
+    vid = tmp_path / "test_multi_short.mp4"
+    vid.write_bytes(b"0" * 1024)
+    monkeypatch.setattr("lol_agent.api.routers.social.LOL_TEMP_DIR", str(tmp_path))
+
+    # 1. Missing privacy level -> 400
+    bad_priv = client.post(
+        "/social/publish/test_multi_short.mp4",
+        json={"title": "Test", "platforms": ["tiktok"], "privacy_tiktok": ""},
+        headers=auth_headers,
+    )
+    assert bad_priv.status_code == 400
+
+    # 2. Disclose enabled without Your brand / Branded content -> 400
+    bad_disc = client.post(
+        "/social/publish/test_multi_short.mp4",
+        json={
+            "title": "Test",
+            "platforms": ["tiktok"],
+            "privacy_tiktok": "PUBLIC_TO_EVERYONE",
+            "tiktok_disclose_content": True,
+            "tiktok_brand_organic": False,
+            "tiktok_branded_content": False,
+        },
+        headers=auth_headers,
+    )
+    assert bad_disc.status_code == 400
+
+    # 3. Branded content + SELF_ONLY -> 400
+    bad_self = client.post(
+        "/social/publish/test_multi_short.mp4",
+        json={
+            "title": "Test",
+            "platforms": ["tiktok"],
+            "privacy_tiktok": "SELF_ONLY",
+            "tiktok_disclose_content": True,
+            "tiktok_branded_content": True,
+        },
+        headers=auth_headers,
+    )
+    assert bad_self.status_code == 400
+
+    # 4. Valid publish forwards IG/FB captions and all 5 Direct Post flags
+    captured_call = {}
+
+    def _mock_publish(**kwargs):
+        captured_call.update(kwargs)
+        return {
+            "tiktok": {"success": False, "error": "mock_dry_run"},
+            "instagram": {"success": False, "error": "mock_dry_run"},
+            "facebook": {"success": False, "error": "mock_dry_run"},
+        }
+
+    with patch("lol_agent.api.routers.social.publish_multi_platform", side_effect=_mock_publish):
+        ok_res = client.post(
+            "/social/publish/test_multi_short.mp4",
+            json={
+                "title": "Katarina Triple",
+                "platforms": ["tiktok", "instagram", "facebook"],
+                "privacy_tiktok": "MUTUAL_FOLLOW_FRIENDS",
+                "tiktok_caption": "TT custom caption #katarina",
+                "instagram_caption": "IG Custom Caption #LoL #Katarina",
+                "facebook_caption": "FB Custom Fanpage Post",
+                "tiktok_allow_comment": True,
+                "tiktok_allow_duet": False,
+                "tiktok_allow_stitch": True,
+                "tiktok_disclose_content": True,
+                "tiktok_brand_organic": True,
+                "tiktok_branded_content": False,
+            },
+            headers=auth_headers,
+        )
+        assert ok_res.status_code == 200
+        assert captured_call["privacy_tiktok"] == "MUTUAL_FOLLOW_FRIENDS"
+        assert captured_call["tiktok_disable_comment"] is False
+        assert captured_call["tiktok_disable_duet"] is True
+        assert captured_call["tiktok_disable_stitch"] is False
+        assert captured_call["tiktok_brand_organic"] is True
+        assert captured_call["tiktok_brand_content"] is False
+        c_by_p = captured_call["copy_by_platform"]
+        assert c_by_p["instagram"]["caption"] == "IG Custom Caption #lol #katarina"
+        assert c_by_p["facebook"]["caption"] == "FB Custom Fanpage Post"
+        assert c_by_p["tiktok"]["caption"] == "TT custom caption #katarina"
+
+
+def test_tiktok_creator_user_endpoints_and_inbox_publish(client, auth_headers, tmp_path, monkeypatch):
+    """Verify /social/tiktok/creator-info, /social/tiktok/user-info, and tiktok_post_mode='inbox'."""
+    with patch("lol_agent.api.routers.social.get_tiktok_creator_info", return_value={"ok": True, "creator_nickname": "Dwannellenga", "max_video_post_duration_sec": 3600}):
+        c_res = client.get("/social/tiktok/creator-info", headers=auth_headers)
+        assert c_res.status_code == 200
+        assert c_res.json()["ok"] is True
+        assert c_res.json()["creator_nickname"] == "Dwannellenga"
+
+    with patch("lol_agent.api.routers.social.get_tiktok_user_info", return_value={"ok": True, "display_name": "Dwannellenga", "avatar_url": "https://cdn.example.com/a.jpg"}):
+        u_res = client.get("/social/tiktok/user-info", headers=auth_headers)
+        assert u_res.status_code == 200
+        assert u_res.json()["display_name"] == "Dwannellenga"
+
+    vid = tmp_path / "inbox_api_short.mp4"
+    vid.write_bytes(b"0" * 1024)
+    monkeypatch.setattr("lol_agent.api.routers.social.LOL_TEMP_DIR", str(tmp_path))
+
+    captured = {}
+
+    def _mock_publish(**kwargs):
+        captured.update(kwargs)
+        return {"tiktok": {"success": False, "error": "mock_dry_run"}}
+
+    with patch("lol_agent.api.routers.social.publish_multi_platform", side_effect=_mock_publish):
+        res = client.post(
+            "/social/publish/inbox_api_short.mp4",
+            json={
+                "title": "Draft Mode Short",
+                "platforms": ["tiktok"],
+                "privacy_tiktok": "",
+                "tiktok_post_mode": "inbox",
+            },
+            headers=auth_headers,
+        )
+        assert res.status_code == 200
+        assert captured["tiktok_post_mode"] == "inbox"
+
+
+
+

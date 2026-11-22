@@ -110,6 +110,8 @@ class AutoFillCalendarRequest(BaseModel):
 
 class TikTokAuthCodeRequest(BaseModel):
     code: str
+    state: Optional[str] = None
+    code_verifier: Optional[str] = None
 
 
 class TikTokUploadRequest(BaseModel):
@@ -143,6 +145,15 @@ class MultiPlatformUploadRequest(BaseModel):
     action_type: Optional[str] = None
     rank: Optional[str] = None
     tiktok_caption: Optional[str] = None
+    instagram_caption: Optional[str] = None
+    facebook_caption: Optional[str] = None
+    tiktok_allow_comment: bool = False
+    tiktok_allow_duet: bool = False
+    tiktok_allow_stitch: bool = False
+    tiktok_disclose_content: bool = False
+    tiktok_brand_organic: bool = False
+    tiktok_branded_content: bool = False
+    tiktok_post_mode: str = 'direct'
 
 
 class ScreenRecordRequest(BaseModel):

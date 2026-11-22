@@ -352,6 +352,7 @@ export interface OutputMetadata {
   use_zoom_punch: boolean;
   use_smart_camera: boolean;
   source_path: string;
+  duration?: number;
   rendered_at: string | null;
   frag_confidence: number | null;
 }
@@ -903,6 +904,12 @@ export async function apiGetChannelRetention(): Promise<{ ok: boolean; data: Cha
 
 // ── Social & Multi-Platform Publishing (TikTok & YouTube) ────────────────────
 
+export interface TikTokOAuthStateInfo {
+  listening?: boolean;
+  last_status?: string;
+  last_error?: string | null;
+}
+
 export interface TikTokStatus {
   connected: boolean;
   valid: boolean;
@@ -911,6 +918,28 @@ export interface TikTokStatus {
   expires_in_hours?: number;
   refresh_expires_in_days?: number;
   message: string;
+  oauth_state?: TikTokOAuthStateInfo;
+}
+
+export interface TikTokCreatorInfo {
+  ok: boolean;
+  creator_username?: string;
+  creator_nickname?: string;
+  creator_avatar_url?: string;
+  privacy_level_options?: string[];
+  comment_disabled?: boolean;
+  duet_disabled?: boolean;
+  stitch_disabled?: boolean;
+  max_video_post_duration_sec?: number;
+  error?: string;
+}
+
+export interface TikTokUserInfo {
+  ok: boolean;
+  open_id?: string;
+  display_name?: string;
+  avatar_url?: string;
+  error?: string;
 }
 
 export interface InstagramStatus {
@@ -940,15 +969,45 @@ export async function apiGetTikTokStatus(): Promise<TikTokStatus> {
   return res.data;
 }
 
+export async function apiGetTikTokCreatorInfo(): Promise<TikTokCreatorInfo> {
+  const client = await createClient();
+  const res = await client.get('/social/tiktok/creator-info');
+  return res.data;
+}
+
+export async function apiGetTikTokUserInfo(): Promise<TikTokUserInfo> {
+  const client = await createClient();
+  const res = await client.get('/social/tiktok/user-info');
+  return res.data;
+}
+
+export interface TikTokOAuthStartResponse {
+  auth_url: string;
+  state: string;
+  redirect_uri: string;
+  listening_port: number;
+  listener_started: boolean;
+  listener_error?: string | null;
+}
+
 export async function apiGetTikTokAuthUrl(): Promise<string> {
   const client = await createClient();
   const res = await client.get('/social/tiktok/auth-url');
   return res.data.auth_url;
 }
 
-export async function apiExchangeTikTokCode(code: string): Promise<any> {
+export async function apiStartTikTokOAuth(): Promise<TikTokOAuthStartResponse> {
   const client = await createClient();
-  const res = await client.post('/social/tiktok/auth-code', { code });
+  const res = await client.post('/social/tiktok/oauth/start');
+  return res.data;
+}
+
+export async function apiExchangeTikTokCode(code: string, state?: string): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/social/tiktok/auth-code', {
+    code,
+    ...(state ? { state } : {}),
+  });
   return res.data;
 }
 
@@ -1011,6 +1070,15 @@ export interface MultiPublishRequest {
   action_type?: string;
   rank?: string;
   tiktok_caption?: string;
+  instagram_caption?: string;
+  facebook_caption?: string;
+  tiktok_allow_comment?: boolean;
+  tiktok_allow_duet?: boolean;
+  tiktok_allow_stitch?: boolean;
+  tiktok_disclose_content?: boolean;
+  tiktok_brand_organic?: boolean;
+  tiktok_branded_content?: boolean;
+  tiktok_post_mode?: 'direct' | 'inbox';
 }
 
 export interface SocialQueueItem {

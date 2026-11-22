@@ -147,3 +147,53 @@ def test_analyze_ab_title_experiments():
     assert res["tracked_ab_experiments"] == 2
     assert "winning_title_structure" in res
     assert "title_structure_benchmark" in res
+
+
+def test_legacy_pentakill_protection_and_viral_blueprint(tmp_path, monkeypatch):
+    """Verify legacy pentakills before 2026-11-20 do not demote pentakill weight below 1.0, and check YT blueprint."""
+    from lol_agent.learning_engine import run_channel_learning_cycle
+    from lol_agent.lol_yt_pattern_miner import _parse_iso8601_duration_sec, _derive_viral_edit_blueprint
+
+    # Synthetic channel: high solo_bolo views + 4 pre-Etap-16 low-view pentakills
+    videos = [
+        {"video_id": f"sb_{i}", "title": "Clean 1v1 Solo Bolo", "action_type": "solo_bolo", "views": 3000, "published_at": "2026-11-10T10:00:00Z", "is_48h_verified": True}
+        for i in range(6)
+    ] + [
+        {"video_id": f"pk_{i}", "title": "Katarina Pentakill", "action_type": "pentakill", "views": 1100, "published_at": "2026-11-05T10:00:00Z", "is_48h_verified": True}
+        for i in range(4)
+    ]
+
+    monkeypatch.setattr("lol_agent.learning_engine.LEARNING_DIR", tmp_path)
+    monkeypatch.setattr("lol_agent.learning_engine.DIRECTIVE_FILE", tmp_path / "learning_directive.json")
+    monkeypatch.setattr("lol_agent.learning_engine.TUNING_FILE", tmp_path / "tuning_config.json")
+    monkeypatch.setattr("lol_agent.learning_engine.PUB_LOG_FILE", tmp_path / "published_videos.jsonl")
+    monkeypatch.setattr("lol_agent.api.youtube_uploader.get_channel_videos_and_performance", lambda max_results=250, force_refresh=False: {"published": videos})
+    monkeypatch.setattr("lol_agent.api.youtube_analytics.fetch_channel_retention_overview", lambda max_videos=20: {"videos": []})
+    monkeypatch.setattr("lol_agent.api.youtube_analytics.fetch_bulk_video_analytics", lambda force_refresh=False: {})
+    monkeypatch.setattr("lol_agent.api.youtube_analytics.fetch_channel_audience_insights", lambda force_refresh=False: {})
+    monkeypatch.setattr("lol_agent.lol_performance_tracker.reconcile_and_verify_published_videos", lambda: None)
+    monkeypatch.setattr("lol_agent.lol_performance_tracker.run_pending_checks", lambda: False)
+
+    out = run_channel_learning_cycle(force_refresh=False)
+    directive = out["directive"]
+    assert directive["action_weights"]["pentakill"] >= 1.0
+    assert directive["action_stats"]["pentakill"]["effective_weight"] >= 1.0
+    assert directive["action_stats"]["pentakill"]["legacy_protected"] is True
+    assert directive["action_stats"]["pentakill"]["weight"] < 1.0
+    assert directive["action_stats"]["pentakill"]["legacy_count"] == 4
+    assert directive["action_stats"]["pentakill"]["post_etap16_count"] == 0
+    assert directive["evaluator_config"]["base_kill_weights"]["PENTAKILL"] >= 80.0
+
+    assert _parse_iso8601_duration_sec("PT14S") == 14.0
+    assert _parse_iso8601_duration_sec("PT1M5S") == 65.0
+
+    bp_penta = _derive_viral_edit_blueprint("POV: Five Enemies Reset In 3 Seconds 💀 #shorts", 14.0, 2500000, 5.2, 0.14)
+    assert bp_penta["hook_type"] == "POV"
+    assert bp_penta["pacing_bucket"] == "balanced_13_20s"
+    assert bp_penta["recommended_drop_anchor"] == "first_kill_engage"
+
+    bp_solo = _derive_viral_edit_blueprint("How Did They Lose This 1v1? 💀", 11.0, 400000, 4.1, 0.09)
+    assert bp_solo["hook_type"] == "QUESTION"
+    assert bp_solo["pacing_bucket"] == "ultra_fast_<=12s"
+    assert bp_solo["recommended_drop_anchor"] == "climax_final_kill"
+

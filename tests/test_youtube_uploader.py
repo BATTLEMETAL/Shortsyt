@@ -140,3 +140,27 @@ def test_run_pending_checks_breaks_early_when_auth_missing(tmp_path, monkeypatch
     # Obwód bezpiecznika: przy braku YouTube API pętla powinna przerwać po pierwszym nieudanym sprawdzeniu
     assert fetch_call_count[0] == 1
 
+
+def test_ensure_youtube_thumbnail_after_processing_waits_for_succeeded(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock
+    from lol_agent.api import youtube_uploader as yu
+
+    thumb = tmp_path / "vid_thumb.jpg"
+    thumb.write_bytes(b"fake-jpg-bytes")
+
+    monkeypatch.setattr(yu, "get_valid_credentials", lambda **kw: object())
+    monkeypatch.setattr(yu.time, "sleep", lambda s: None)
+
+    mock_yt = MagicMock()
+    mock_yt.videos.return_value.list.return_value.execute.side_effect = [
+        {"items": [{"processingDetails": {"processingStatus": "processing"}}]},
+        {"items": [{"processingDetails": {"processingStatus": "succeeded"}}]},
+    ]
+    monkeypatch.setattr(yu, "build", lambda *a, **kw: mock_yt)
+    monkeypatch.setattr(yu, "MediaFileUpload", lambda *a, **kw: "mock_media")
+
+    ok = yu._ensure_youtube_thumbnail_after_processing("vid_123", str(thumb), delay_seconds=0)
+    assert ok is True
+    mock_yt.thumbnails.return_value.set.assert_called_once_with(videoId="vid_123", media_body="mock_media")
+
+

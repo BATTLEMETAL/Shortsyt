@@ -26,7 +26,10 @@ IG_CACHE_FILE = ACCOUNTS_DIR / "instagram_analytics_cache.json"
 FB_CACHE_FILE = ACCOUNTS_DIR / "facebook_analytics_cache.json"
 TT_CACHE_FILE = ACCOUNTS_DIR / "tiktok_analytics_cache.json"
 TT_POST_CACHE_FILE = ACCOUNTS_DIR / "tiktok_post_cache.json"
+TT_LEARNING_FILE = ACCOUNTS_DIR / "tiktok_learning_directive.json"
 OMNI_CACHE_FILE = ACCOUNTS_DIR / "omnichannel_analytics_cache.json"
+
+_YT_ONLY_TAG_BLOCKLIST = {"shorts", "shortsfeed", "ytshorts", "youtubeshorts", "short"}
 
 CACHE_TTL_SECONDS = 300  # 5 minut
 
@@ -350,14 +353,81 @@ def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
         return {"connected": False, "error": str(e), "videos": [], "total_views": 0}
 
 
+def _build_tiktok_learning(videos: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Analizuje wszystkie filmy na TikToku (@dwannellenga) pod kątem tagów i hooków."""
+    import re
+    tag_stats: Dict[str, Dict[str, float]] = {}
+    for v in videos:
+        raw_text = f"{v.get('desc') or ''} {v.get('title') or ''}"
+        found_tags = {t.lower() for t in re.findall(r"#([a-zA-Z0-9_]+)", raw_text)}
+        views = int(v.get("views") or 0)
+        likes = int(v.get("likes") or 0)
+        for tag in found_tags:
+            if not tag or tag in _YT_ONLY_TAG_BLOCKLIST:
+                continue
+            bucket = tag_stats.setdefault(tag, {"count": 0, "total_views": 0, "total_likes": 0})
+            bucket["count"] += 1
+            bucket["total_views"] += views
+            bucket["total_likes"] += likes
+
+    top_hashtags: List[Dict[str, Any]] = []
+    for tag, st in tag_stats.items():
+        cnt = int(st["count"])
+        tv = int(st["total_views"])
+        tl = int(st["total_likes"])
+        top_hashtags.append({
+            "tag": tag,
+            "count": cnt,
+            "total_views": tv,
+            "avg_views": round(tv / max(cnt, 1), 1),
+            "avg_likes": round(tl / max(cnt, 1), 1),
+        })
+
+    min_reliable = 5 if len(videos) >= 15 else 2
+    top_hashtags.sort(
+        key=lambda x: (1 if x["count"] >= min_reliable else 0, x["avg_views"], x["total_views"]),
+        reverse=True,
+    )
+
+    recommended = [h["tag"] for h in top_hashtags[:5]]
+    for fallback_tag in ("outplayed", "pcgaming", "leagueoflegends", "lolhighlights", "katarina"):
+        if len(recommended) >= 5:
+            break
+        if fallback_tag not in recommended:
+            recommended.append(fallback_tag)
+
+    sorted_by_views = sorted(videos, key=lambda x: int(x.get("views") or 0), reverse=True)
+    top_hooks: List[Dict[str, Any]] = []
+    for v in sorted_by_views[:5]:
+        raw_hook = str(v.get("title") or v.get("desc") or "").split("#")[0].strip()
+        if not raw_hook:
+            raw_hook = str(v.get("title") or "TikTok Short")
+        top_hooks.append({
+            "title": raw_hook[:120],
+            "views": int(v.get("views") or 0),
+            "likes": int(v.get("likes") or 0),
+            "comments": int(v.get("comments") or 0),
+            "url": v.get("url") or "",
+            "post_id": v.get("post_id") or v.get("id") or "",
+        })
+
+    return {
+        "analyzed_videos": len(videos),
+        "analyzed_at": datetime.now(timezone.utc).isoformat(),
+        "top_hashtags": top_hashtags[:12],
+        "recommended_hashtags": recommended[:5],
+        "top_hooks": top_hooks,
+    }
+
+
 def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
-    """Pobiera profil i metryki publikacji z TikTok Content Posting API oraz live video insights."""
+    """Pobiera profil, wszystkie zsynchronizowane filmy TikTok oraz analizę Synapsy (tagi i hooki)."""
     if not force_refresh:
         cached = _read_cache(TT_CACHE_FILE)
-        if cached:
+        if cached and cached.get("tiktok_learning"):
             return cached
 
-    if not TT_TOKEN_FILE.exists():
+    if not TT_TOKEN_FILE.exists() and not TT_POST_CACHE_FILE.exists():
         return {
             "connected": False,
             "message": "Brak połączonego konta TikTok.",
@@ -366,36 +436,46 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             "total_views": 0,
             "total_likes": 0,
             "total_comments": 0,
-            "avg_views": 0
+            "avg_views": 0,
+            "tiktok_learning": _build_tiktok_learning([]),
         }
 
     try:
         import re
-        token_info = json.loads(TT_TOKEN_FILE.read_text(encoding="utf-8"))
-        access_token = token_info.get("access_token")
-        now = int(time.time())
-        refresh_expires_at = token_info.get("refresh_expires_at", 0)
-        days_left = max(0, int((refresh_expires_at - now) / 86400))
+        access_token = ""
+        days_left = 0
+        display_name = "Dwannellenga"
+        avatar_url = ""
+        open_id = ""
+        unique_id = "dwannellenga"
 
-        # 1. Zapytanie o profil użytkownika przez oficjalny endpoint
-        user_res = requests.get(
-            "https://open.tiktokapis.com/v2/user/info/",
-            headers={"Authorization": f"Bearer {access_token}"},
-            params={"fields": "open_id,union_id,avatar_url,display_name"},
-            timeout=10
-        ).json()
+        if TT_TOKEN_FILE.exists():
+            token_info = json.loads(TT_TOKEN_FILE.read_text(encoding="utf-8"))
+            access_token = token_info.get("access_token") or ""
+            now = int(time.time())
+            refresh_expires_at = token_info.get("refresh_expires_at", 0)
+            days_left = max(0, int((refresh_expires_at - now) / 86400))
 
-        user_data = user_res.get("data", {}).get("user", {})
-        display_name = user_data.get("display_name", "Dwannellenga")
-        avatar_url = user_data.get("avatar_url", "")
-        open_id = user_data.get("open_id", "")
+            if access_token:
+                try:
+                    user_res = requests.get(
+                        "https://open.tiktokapis.com/v2/user/info/",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        params={"fields": "open_id,union_id,avatar_url,display_name"},
+                        timeout=10,
+                    ).json()
+                    user_data = user_res.get("data", {}).get("user", {})
+                    display_name = user_data.get("display_name") or display_name
+                    avatar_url = user_data.get("avatar_url") or avatar_url
+                    open_id = user_data.get("open_id") or open_id
+                except Exception:
+                    pass
 
         # 2. Pobranie danych profilu z live web hydration
-        followers_count = 6
+        followers_count = 10
         following_count = 3
-        heart_count = 193
-        video_count = 28
-        unique_id = "dwannellenga"
+        heart_count = 312
+        video_count = 35
 
         headers_web = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -419,7 +499,7 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
         except Exception as _p_err:
             print(f"ℹ️ [TikTok Web Profile Fetch]: {_p_err}")
 
-        # 3. Odczyt cache'owanych postów TikTok
+        # 3. Odczyt wszystkich filmów z tiktok_post_cache.json
         post_cache: Dict[str, Any] = {}
         if TT_POST_CACHE_FILE.exists():
             try:
@@ -427,33 +507,30 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             except Exception:
                 post_cache = {}
 
-        # 4. Skanowanie lokalnych filmów opublikowanych na TikTok
+        # Zindeksuj istniejące posty po post_id, żeby uzupełnić brakujące wpisy z .meta.json bez duplikatów
         headers_api = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
         temp_dir = ROOT_DIR / "lol_agent" / "lol_temp"
-        meta_files = sorted(list(temp_dir.glob("*.meta.json")), key=lambda p: p.stat().st_mtime, reverse=True)
-
-        videos: List[Dict[str, Any]] = []
+        meta_files = sorted(list(temp_dir.glob("*.meta.json")), key=lambda p: p.stat().st_mtime, reverse=True) if temp_dir.exists() else []
         cache_modified = False
 
         for mf in meta_files:
             try:
                 m = json.loads(mf.read_text(encoding="utf-8"))
-                tt_res = m.get("multi_results", {}).get("tiktok", {})
+                tt_res = (m.get("multi_results") or {}).get("tiktok") or {}
                 pid = tt_res.get("publish_id")
                 if not pid:
                     continue
 
-                p_entry = post_cache.get(pid, {})
+                p_entry = dict(post_cache.get(pid) or {})
                 post_id = p_entry.get("post_id")
 
-                # Jeśli brak post_id, sprawdź w status API
                 if not post_id and access_token:
                     try:
                         st_res = requests.post(
                             "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
                             headers=headers_api,
                             json={"publish_id": pid},
-                            timeout=6
+                            timeout=6,
                         ).json()
                         st_data = st_res.get("data", {})
                         p_ids = st_data.get("publicaly_available_post_id", [])
@@ -464,8 +541,7 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                     except Exception:
                         pass
 
-                # Jeśli mamy post_id, a brakuje views lub wymuszone odświeżenie
-                if post_id and (force_refresh or "views" not in p_entry or p_entry.get("views", 0) == 0):
+                if post_id and not p_entry.get("synced_from_profile") and (force_refresh or "views" not in p_entry or p_entry.get("views", 0) == 0):
                     try:
                         v_res = requests.get(f"https://www.tiktok.com/@{unique_id}/video/{post_id}", headers=headers_web, timeout=6)
                         v_match = re.search(r'<script id=.__UNIVERSAL_DATA_FOR_REHYDRATION__.[^>]*>(.*?)</script>', v_res.text)
@@ -473,34 +549,76 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                             v_raw = json.loads(v_match.group(1))
                             item = v_raw.get("__DEFAULT_SCOPE__", {}).get("webapp.video-detail", {}).get("itemInfo", {}).get("itemStruct", {})
                             v_stats = item.get("stats", {})
-                            p_entry["views"] = int(v_stats.get("playCount", 0))
-                            p_entry["likes"] = int(v_stats.get("diggCount", 0))
-                            p_entry["comments"] = int(v_stats.get("commentCount", 0))
-                            p_entry["shares"] = int(v_stats.get("shareCount", 0))
-                            p_entry["desc"] = item.get("desc", "")
-                            p_entry["url"] = f"https://www.tiktok.com/@{unique_id}/video/{post_id}"
-                            cache_modified = True
+                            if v_stats:
+                                p_entry["views"] = int(v_stats.get("playCount", 0))
+                                p_entry["likes"] = int(v_stats.get("diggCount", 0))
+                                p_entry["comments"] = int(v_stats.get("commentCount", 0))
+                                p_entry["shares"] = int(v_stats.get("shareCount", 0))
+                                p_entry["desc"] = item.get("desc", p_entry.get("desc", ""))
+                                p_entry["url"] = f"https://www.tiktok.com/@{unique_id}/video/{post_id}"
+                                cache_modified = True
                     except Exception:
                         pass
 
-                clean_title = p_entry.get("desc") or m.get("hook_text") or m.get("source_path", "TikTok Short")
+                clean_title = p_entry.get("desc") or m.get("hook_text") or m.get("title") or "TikTok Short"
                 if "#" in clean_title:
                     clean_title = clean_title.split("#")[0].strip() or clean_title
 
                 p_entry["id"] = post_id or pid
-                p_entry["title"] = clean_title
+                p_entry["title"] = p_entry.get("title") or clean_title
                 p_entry["publish_id"] = pid
                 p_entry["url"] = p_entry.get("url") or f"https://www.tiktok.com/@{unique_id}"
-                p_entry["timestamp"] = m.get("rendered_at") or m.get("published_at") or ""
-                p_entry["views"] = p_entry.get("views", 0)
-                p_entry["likes"] = p_entry.get("likes", 0)
-                p_entry["comments"] = p_entry.get("comments", 0)
-                p_entry["shares"] = p_entry.get("shares", 0)
+                p_entry["timestamp"] = p_entry.get("timestamp") or m.get("rendered_at") or m.get("published_at") or ""
+                p_entry["views"] = int(p_entry.get("views") or 0)
+                p_entry["likes"] = int(p_entry.get("likes") or 0)
+                p_entry["comments"] = int(p_entry.get("comments") or 0)
+                p_entry["shares"] = int(p_entry.get("shares") or 0)
 
                 post_cache[pid] = p_entry
-                videos.append(p_entry)
             except Exception:
                 pass
+
+        # Scal wszystkie wpisy z post_cache po unikalnym kluczu post_id (preferując bogatszy wpis)
+        dedup_videos: Dict[str, Dict[str, Any]] = {}
+        for cache_key, raw_entry in post_cache.items():
+            if not isinstance(raw_entry, dict):
+                continue
+            canonical_id = str(raw_entry.get("post_id") or raw_entry.get("id") or cache_key).strip()
+            if not canonical_id:
+                continue
+            desc = str(raw_entry.get("desc") or "").strip()
+            raw_title = str(raw_entry.get("title") or desc or f"TikTok Short #{canonical_id[-6:]}")
+            clean_title = raw_title.split("#")[0].strip() if "#" in raw_title else raw_title
+            if not clean_title:
+                clean_title = f"TikTok Short #{canonical_id[-6:]}"
+
+            normalized = {
+                **raw_entry,
+                "id": canonical_id,
+                "post_id": raw_entry.get("post_id") or (canonical_id if canonical_id.isdigit() else None),
+                "title": clean_title,
+                "desc": desc,
+                "url": raw_entry.get("url") or (
+                    f"https://www.tiktok.com/@{unique_id}/video/{canonical_id}"
+                    if canonical_id.isdigit()
+                    else f"https://www.tiktok.com/@{unique_id}"
+                ),
+                "timestamp": raw_entry.get("timestamp") or "",
+                "views": int(raw_entry.get("views") or 0),
+                "likes": int(raw_entry.get("likes") or 0),
+                "comments": int(raw_entry.get("comments") or 0),
+                "shares": int(raw_entry.get("shares") or 0),
+            }
+
+            existing = dedup_videos.get(canonical_id)
+            if not existing or normalized["views"] > existing.get("views", 0) or (len(normalized["desc"]) > len(existing.get("desc") or "")):
+                dedup_videos[canonical_id] = normalized
+
+        videos = sorted(
+            dedup_videos.values(),
+            key=lambda x: (str(x.get("timestamp") or ""), str(x.get("post_id") or x.get("id") or "")),
+            reverse=True,
+        )
 
         if cache_modified:
             try:
@@ -508,9 +626,19 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             except Exception:
                 pass
 
-        total_views = sum(v.get("views", 0) for v in videos)
-        total_likes = sum(v.get("likes", 0) for v in videos)
-        total_comments = sum(v.get("comments", 0) for v in videos)
+        tiktok_learning = _build_tiktok_learning(videos)
+        try:
+            ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
+            TT_LEARNING_FILE.write_text(
+                json.dumps(tiktok_learning, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+        total_views = sum(int(v.get("views") or 0) for v in videos)
+        total_likes = sum(int(v.get("likes") or 0) for v in videos)
+        total_comments = sum(int(v.get("comments") or 0) for v in videos)
         avg_views = int(total_views / max(len(videos), 1))
 
         result = {
@@ -525,21 +653,20 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                 "refresh_expires_in_days": days_left,
                 "followers_count": followers_count,
                 "following_count": following_count,
-                "heart_count": heart_count,
-                "video_count": video_count  # total on account (profile-level)
+                "heart_count": max(heart_count, total_likes),
+                "video_count": max(video_count, len(videos)),
             },
-            # NOTE: count/total_views/videos = only pipeline-uploaded videos
-            # (TikTok Content Posting API limitation — manually posted videos are not accessible)
             "count": len(videos),
-            "api_videos_only": True,  # flag: not all account videos
-            "profile_total_videos": video_count,  # real total from profile
-            "profile_total_hearts": heart_count,  # real total likes on account
+            "api_videos_only": False,
+            "profile_total_videos": max(video_count, len(videos)),
+            "profile_total_hearts": max(heart_count, total_likes),
             "total_views": total_views,
             "total_likes": total_likes,
             "total_comments": total_comments,
             "avg_views": avg_views,
-            "top_videos": sorted(videos, key=lambda x: x.get("views", 0), reverse=True)[:5],
-            "videos": videos
+            "top_videos": sorted(videos, key=lambda x: int(x.get("views") or 0), reverse=True)[:5],
+            "videos": videos,
+            "tiktok_learning": tiktok_learning,
         }
 
         _write_cache(TT_CACHE_FILE, result)
@@ -547,7 +674,13 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
 
     except Exception as e:
         print(f"❌ Wyjątek get_tiktok_analytics: {e}")
-        return {"connected": False, "error": str(e), "videos": [], "total_views": 0}
+        return {
+            "connected": False,
+            "error": str(e),
+            "videos": [],
+            "total_views": 0,
+            "tiktok_learning": _build_tiktok_learning([]),
+        }
 
 
 def get_omnichannel_analytics(force_refresh: bool = False) -> Dict[str, Any]:

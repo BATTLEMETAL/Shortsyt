@@ -62,6 +62,7 @@ ZERO_VIEWS_THRESHOLD = 50      # < 50 views = prawdopodobnie błąd tech / draft
 
 # ── Okno czasowe „świeżych" danych do nauki ─────────────────────────────────────────────────
 RECENT_WINDOW_DAYS = 60        # dane starsze niż 60 dni mają obniżoną wagę (×0.5)
+LEGACY_ENGINE_CUTOFF_ISO = "2026-11-20T00:00:00+00:00"  # Granica przed domknięciem Etapu 16 (stare ucięte multikille)
 
 _DIRECTIVE_CACHE = {"timestamp": 0.0, "data": None}
 
@@ -1558,10 +1559,22 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
 
     # Formaty które NIGDY nie powinny być zdegradowane ze względu na małą próbę
     _NEVER_DEMOTE = {"pentakill", "quadrakill"}
+    legacy_cutoff_dt = datetime.fromisoformat(LEGACY_ENGINE_CUTOFF_ISO)
 
     for act, vids in action_groups.items():
         vws = [int(v.get("views", 0) or 0) for v in vids]
         dates_act = [_extract_video_datetime(v) for v in vids]
+        legacy_count = 0
+        post_etap16_count = 0
+        for v_item, dt_item in zip(vids, dates_act):
+            if int(v_item.get("views", 0) or 0) < ZERO_VIEWS_THRESHOLD or dt_item is None:
+                continue
+            dt_cmp = dt_item if dt_item.tzinfo is not None else dt_item.replace(tzinfo=timezone.utc)
+            if dt_cmp >= legacy_cutoff_dt:
+                post_etap16_count += 1
+            else:
+                legacy_count += 1
+
         act_metrics = _compute_robust_metric(vws, dates_act)
         n_valid = act_metrics["count_valid"]
 
@@ -1570,6 +1583,8 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
             action_stats[act] = {
                 "count": len(vids),
                 "count_valid": 0,
+                "legacy_count": 0,
+                "post_etap16_count": 0,
                 "avg_views": 0,
                 "median_views": 0,
                 "trimmed_mean_views": 0,
@@ -1630,7 +1645,18 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
             final_weight = DEFAULT_ACTION_WEIGHTS.get(act, 1.0)
             weight_source = f"default_small_sample_n{n_valid}"
 
-        action_weights[act] = final_weight
+        effective_weight = final_weight
+        legacy_protected = False
+        if (
+            act.lower() in _NEVER_DEMOTE
+            and legacy_count > 0
+            and post_etap16_count < MIN_SAMPLE_FOR_WEIGHT
+            and final_weight < DEFAULT_ACTION_WEIGHTS.get(act, 1.0)
+        ):
+            effective_weight = max(final_weight, DEFAULT_ACTION_WEIGHTS.get(act, 1.0))
+            legacy_protected = True
+
+        action_weights[act] = effective_weight
 
         # ── Democja: wymaga MIN_SAMPLE_FOR_DEMOTION i ratio < 0.75 i nie jest w NEVER_DEMOTE i brak świeżego hitu ──
         has_recent_breakout = recent_breakout
@@ -1646,6 +1672,8 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         action_stats[act] = {
             "count": len(vids),
             "count_valid": n_valid,
+            "legacy_count": legacy_count,
+            "post_etap16_count": post_etap16_count,
             "avg_views": round(act_mean, 1),
             "median_views": round(act_median, 1),
             "trimmed_mean_views": round(act_trimmed, 1),
@@ -1659,6 +1687,8 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
             "reliable": bool(n_valid >= MIN_SAMPLE_FOR_WEIGHT and (ci_low > 1.0 or (ci_high < 1.0 and ci_high > 0))),
             "avg_engagement_rate": round(act_eng, 2),
             "weight": final_weight,
+            "effective_weight": effective_weight,
+            "legacy_protected": legacy_protected,
             "weight_source": weight_source,
         }
 
@@ -1669,10 +1699,12 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         elif act == "outplay" and n_valid >= MIN_SAMPLE_FOR_WEIGHT:
             base_kill_weights["OUTPLAY"] = round(min(90.0, max(55.0, 65.0 * ratio_median)), 1)
         elif act == "pentakill" and n_valid >= MIN_SAMPLE_FOR_WEIGHT:
-            # Nie karz Pentakilla za błędy techniczne — guard przez NEVER_DEMOTE
-            base_kill_weights["PENTAKILL"] = round(min(100.0, max(55.0, 80.0 * ratio_median)), 1)
+            # Nie karz Pentakilla za błędy techniczne sprzed Etapu 16 — guard przez NEVER_DEMOTE i legacy_protected
+            penta_score = round(min(100.0, max(55.0, 80.0 * ratio_median)), 1)
+            base_kill_weights["PENTAKILL"] = max(80.0, penta_score) if legacy_protected else penta_score
         elif act == "quadrakill" and n_valid >= MIN_SAMPLE_FOR_WEIGHT:
-            base_kill_weights["QUADRAKILL"] = round(min(85.0, max(35.0, 70.0 * ratio_median)), 1)
+            quadra_score = round(min(85.0, max(35.0, 70.0 * ratio_median)), 1)
+            base_kill_weights["QUADRAKILL"] = max(65.0, quadra_score) if legacy_protected else quadra_score
         elif act in ("triple", "multikill") and n_valid >= MIN_SAMPLE_FOR_WEIGHT:
             base_kill_weights["TRIPLE KILL"] = round(min(70.0, max(35.0, 50.0 * ratio_median)), 1)
         elif act == "double" and n_valid >= MIN_SAMPLE_FOR_WEIGHT:

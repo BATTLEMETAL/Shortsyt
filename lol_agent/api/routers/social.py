@@ -2,11 +2,18 @@
 Shortsyt API — Router: Multi-Platform Publishing (YouTube Shorts, TikTok, Instagram Reels)
 """
 import asyncio
+import html
 import os
 import json
+import re
+import secrets
+import threading
+import time
 import urllib.parse
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -20,8 +27,8 @@ from ..models import (
     MultiPlatformUploadRequest
 )
 from ...tiktok_publisher import (
-    get_tiktok_token_status, upload_tiktok_short, TIKTOK_CLIENT_KEY,
-    ACCOUNTS_DIR, TIKTOK_TOKEN_PATH
+    get_tiktok_token_status, get_tiktok_creator_info, get_tiktok_user_info,
+    upload_tiktok_short, TIKTOK_CLIENT_KEY, ACCOUNTS_DIR, TIKTOK_TOKEN_PATH
 )
 from ...instagram_publisher import (
     get_instagram_token_status, upload_instagram_reel
@@ -72,49 +79,304 @@ def setup_meta_token_endpoint(req: MetaTokenSetupRequest, payload: dict = Depend
 
 
 # ==============================================================================
-# TIKTOK ENDPOINTS
+# TIKTOK ENDPOINTS (Real OAuth 2.0 PKCE + localhost:8180 Callback)
 # ==============================================================================
+
+TIKTOK_OAUTH_REDIRECT_URI = "http://localhost:8180/callback"
+TIKTOK_OAUTH_PORT = 8180
+TIKTOK_OAUTH_SCOPE = "user.info.basic,video.publish,video.upload"
+_PKCE_TTL_SECONDS = 600.0
+
+_TIKTOK_PKCE_LOCK = threading.Lock()
+_TIKTOK_PKCE_STORE: Dict[str, Tuple[str, float]] = {}
+_TIKTOK_OAUTH_SERVER: Optional[HTTPServer] = None
+_TIKTOK_OAUTH_THREAD: Optional[threading.Thread] = None
+_TIKTOK_OAUTH_STOP_EVENT: Optional[threading.Event] = None
+_TIKTOK_OAUTH_STATE: Dict[str, Any] = {
+    "listening": False,
+    "last_status": "idle",
+    "last_error": None,
+}
+
+
+class _ReusableHTTPServer(HTTPServer):
+    allow_reuse_address = True
+
+
+def _prune_expired_pkce_locked(now: Optional[float] = None) -> None:
+    ts = now if now is not None else time.time()
+    expired = [k for k, (_, created) in _TIKTOK_PKCE_STORE.items() if ts - created > _PKCE_TTL_SECONDS]
+    for k in expired:
+        _TIKTOK_PKCE_STORE.pop(k, None)
+
+
+def _create_tiktok_pkce_auth_url() -> Dict[str, str]:
+    from scripts.authorize_tiktok import generate_pkce_pair
+
+    client_key = os.getenv("TIKTOK_CLIENT_KEY", "").strip() or TIKTOK_CLIENT_KEY
+    if not client_key:
+        raise HTTPException(
+            status_code=500,
+            detail="Brak TIKTOK_CLIENT_KEY w konfiguracji środowiska (.env).",
+        )
+
+    verifier, challenge = generate_pkce_pair()
+    state = f"shortsyt_{secrets.token_urlsafe(12)}"
+    with _TIKTOK_PKCE_LOCK:
+        _prune_expired_pkce_locked()
+        _TIKTOK_PKCE_STORE[state] = (verifier, time.time())
+
+    auth_url = (
+        f"https://www.tiktok.com/v2/auth/authorize/"
+        f"?client_key={urllib.parse.quote(client_key, safe='')}"
+        f"&scope={TIKTOK_OAUTH_SCOPE}"
+        f"&response_type=code"
+        f"&redirect_uri={urllib.parse.quote(TIKTOK_OAUTH_REDIRECT_URI, safe='')}"
+        f"&state={urllib.parse.quote(state, safe='')}"
+        f"&code_challenge={challenge}"
+        f"&code_challenge_method=S256"
+    )
+    return {
+        "auth_url": auth_url,
+        "state": state,
+        "redirect_uri": TIKTOK_OAUTH_REDIRECT_URI,
+    }
+
+
+def _stop_tiktok_oauth_listener_locked() -> None:
+    global _TIKTOK_OAUTH_SERVER, _TIKTOK_OAUTH_THREAD, _TIKTOK_OAUTH_STOP_EVENT
+    if _TIKTOK_OAUTH_STOP_EVENT is not None:
+        _TIKTOK_OAUTH_STOP_EVENT.set()
+    if _TIKTOK_OAUTH_SERVER is not None:
+        try:
+            _TIKTOK_OAUTH_SERVER.server_close()
+        except Exception:
+            pass
+        _TIKTOK_OAUTH_SERVER = None
+    old_thread = _TIKTOK_OAUTH_THREAD
+    _TIKTOK_OAUTH_THREAD = None
+    if old_thread is not None and old_thread.is_alive() and old_thread is not threading.current_thread():
+        old_thread.join(timeout=1.5)
+    _TIKTOK_OAUTH_STATE["listening"] = False
+
+
+def _start_tiktok_oauth_callback_listener(timeout_sec: float = 180.0) -> Tuple[bool, Optional[str]]:
+    global _TIKTOK_OAUTH_SERVER, _TIKTOK_OAUTH_THREAD, _TIKTOK_OAUTH_STOP_EVENT
+    from scripts.authorize_tiktok import exchange_code_for_token
+
+    with _TIKTOK_PKCE_LOCK:
+        _stop_tiktok_oauth_listener_locked()
+        stop_event = threading.Event()
+        _TIKTOK_OAUTH_STOP_EVENT = stop_event
+
+        class _OAuthCallbackHandler(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+
+            def do_GET(self):
+                parsed = urllib.parse.urlparse(self.path)
+                if parsed.path != "/callback":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+
+                params = urllib.parse.parse_qs(parsed.query)
+                if "error" in params:
+                    err_raw = params.get("error_description", params.get("error", ["OAuth error"]))[0]
+                    err_safe = html.escape(str(err_raw))
+                    _TIKTOK_OAUTH_STATE["last_status"] = "error"
+                    _TIKTOK_OAUTH_STATE["last_error"] = str(err_raw)
+                    self.send_response(400)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    body = (
+                        "<!DOCTYPE html><html><head><meta charset='utf-8'><title>TikTok OAuth Error</title></head>"
+                        "<body style='background:#050505;color:#FF5C5C;font-family:sans-serif;text-align:center;padding:48px;'>"
+                        f"<h1>Błąd autoryzacji TikTok</h1><p>{err_safe}</p></body></html>"
+                    )
+                    self.wfile.write(body.encode("utf-8"))
+                    stop_event.set()
+                    return
+
+                code = (params.get("code") or [""])[0].strip()
+                state_param = (params.get("state") or [""])[0].strip()
+                if not code:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(b"Missing authorization code.")
+                    return
+
+                verifier = None
+                with _TIKTOK_PKCE_LOCK:
+                    _prune_expired_pkce_locked()
+                    if state_param:
+                        entry = _TIKTOK_PKCE_STORE.pop(state_param, None)
+                        if entry:
+                            verifier = entry[0]
+                    elif _TIKTOK_PKCE_STORE:
+                        latest_key = max(_TIKTOK_PKCE_STORE.keys(), key=lambda k: _TIKTOK_PKCE_STORE[k][1])
+                        verifier = _TIKTOK_PKCE_STORE.pop(latest_key)[0]
+
+                if not verifier:
+                    _TIKTOK_OAUTH_STATE["last_status"] = "error"
+                    _TIKTOK_OAUTH_STATE["last_error"] = "Invalid or expired PKCE OAuth state."
+                    self.send_response(400)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    body = (
+                        "<!DOCTYPE html><html><head><meta charset='utf-8'><title>TikTok OAuth State Error</title></head>"
+                        "<body style='background:#050505;color:#FF5C5C;font-family:sans-serif;text-align:center;padding:48px;'>"
+                        "<h1>Sesja OAuth wygasła lub ma nieprawidłowy state</h1>"
+                        "<p>Wróć do Flikcut Studio i kliknij Connect / Authorize ponownie.</p></body></html>"
+                    )
+                    self.wfile.write(body.encode("utf-8"))
+                    stop_event.set()
+                    return
+
+                try:
+                    exchange_code_for_token(code, verifier)
+                    _TIKTOK_OAUTH_STATE["last_status"] = "authorized"
+                    _TIKTOK_OAUTH_STATE["last_error"] = None
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    body = (
+                        "<!DOCTYPE html><html><head><meta charset='utf-8'><title>TikTok OAuth Sukces</title></head>"
+                        "<body style='background:#050505;color:#C8FF3A;font-family:sans-serif;text-align:center;padding:48px;'>"
+                        "<h1>Autoryzacja TikTok OAuth 2.0 zakończona!</h1>"
+                        "<p style='color:#E5E7EB;'>Token zapisany bezpiecznie w Flikcut Studio. Możesz zamknąć tę kartę.</p>"
+                        "</body></html>"
+                    )
+                    self.wfile.write(body.encode("utf-8"))
+                except Exception as exc:
+                    _TIKTOK_OAUTH_STATE["last_status"] = "error"
+                    _TIKTOK_OAUTH_STATE["last_error"] = str(exc)
+                    err_safe = html.escape(str(exc))
+                    self.send_response(500)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    body = (
+                        "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Błąd wymiany tokenu</title></head>"
+                        "<body style='background:#050505;color:#FF5C5C;font-family:sans-serif;text-align:center;padding:48px;'>"
+                        f"<h1>Nie udało się wymienić kodu na token</h1><p>{err_safe}</p></body></html>"
+                    )
+                    self.wfile.write(body.encode("utf-8"))
+                finally:
+                    stop_event.set()
+
+        try:
+            server = _ReusableHTTPServer(("127.0.0.1", TIKTOK_OAUTH_PORT), _OAuthCallbackHandler)
+        except OSError as exc:
+            _TIKTOK_OAUTH_STATE["listening"] = False
+            _TIKTOK_OAUTH_STATE["last_status"] = "error"
+            _TIKTOK_OAUTH_STATE["last_error"] = str(exc)
+            return False, f"Port {TIKTOK_OAUTH_PORT} jest zajęty: {exc}"
+
+        server.timeout = 1.0
+        _TIKTOK_OAUTH_SERVER = server
+        _TIKTOK_OAUTH_STATE["listening"] = True
+        _TIKTOK_OAUTH_STATE["last_status"] = "waiting"
+        _TIKTOK_OAUTH_STATE["last_error"] = None
+
+        def _serve_until_done():
+            global _TIKTOK_OAUTH_SERVER
+            deadline = time.monotonic() + max(10.0, float(timeout_sec))
+            try:
+                while not stop_event.is_set() and time.monotonic() < deadline:
+                    try:
+                        server.handle_request()
+                    except OSError:
+                        break
+                    except Exception as exc:
+                        _TIKTOK_OAUTH_STATE["last_error"] = str(exc)
+                        break
+                if not stop_event.is_set() and time.monotonic() >= deadline:
+                    _TIKTOK_OAUTH_STATE["last_status"] = "timeout"
+            finally:
+                try:
+                    server.server_close()
+                except Exception:
+                    pass
+                with _TIKTOK_PKCE_LOCK:
+                    if _TIKTOK_OAUTH_SERVER is server:
+                        _TIKTOK_OAUTH_SERVER = None
+                    _TIKTOK_OAUTH_STATE["listening"] = False
+
+        th = threading.Thread(target=_serve_until_done, name="TikTokOAuthCallback8180", daemon=True)
+        _TIKTOK_OAUTH_THREAD = th
+        th.start()
+        return True, None
+
 
 @router.get("/social/tiktok/token-status")
 def tiktok_token_status(payload: dict = Depends(verify_token)):
-    """Status połączenia konta TikTok."""
-    return get_tiktok_token_status()
+    """Status połączenia konta TikTok oraz bieżącej sesji OAuth 2.0 PKCE."""
+    status = dict(get_tiktok_token_status())
+    status["oauth_state"] = dict(_TIKTOK_OAUTH_STATE)
+    return status
+
+
+@router.get("/social/tiktok/creator-info")
+def tiktok_creator_info(payload: dict = Depends(verify_token)):
+    """Pobiera bieżące limity i dozwolone ustawienia prywatności z /v2/post/publish/creator_info/query/."""
+    return get_tiktok_creator_info()
+
+
+@router.get("/social/tiktok/user-info")
+def tiktok_user_info(payload: dict = Depends(verify_token)):
+    """Pobiera profil twórcy (avatar_url, display_name) z /v2/user/info/ w zakresie user.info.basic."""
+    return get_tiktok_user_info()
 
 
 @router.get("/social/tiktok/auth-url")
 def tiktok_auth_url(payload: dict = Depends(verify_token)):
-    """Generuje URL do logowania OAuth 2.0 z TikTokiem."""
-    if not TIKTOK_CLIENT_KEY:
-        raise HTTPException(
-            status_code=500,
-            detail="Brak TIKTOK_CLIENT_KEY w konfiguracji środowiska (.env)."
-        )
+    """Generuje realny URL logowania TikTok OAuth 2.0 z PKCE (http://localhost:8180/callback)."""
+    return _create_tiktok_pkce_auth_url()
 
-    redirect_uri = "https://battlemetal.github.io/Shortsyt/callback"
-    scope = "user.info.basic,video.publish,video.upload"
-    state = "shortsyt_api"
 
-    url = (
-        f"https://www.tiktok.com/v2/auth/authorize/"
-        f"?client_key={TIKTOK_CLIENT_KEY}"
-        f"&scope={scope}"
-        f"&response_type=code"
-        f"&redirect_uri={urllib.parse.quote(redirect_uri, safe='')}"
-        f"&state={state}"
-    )
-    return {"auth_url": url}
+@router.post("/social/tiktok/oauth/start")
+def tiktok_oauth_start(payload: dict = Depends(verify_token)):
+    """Generuje URL PKCE i uruchamia jednorazowy lokalny callback na porcie 8180."""
+    auth_payload = _create_tiktok_pkce_auth_url()
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        listener_started, listener_error = False, None
+    else:
+        listener_started, listener_error = _start_tiktok_oauth_callback_listener(timeout_sec=180.0)
+    return {
+        **auth_payload,
+        "listening_port": TIKTOK_OAUTH_PORT,
+        "listener_started": listener_started,
+        "listener_error": listener_error,
+    }
 
 
 @router.post("/social/tiktok/auth-code")
 def tiktok_exchange_code(req: TikTokAuthCodeRequest, payload: dict = Depends(verify_token)):
-    """Wymienia odebrany kod autoryzacji TikToka na access token."""
+    """Wymienia odebrany kod autoryzacji TikToka na access token z użyciem PKCE code_verifier."""
     from scripts.authorize_tiktok import exchange_code_for_token
+
+    verifier = (req.code_verifier or "").strip()
+    with _TIKTOK_PKCE_LOCK:
+        _prune_expired_pkce_locked()
+        if not verifier and req.state and req.state in _TIKTOK_PKCE_STORE:
+            verifier = _TIKTOK_PKCE_STORE.pop(req.state)[0]
+        elif not verifier and _TIKTOK_PKCE_STORE:
+            latest_key = max(_TIKTOK_PKCE_STORE.keys(), key=lambda k: _TIKTOK_PKCE_STORE[k][1])
+            verifier = _TIKTOK_PKCE_STORE.pop(latest_key)[0]
+
+    if not verifier:
+        raise HTTPException(
+            status_code=400,
+            detail="Brak aktywnej sesji PKCE — najpierw wygeneruj link OAuth.",
+        )
+
     try:
-        tokens = exchange_code_for_token(req.code)
+        tokens = exchange_code_for_token(req.code, verifier)
         return {
             "success": True,
             "open_id": tokens.get("open_id"),
-            "scope": tokens.get("scope")
+            "scope": tokens.get("scope"),
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -264,6 +526,37 @@ async def publish_all(
     if not video_path:
         raise HTTPException(status_code=404, detail=f"Plik wideo nie istnieje: {filename}")
 
+    tt_post_mode = (req.tiktok_post_mode or "direct").strip().lower()
+    if tt_post_mode not in {"direct", "inbox"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Nieprawidłowy tryb TikTok (tiktok_post_mode): dozwolone 'direct' lub 'inbox'.",
+        )
+
+    tt_privacy = (req.privacy_tiktok or "").strip()
+    if "tiktok" in req.platforms and tt_post_mode == "direct":
+        allowed_tt_privacy = {
+            "PUBLIC_TO_EVERYONE",
+            "MUTUAL_FOLLOW_FRIENDS",
+            "FOLLOWER_OF_CREATOR",
+            "SELF_ONLY",
+        }
+        if not tt_privacy or tt_privacy not in allowed_tt_privacy:
+            raise HTTPException(
+                status_code=400,
+                detail="Wybierz prawidłowy poziom prywatności TikTok (privacy_tiktok).",
+            )
+        if req.tiktok_disclose_content and not (req.tiktok_brand_organic or req.tiktok_branded_content):
+            raise HTTPException(
+                status_code=400,
+                detail="Przy włączonym Disclose video content wybierz Your brand i/lub Branded content.",
+            )
+        if req.tiktok_disclose_content and req.tiktok_branded_content and tt_privacy == "SELF_ONLY":
+            raise HTTPException(
+                status_code=400,
+                detail="Branded content nie może mieć widoczności Only you (SELF_ONLY).",
+            )
+
     meta = _load_meta(filename) or {}
     champ = req.champion_name or meta.get("champion_name") or "Katarina"
     action = req.action_type or meta.get("action_type") or "pentakill"
@@ -306,12 +599,15 @@ async def publish_all(
             pass
 
     # Normalizuj wszystkie hasztagi w tytule i opisie na kanoniczne małe litery
-    import re
     title_to_use = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", req.title)
     desc_to_use = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", desc_to_use)
 
+    has_custom_copy = any(
+        bool(val and val.strip())
+        for val in (req.tiktok_caption, req.instagram_caption, req.facebook_caption)
+    )
     copy_override = None
-    if req.tiktok_caption and req.tiktok_caption.strip():
+    if has_custom_copy:
         try:
             from ...multi_platform_copywriter import generate_all_platform_copy
             copy_override = generate_all_platform_copy(
@@ -319,17 +615,29 @@ async def publish_all(
                 action_type=action,
                 base_metadata={"title": title_to_use, "description": desc_to_use, "tags": tags_to_use},
                 platforms=req.platforms,
-            )
-            if "tiktok" in copy_override:
-                raw_tt = req.tiktok_caption.strip()
-                extracted_tags = [m.lower() for m in re.findall(r"#([a-zA-Z0-9_]+)", raw_tt)]
-                clean_tt_line = re.sub(r"#\S+", "", raw_tt).strip()
-                copy_override["tiktok"]["title"] = clean_tt_line[:180] or title_to_use
-                copy_override["tiktok"]["caption"] = raw_tt
-                if extracted_tags:
-                    copy_override["tiktok"]["hashtags"] = extracted_tags[:8]
+            ) or {}
         except Exception:
-            copy_override = None
+            copy_override = {}
+
+        if req.tiktok_caption and req.tiktok_caption.strip():
+            raw_tt = req.tiktok_caption.strip()
+            extracted_tags = [m.lower() for m in re.findall(r"#([a-zA-Z0-9_]+)", raw_tt)]
+            clean_tt_line = re.sub(r"#\S+", "", raw_tt).strip()
+            tt_entry = copy_override.setdefault("tiktok", {})
+            tt_entry["title"] = clean_tt_line[:180] or title_to_use
+            tt_entry["caption"] = raw_tt
+            if extracted_tags:
+                tt_entry["hashtags"] = extracted_tags[:8]
+
+        if req.instagram_caption and req.instagram_caption.strip():
+            raw_ig = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", req.instagram_caption.strip())
+            copy_override.setdefault("instagram", {})["caption"] = raw_ig
+
+        if req.facebook_caption and req.facebook_caption.strip():
+            copy_override.setdefault("facebook", {})["caption"] = req.facebook_caption.strip()
+
+    tt_brand_organic = bool(req.tiktok_disclose_content and req.tiktok_brand_organic)
+    tt_brand_content = bool(req.tiktok_disclose_content and req.tiktok_branded_content)
 
     loop = asyncio.get_event_loop()
     results = await loop.run_in_executor(
@@ -342,7 +650,7 @@ async def publish_all(
             hashtags=req.hashtags,
             platforms=req.platforms,
             privacy_yt=req.privacy_yt,
-            privacy_tiktok=req.privacy_tiktok,
+            privacy_tiktok=tt_privacy if ("tiktok" in req.platforms and tt_post_mode == "direct") else (tt_privacy or "PUBLIC_TO_EVERYONE"),
             share_to_ig_feed=req.share_to_ig_feed,
             thumbnail_path=thumb_to_use,
             publish_at=req.publish_at,
@@ -352,6 +660,12 @@ async def publish_all(
             action_type=action,
             rank=rnk,
             peak_moment=peak,
+            tiktok_disable_comment=not req.tiktok_allow_comment,
+            tiktok_disable_duet=not req.tiktok_allow_duet,
+            tiktok_disable_stitch=not req.tiktok_allow_stitch,
+            tiktok_brand_organic=tt_brand_organic,
+            tiktok_brand_content=tt_brand_content,
+            tiktok_post_mode=tt_post_mode,
         )
     )
 
