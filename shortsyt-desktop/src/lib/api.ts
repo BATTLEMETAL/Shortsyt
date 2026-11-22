@@ -9,7 +9,19 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 const SERVER_URL_KEY = 'api_url';
 const JWT_TOKEN_KEY = 'jwt_token';
 
-export const DEFAULT_URL = 'http://localhost:8765';
+function getDefaultServerUrl(): string {
+  if (
+    typeof window !== 'undefined' &&
+    !(window as any).electronStore &&
+    window.location?.protocol?.startsWith('http') &&
+    window.location.port !== '5173'
+  ) {
+    return window.location.origin;
+  }
+  return 'http://localhost:8765';
+}
+
+export const DEFAULT_URL = getDefaultServerUrl();
 
 // Electron Store wrapper with localStorage fallback for web dev
 interface ElectronStoreBridge {
@@ -64,6 +76,14 @@ async function deleteStoreValue(key: string): Promise<void> {
 // ── Storage helpers ──────────────────────────────────────────────────────────
 
 export async function getServerUrl(): Promise<string> {
+  if (
+    typeof window !== 'undefined' &&
+    !(window as any).electronStore &&
+    window.location?.protocol?.startsWith('http') &&
+    window.location.port !== '5173'
+  ) {
+    return window.location.origin;
+  }
   const stored = await getStoreValue(SERVER_URL_KEY, DEFAULT_URL);
   return stored || DEFAULT_URL;
 }
@@ -237,6 +257,23 @@ export async function apiStopPipeline(): Promise<void> {
 }
 
 export interface ClipItem {
+  already_published?: boolean;
+  published_url?: string;
+  duplicate_reason?: string;
+  pre_score?: number | null;
+  pre_action?: string | null;
+  pre_recommendation?: string | null;
+  match_folder?: string;
+  match_date?: string;
+  clip_base_key?: string;
+  champion?: string;
+  is_favorite?: boolean;
+  event_tier?: string;
+  event_tier_rank?: number | null;
+  event_source?: string;
+  best_event_time_s?: number | null;
+  total_kills_in_clip?: number | null;
+  match_kda?: string;
   filename: string;
   path: string;
   size_mb: number;
@@ -363,6 +400,42 @@ export async function apiGetCameraPreviewUrl(filePath: string, timestamp: number
     url += `&crop_x=${cropX}`;
   }
   return url;
+}
+
+export async function apiGetBackendBaseUrl(): Promise<string> {
+  return await getServerUrl();
+}
+
+export interface ThumbnailActionResponse {
+  status: string;
+  thumbnail_filename: string;
+  thumbnail_path: string;
+  size_kb: number;
+}
+
+export async function apiUploadOutputThumbnail(videoFilename: string, file: File): Promise<ThumbnailActionResponse> {
+  const client = await createClient();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await client.post(
+    `/outputs/${encodeURIComponent(videoFilename)}/thumbnail`,
+    form,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    },
+  );
+  return res.data;
+}
+
+export async function apiRegenerateOutputThumbnail(videoFilename: string): Promise<ThumbnailActionResponse> {
+  const client = await createClient();
+  const res = await client.post(
+    `/outputs/${encodeURIComponent(videoFilename)}/thumbnail/regenerate`,
+    {},
+    { timeout: 60000 },
+  );
+  return res.data;
 }
 
 export interface YtTokenStatusResponse {
@@ -553,6 +626,19 @@ export interface CalendarSlot {
   performance_tier?: 'viral_hit' | 'above_avg' | 'average' | 'below_avg';
   performance_label?: string;
   performance_diff?: string;
+  social_queue?: SlotSocialQueueEntry[];
+}
+
+export interface SlotSocialQueueEntry {
+  id: string;
+  platform: 'tiktok' | 'instagram' | 'facebook' | string;
+  status: 'pending' | 'published' | 'failed' | string;
+  publish_at: string;
+  caption?: string;
+  hashtags?: string[];
+  url?: string;
+  publish_id?: string;
+  error?: string;
 }
 
 export interface FragAnalysis {
@@ -569,7 +655,7 @@ export interface FragAnalysis {
   suggested_badge_color: string;
 }
 
-export async function apiGetCalendarSlots(startDate?: string, days: number = 14, forceRefresh: boolean = false): Promise<{ slots: CalendarSlot[]; days: number; total: number }> {
+export async function apiGetCalendarSlots(startDate?: string, days: number = 14, forceRefresh: boolean = false): Promise<{ slots: CalendarSlot[]; days: number; total: number; social_queue_summary?: { total: number; pending: number; published: number; failed: number } }> {
   const client = await createClient();
   const params: any = { days };
   if (startDate) params.start_date = startDate;
@@ -924,6 +1010,41 @@ export interface MultiPublishRequest {
   champion_name?: string;
   action_type?: string;
   rank?: string;
+  tiktok_caption?: string;
+}
+
+export interface SocialQueueItem {
+  id: string;
+  platform: string;
+  video_path: string;
+  caption: string;
+  publish_at: string;
+  thumbnail_path?: string | null;
+  peak_moment?: number | null;
+  status: 'pending' | 'published' | 'failed' | string;
+  created_at?: string;
+  published_at?: string;
+  error?: string;
+  extra?: Record<string, any>;
+  result?: Record<string, any>;
+}
+
+export async function apiGetSocialQueue(): Promise<{ items: SocialQueueItem[]; summary: { total: number; pending: number; published: number; failed: number } }> {
+  const client = await createClient();
+  const res = await client.get('/social/queue');
+  return res.data;
+}
+
+export async function apiFlushSocialQueue(): Promise<{ ok: boolean; flushed_posts: number; flushed_comments: number }> {
+  const client = await createClient();
+  const res = await client.post('/social/queue/flush', {}, { timeout: 180000 });
+  return res.data;
+}
+
+export async function apiPreviewSocialCopy(params: { title: string; champion_name?: string; action_type?: string }): Promise<{ tiktok_copy_text: string; copies: Record<string, any> }> {
+  const client = await createClient();
+  const res = await client.post('/social/preview-copy', params);
+  return res.data;
 }
 
 export async function apiPublishMulti(
@@ -954,3 +1075,326 @@ export async function apiGetSocialAnalytics(
   return res.data;
 }
 
+// ── Multi-Account & Content Guidelines ──────────────────────────────────────
+
+export interface AccountProfile {
+  account_id: string;
+  display_name: string;
+  handle: string;
+  content_mode: 'GAMING_HIGHLIGHTS' | 'PRODUCT_ECOMMERCE_AD' | 'BEAUTY_SALON_SERVICE' | 'EXPERT_BRAND_SHORT' | string;
+  game_type: string;
+  language: string;
+  yt_token_file?: string;
+  peak_hours_cet: string[];
+  target_duration_range?: number[];
+  camera_mode?: string;
+  brand_voice: string;
+  value_proposition: string;
+  cta_text: string;
+  cta_url: string;
+  location: string;
+  phone: string;
+  mandatory_hashtags: string[];
+  forbidden_words: string[];
+  target_audience: string;
+  yt_category_id?: string;
+  builtin?: boolean;
+  is_active?: boolean;
+  yt_token_exists?: boolean;
+  yt_token_path?: string;
+}
+
+export interface ContentModePreset {
+  label: string;
+  game_type: string;
+  language: string;
+  peak_hours_cet: string[];
+  target_duration_range: number[];
+  camera_mode: string;
+  brand_voice: string;
+  value_proposition: string;
+  cta_text: string;
+  cta_url: string;
+  mandatory_hashtags: string[];
+  forbidden_words: string[];
+  yt_category_id: string;
+}
+
+export interface AccountsRegistryResponse {
+  active_account_id: string;
+  accounts: AccountProfile[];
+  presets: Record<string, ContentModePreset>;
+}
+
+export interface AccountUpsertPayload {
+  account_id?: string;
+  display_name: string;
+  handle?: string;
+  content_mode: string;
+  language?: string;
+  peak_hours_cet?: string[];
+  brand_voice?: string;
+  value_proposition?: string;
+  cta_text?: string;
+  cta_url?: string;
+  location?: string;
+  phone?: string;
+  mandatory_hashtags?: string[];
+  forbidden_words?: string[];
+  target_audience?: string;
+  set_active?: boolean;
+}
+
+export async function apiListAccounts(): Promise<AccountsRegistryResponse> {
+  const client = await createClient();
+  const res = await client.get<AccountsRegistryResponse>('/accounts');
+  return res.data;
+}
+
+export async function apiUpsertAccount(payload: AccountUpsertPayload): Promise<{ ok: boolean; account: AccountProfile }> {
+  const client = await createClient();
+  const res = await client.post<{ ok: boolean; account: AccountProfile }>('/accounts', payload);
+  return res.data;
+}
+
+export async function apiSelectAccount(accountId: string): Promise<{ ok: boolean; active_account: AccountProfile }> {
+  const client = await createClient();
+  const res = await client.post<{ ok: boolean; active_account: AccountProfile }>(`/accounts/select/${encodeURIComponent(accountId)}`);
+  return res.data;
+}
+
+export async function apiDeleteAccount(accountId: string): Promise<{ ok: boolean; deleted: string }> {
+  const client = await createClient();
+  const res = await client.delete<{ ok: boolean; deleted: string }>(`/accounts/${encodeURIComponent(accountId)}`);
+  return res.data;
+}
+
+// ── Remote Mobile Access (LAN + Cloudflare Quick Tunnel) ────────────────────
+
+export interface RemoteAccessStatus {
+  ok?: boolean;
+  port: number;
+  lan_ips: string[];
+  lan_urls: string[];
+  primary_lan_url: string;
+  tunnel_active: boolean;
+  tunnel_url: string | null;
+  tunnel_started_at: string | null;
+  tunnel_error: string | null;
+  cloudflared_available: boolean;
+}
+
+export async function apiGetRemoteAccess(): Promise<RemoteAccessStatus> {
+  const client = await createClient();
+  const res = await client.get<RemoteAccessStatus>('/system/remote-access');
+  return res.data;
+}
+
+export async function apiStartRemoteTunnel(): Promise<RemoteAccessStatus> {
+  const client = await createClient();
+  const res = await client.post<RemoteAccessStatus>('/system/remote-access/tunnel/start', {}, { timeout: 60000 });
+  return res.data;
+}
+
+export async function apiStopRemoteTunnel(): Promise<RemoteAccessStatus> {
+  const client = await createClient();
+  const res = await client.post<RemoteAccessStatus>('/system/remote-access/tunnel/stop');
+  return res.data;
+}
+
+
+
+// ── Sugestie odpowiedzi na komentarze widzów (Synapsa + 1-klik) ─────────────
+
+export interface CommentReplySuggestion {
+  video_id: string;
+  video_title: string;
+  parent_comment_id: string;
+  author: string;
+  comment_text: string;
+  published_at?: string;
+  suggested_replies: string[];
+}
+
+export interface CommentSuggestionsResponse {
+  items: CommentReplySuggestion[];
+  count?: number;
+  error?: string;
+}
+
+export async function apiGetCommentSuggestions(maxVideos: number = 5): Promise<CommentSuggestionsResponse> {
+  const client = await createClient();
+  const res = await client.get<CommentSuggestionsResponse>(`/youtube/comments/suggestions?max_videos=${maxVideos}`, { timeout: 90000 });
+  return res.data;
+}
+
+export async function apiReplyToComment(parentId: string, text: string): Promise<{ ok: boolean; comment_id?: string }> {
+  const client = await createClient();
+  const res = await client.post<{ ok: boolean; comment_id?: string }>('/youtube/comments/reply', { parent_id: parentId, text });
+  return res.data;
+}
+
+// ── Tryb Nocny („Opcja Nocna”: Skan -> Top 5 -> Rekomendacja Synapsy) ──────
+
+export interface OvernightStartRequest {
+  folder?: string;
+  top_n?: number;
+  skip_published?: boolean;
+  champion_name?: string;
+  rank?: string;
+  use_local_ai?: boolean;
+  tier_filter?: 'auto' | 'all' | 'any_kill' | 'double_plus' | 'triple_plus' | 'quadra_plus';
+  only_channel_champion?: boolean;
+}
+
+export interface OvernightStatusResponse {
+  status: 'idle' | 'scanning' | 'rendering' | 'evaluating' | 'done' | 'error' | 'stopped';
+  batch_id: string | null;
+  phase: string;
+  progress: number;
+  total_clips: number;
+  scanned_clips: number;
+  skipped_published: number;
+  qualified_count: number;
+  rejected_count: number;
+  selected_count: number;
+  rendered_count: number;
+  current_clip: string;
+  recommended_filename: string | null;
+  summary_pl: string;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  logs: string[];
+}
+
+export interface OvernightShortItem {
+  overnight_rank: number;
+  candidate_rank: number;
+  source_filename: string;
+  source_path: string;
+  output_filename: string;
+  output_path: string | null;
+  thumbnail_path?: string | null;
+  thumbnail_filename?: string | null;
+  champion_name: string;
+  action_type: string;
+  kill_count?: number;
+  kill_span_s?: number;
+  objective_secured?: boolean;
+  is_clutch_1hp?: boolean;
+  min_hp_percentage?: number;
+  is_favorite?: boolean;
+  event_tier?: string;
+  event_source?: string;
+  best_event_time_s?: number | null;
+  total_kills_in_clip?: number | null;
+  match_folder?: string;
+  match_date?: string;
+  clip_base_key?: string;
+  match_kda?: string;
+  title: string;
+  hook_text?: string;
+  hype_score: number;
+  watchability_score?: number;
+  qa_score: number;
+  final_score: number;
+  verdict: 'PICK_WINNER' | 'STRONG_ALT' | 'NEEDS_TWEAK' | 'SKIP' | 'RENDER_ERROR';
+  synapsa_comment_pl: string;
+  defects?: string[];
+  has_critical_defect?: boolean;
+  fallback_mediocre?: boolean;
+  render_ok: boolean;
+  error?: string | null;
+}
+
+export interface OvernightBatchManifest {
+  batch_id: string;
+  status: string;
+  auto_publish: boolean;
+  champion_name: string;
+  tier_filter?: string;
+  only_channel_champion?: boolean;
+  rank: string;
+  folder: string;
+  started_at: string;
+  finished_at: string;
+  scan_stats: {
+    total_clips_found: number;
+    skipped_published: number;
+    scanned_unpublished: number;
+    qualified_count: number;
+    rejected_count: number;
+    rejection_breakdown: Record<string, number>;
+  };
+  recommended_filename: string | null;
+  recommended_verdict: string | null;
+  recommendation_source: string;
+  guard_override: boolean;
+  summary_pl: string;
+  items: OvernightShortItem[];
+}
+
+export interface OvernightMatchSummary {
+  match_folder: string;
+  match_date: string;
+  champion: string;
+  clips_count: number;
+  multikills_count: number;
+  highest_tier: string;
+  match_kda: string;
+}
+
+export interface OvernightCatalogResponse {
+  total_clips: number;
+  unpublished_clips: number;
+  favorites_count: number;
+  multikill_clips: number;
+  tier_counts: Record<string, number>;
+  by_champion: Record<string, { total: number; multikill: number; favorites: number }>;
+  matches_count: number;
+  matches: OvernightMatchSummary[];
+  requested_champion?: string;
+  skip_published?: boolean;
+  all_champions_summary?: OvernightCatalogResponse;
+}
+
+export async function apiStartOvernight(params: OvernightStartRequest): Promise<{
+  status: string;
+  top_n: number;
+  tier_filter?: string;
+  only_channel_champion?: boolean;
+  auto_publish: boolean;
+}> {
+  const client = await createClient();
+  const res = await client.post('/overnight/start', params);
+  return res.data;
+}
+
+export async function apiGetOvernightStatus(): Promise<OvernightStatusResponse> {
+  const client = await createClient();
+  const res = await client.get<OvernightStatusResponse>('/overnight/status');
+  return res.data;
+}
+
+export async function apiStopOvernight(): Promise<{ status: string }> {
+  const client = await createClient();
+  const res = await client.post<{ status: string }>('/overnight/stop');
+  return res.data;
+}
+
+export async function apiGetLatestOvernight(): Promise<{ batch: OvernightBatchManifest | null }> {
+  const client = await createClient();
+  const res = await client.get<{ batch: OvernightBatchManifest | null }>('/overnight/latest');
+  return res.data;
+}
+
+export async function apiGetOvernightCatalog(params?: {
+  folder?: string;
+  champion_name?: string;
+  skip_published?: boolean;
+}): Promise<OvernightCatalogResponse> {
+  const client = await createClient();
+  const res = await client.get<OvernightCatalogResponse>('/overnight/catalog', { params });
+  return res.data;
+}

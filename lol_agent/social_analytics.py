@@ -526,9 +526,14 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                 "followers_count": followers_count,
                 "following_count": following_count,
                 "heart_count": heart_count,
-                "video_count": video_count
+                "video_count": video_count  # total on account (profile-level)
             },
+            # NOTE: count/total_views/videos = only pipeline-uploaded videos
+            # (TikTok Content Posting API limitation — manually posted videos are not accessible)
             "count": len(videos),
+            "api_videos_only": True,  # flag: not all account videos
+            "profile_total_videos": video_count,  # real total from profile
+            "profile_total_hearts": heart_count,  # real total likes on account
             "total_views": total_views,
             "total_likes": total_likes,
             "total_comments": total_comments,
@@ -556,9 +561,31 @@ def get_omnichannel_analytics(force_refresh: bool = False) -> Dict[str, Any]:
     from lol_agent.api.routers.learning import _sync_youtube_analytics
     yt_sync = _sync_youtube_analytics(force=force_refresh)
     yt_videos = yt_sync.get("videos", [])
-    yt_total_views = sum(v.get("views", 0) for v in yt_videos)
+    yt_total_views_sampled = sum(v.get("views", 0) for v in yt_videos)
     yt_total_likes = sum(v.get("likes", 0) for v in yt_videos)
     yt_total_comments = sum(v.get("comments", 0) for v in yt_videos)
+
+    # FIX: Use channel-level statistics for accurate all-time total views.
+    # _sync_youtube_analytics fetches only the last ~50 videos, missing older ones.
+    # channels.list(statistics).viewCount returns the real channel lifetime total.
+    yt_total_views = yt_total_views_sampled  # safe fallback
+    try:
+        import pickle
+        from lol_agent.api.config import YT_TOKEN_PATH
+        from googleapiclient.discovery import build as _yt_build
+        if YT_TOKEN_PATH.exists():
+            with open(YT_TOKEN_PATH, "rb") as _f:
+                _creds = pickle.load(_f)
+            if _creds and _creds.valid:
+                _yt_svc = _yt_build("youtube", "v3", credentials=_creds)
+                _ch = _yt_svc.channels().list(part="statistics", mine=True).execute()
+                _items = _ch.get("items", [])
+                if _items:
+                    _ch_views = int(_items[0].get("statistics", {}).get("viewCount", 0))
+                    if _ch_views > yt_total_views_sampled:
+                        yt_total_views = _ch_views  # use real channel total
+    except Exception:
+        pass  # keep sampled fallback if API fails
 
     # 2. Instagram
     ig_data = get_instagram_analytics(force_refresh=force_refresh)

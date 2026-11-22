@@ -55,5 +55,29 @@ def test_audio_filter_matches_segments():
     assert f.count("atrim=") == len(segs) and f.endswith(f"concat=n={len(segs)}:v=0:a=1[gwarp]")
     assert f.count("atempo=") == sum(1 for s in segs if s["speed"] != 1.0)
 
+
+def test_clean_audio_warp_coalesces_and_avoids_wsola_on_slowmo():
+    segs = TL.build_speed_segments(13.5, 10.8, 0.55, 1.0, 0.40, [5.2, 8.7])
+    merged = TL.coalesce_audio_segments(segs)
+    assert len(merged) < len(segs)  # dwa przyległe bloki 0.55 (zoom=True/False) muszą zostać scalone
+    f = TL.audio_warp_filter(segs, "2:a", "gwarp", mode="clean")
+    assert f.count("atrim=") == len(merged)
+    assert f.endswith(f"concat=n={len(merged)}:v=0:a=1[gwarp]")
+    assert "aresample=44100,aformat=sample_rates=44100:channel_layouts=stereo" in f
+    assert "asetrate=44100*0.550000,aresample=44100" in f
+    assert "atempo=" not in f  # brak artefaktów WSOLA na slowmo < 1.0
+    assert "afade=t=in:st=0:d=0.005" in f
+
+
+def test_clean_audio_warp_uses_atempo_only_on_speedups():
+    segs = [
+        {"start": 0.0, "end": 2.0, "speed": 1.0, "zoom": False},
+        {"start": 2.0, "end": 5.0, "speed": 3.0, "zoom": False},
+        {"start": 5.0, "end": 6.5, "speed": 0.55, "zoom": True},
+    ]
+    f = TL.audio_warp_filter(segs, "2:a", "gwarp", mode="clean")
+    assert "atempo=3.0000" in f
+    assert "asetrate=44100*0.550000" in f
+
 def test_crop_width_is_even():
     assert TL.vertical_crop_width(1080) == 608 and TL.vertical_crop_width(1440) % 2 == 0 and TL.vertical_crop_width(2160) % 2 == 0

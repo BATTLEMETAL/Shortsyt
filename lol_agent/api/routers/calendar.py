@@ -24,7 +24,24 @@ def get_calendar(
     try:
         from .. import calendar_manager
         slots = calendar_manager.get_calendar_slots(start_date=start_date, days=days, force_refresh=force_refresh)
-        return {"slots": slots, "days": days, "total": len(slots)}
+        social_queue_summary = {"pending": 0, "published": 0, "failed": 0, "total": 0}
+        try:
+            from ...scheduled_queue import _load_queue
+            q_items = _load_queue() or []
+            social_queue_summary = {
+                "total": len(q_items),
+                "pending": sum(1 for i in q_items if i.get("status") == "pending"),
+                "published": sum(1 for i in q_items if i.get("status") == "published"),
+                "failed": sum(1 for i in q_items if i.get("status") == "failed"),
+            }
+        except Exception:
+            pass
+        return {
+            "slots": slots,
+            "days": days,
+            "total": len(slots),
+            "social_queue_summary": social_queue_summary,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Błąd kalendarza: {e}")
 

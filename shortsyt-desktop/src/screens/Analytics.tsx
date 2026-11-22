@@ -266,21 +266,21 @@ export default function Analytics() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#0A0E1A] p-6 lg:p-8 space-y-6 text-[#E4D6B5]">
+    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#050505] p-6 lg:p-8 space-y-6 text-[#FFFFFF]">
       {/* ── TOP NAV BAR & PLATFORM TABS ──────────────────────────────────── */}
-      <div className="flex flex-col gap-4 pb-4 border-b border-[#1E2438]">
+      <div className="flex flex-col gap-4 pb-4 border-b border-[#272A2F]">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-[#E4D6B5] flex items-center gap-2.5">
-              <BarChart3 className="w-6 h-6 text-[#C89B3C]" />
+            <h1 className="text-2xl font-black tracking-tight text-[#FFFFFF] flex flex-wrap items-center gap-2.5">
+              <BarChart3 className="w-6 h-6 text-[#C8FF3A] shrink-0" />
               <span>Analityka Multi-Platform — Dwannellenga</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2ECC71]/20 border border-[#2ECC71]/40 text-[#2ECC71] font-bold">
+              <span className="fk-tag shrink-0 whitespace-nowrap text-[10px] px-2.5 py-0.5 bg-[#2ECC71]/20 border border-[#2ECC71]/40 text-[#2ECC71] font-bold">
                 LIVE SYNC
               </span>
             </h1>
-            <p className="text-xs text-[#8B8FA8] mt-1 font-medium">
+            <p className="text-xs text-[#A0A7B1] mt-1 font-medium">
               Rzeczywiste metryki społecznościowe na żywo ze wszystkich platform • Synchronizacja:{' '}
-              <strong className="text-[#C89B3C]">
+              <strong className="text-[#C8FF3A]">
                 {activePlatform === 'youtube'
                   ? ytData.synced_at ? new Date(ytData.synced_at).toLocaleTimeString() : 'Bieżąca'
                   : 'Na żywo z Graph API / Direct Post'}
@@ -290,7 +290,7 @@ export default function Analytics() {
 
           <div className="flex items-center gap-3">
             {activePlatform === 'youtube' && (
-              <div className="flex bg-[#121624] p-1 rounded-xl border border-[#1E2438] shadow-inner">
+              <div className="flex bg-[#0E0F11] p-1 fk-cut-sm border border-[#272A2F]">
                 {(['7d', '30d', 'all'] as const).map((range) => {
                   const labels = { '7d': '7 Dni', '30d': '30 Dni', 'all': 'Wszystko' };
                   const isActive = timeRange === range;
@@ -300,8 +300,8 @@ export default function Analytics() {
                       onClick={() => setTimeRange(range)}
                       className={`px-3.5 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 ${
                         isActive
-                          ? 'bg-[#C89B3C] text-[#0A0E1A] shadow-md shadow-[#C89B3C]/20 scale-105'
-                          : 'text-[#8B8FA8] hover:text-[#E4D6B5] hover:bg-[#1A1E30]'
+                          ? 'bg-[#C8FF3A] text-[#050505] scale-105'
+                          : 'text-[#A0A7B1] hover:text-[#FFFFFF] hover:bg-[#17191C]'
                       }`}
                     >
                       {isActive && <CheckCircle className="w-3 h-3" />}
@@ -315,10 +315,10 @@ export default function Analytics() {
             <button
               onClick={() => loadActiveData(true)}
               disabled={refreshing}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#121624] hover:bg-[#1A1E30] border border-[#1E2438] text-xs font-bold text-[#E4D6B5] transition-colors"
+              className="flex items-center gap-1.5 px-3.5 py-2 fk-cut-sm bg-[#0E0F11] hover:bg-[#17191C] border border-[#272A2F] text-xs font-bold text-[#FFFFFF] transition-colors"
               title="Pobierz najświeższe dane z platformy"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-[#C89B3C] ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-[#C8FF3A] ${refreshing ? 'animate-spin' : ''}`} />
               <span>
                 {refreshing
                   ? 'Pobieranie...'
@@ -336,10 +336,10 @@ export default function Analytics() {
 
             <button
               onClick={handleExportCSV}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#121624] hover:bg-[#1A1E30] border border-[#1E2438] text-xs font-bold text-[#8B8FA8] hover:text-[#E4D6B5] transition-colors"
+              className="flex items-center gap-1.5 px-3.5 py-2 fk-cut-sm bg-[#0E0F11] hover:bg-[#17191C] border border-[#272A2F] text-xs font-bold text-[#A0A7B1] hover:text-[#FFFFFF] transition-colors"
               title="Eksportuj rzeczywiste dane do CSV"
             >
-              <Download className="w-3.5 h-3.5 text-[#C89B3C]" />
+              <Download className="w-3.5 h-3.5 text-[#C8FF3A]" />
               <span>CSV</span>
             </button>
           </div>
@@ -349,26 +349,26 @@ export default function Analytics() {
         <div className="flex flex-wrap items-center gap-2 pt-2">
           <button
             onClick={() => setActivePlatform('youtube')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            className={`px-4 py-2 fk-cut-sm text-xs font-bold transition-all flex items-center gap-2 border ${
               activePlatform === 'youtube'
-                ? 'bg-[#E62117]/20 border-[#E62117] text-white shadow-lg shadow-[#E62117]/20 font-black'
-                : 'bg-[#121624] border-[#1E2438] text-[#8B8FA8] hover:text-white hover:border-[#E62117]/50'
+                ? 'bg-[#E62117]/20 border-[#E62117] text-white font-black'
+                : 'bg-[#0E0F11] border-[#272A2F] text-[#A0A7B1] hover:text-white hover:border-[#E62117]/50'
             }`}
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-[#E62117] inline-block shadow-sm shadow-[#E62117]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#E62117] inline-block" />
             <span>YouTube Shorts</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/40 text-red-300 font-mono">198 filmów</span>
           </button>
 
           <button
             onClick={() => setActivePlatform('instagram')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            className={`px-4 py-2 fk-cut-sm text-xs font-bold transition-all flex items-center gap-2 border ${
               activePlatform === 'instagram'
-                ? 'bg-gradient-to-r from-[#833AB4]/30 via-[#FD1D1D]/30 to-[#F77737]/30 border-[#E1306C] text-white shadow-lg shadow-[#E1306C]/20 font-black'
-                : 'bg-[#121624] border-[#1E2438] text-[#8B8FA8] hover:text-white hover:border-[#E1306C]/50'
+                ? 'bg-gradient-to-r from-[#833AB4]/30 via-[#FD1D1D]/30 to-[#F77737]/30 border-[#E1306C] text-white font-black'
+                : 'bg-[#0E0F11] border-[#272A2F] text-[#A0A7B1] hover:text-white hover:border-[#E1306C]/50'
             }`}
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-[#E1306C] inline-block shadow-sm shadow-[#E1306C]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#E1306C] inline-block" />
             <span>Instagram Reels</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/40 text-pink-300 font-mono">
               {igData?.total_views ? `${igData.total_views} views` : 'Aktywny'}
@@ -377,13 +377,13 @@ export default function Analytics() {
 
           <button
             onClick={() => setActivePlatform('facebook')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            className={`px-4 py-2 fk-cut-sm text-xs font-bold transition-all flex items-center gap-2 border ${
               activePlatform === 'facebook'
-                ? 'bg-[#1877F2]/20 border-[#1877F2] text-white shadow-lg shadow-[#1877F2]/20 font-black'
-                : 'bg-[#121624] border-[#1E2438] text-[#8B8FA8] hover:text-white hover:border-[#1877F2]/50'
+                ? 'bg-[#1877F2]/20 border-[#1877F2] text-white font-black'
+                : 'bg-[#0E0F11] border-[#272A2F] text-[#A0A7B1] hover:text-white hover:border-[#1877F2]/50'
             }`}
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-[#1877F2] inline-block shadow-sm shadow-[#1877F2]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#1877F2] inline-block" />
             <span>Facebook Reels</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/40 text-blue-300 font-mono">
               {fbData?.total_views ? `${fbData.total_views} views` : 'Aktywny'}
@@ -392,28 +392,28 @@ export default function Analytics() {
 
           <button
             onClick={() => setActivePlatform('tiktok')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            className={`px-4 py-2 fk-cut-sm text-xs font-bold transition-all flex items-center gap-2 border ${
               activePlatform === 'tiktok'
-                ? 'bg-[#00F2FE]/20 border-[#00F2FE] text-white shadow-lg shadow-[#00F2FE]/20 font-black'
-                : 'bg-[#121624] border-[#1E2438] text-[#8B8FA8] hover:text-white hover:border-[#00F2FE]/50'
+                ? 'bg-[#00F2FE]/20 border-[#00F2FE] text-white font-black'
+                : 'bg-[#0E0F11] border-[#272A2F] text-[#A0A7B1] hover:text-white hover:border-[#00F2FE]/50'
             }`}
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-[#00F2FE] inline-block shadow-sm shadow-[#00F2FE]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#00F2FE] inline-block" />
             <span>TikTok</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/40 text-cyan-300 font-mono">Direct Post</span>
           </button>
 
           <button
             onClick={() => setActivePlatform('omni')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            className={`px-4 py-2 fk-cut-sm text-xs font-bold transition-all flex items-center gap-2 border ${
               activePlatform === 'omni'
-                ? 'bg-[#C89B3C]/20 border-[#C89B3C] text-[#E4D6B5] shadow-lg shadow-[#C89B3C]/20 font-black'
-                : 'bg-[#121624] border-[#1E2438] text-[#8B8FA8] hover:text-[#C89B3C] hover:border-[#C89B3C]/50'
+                ? 'bg-[#C8FF3A]/20 border-[#C8FF3A] text-[#FFFFFF] font-black'
+                : 'bg-[#0E0F11] border-[#272A2F] text-[#A0A7B1] hover:text-[#C8FF3A] hover:border-[#C8FF3A]/50'
             }`}
           >
-            <Globe className="w-3.5 h-3.5 text-[#C89B3C]" />
+            <Globe className="w-3.5 h-3.5 text-[#C8FF3A]" />
             <span>Wszystkie Platformy (Omnichannel)</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#C89B3C]/20 text-[#C89B3C] font-mono font-bold">
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#C8FF3A]/20 text-[#C8FF3A] font-mono font-bold">
               Ekosystem
             </span>
           </button>
@@ -427,29 +427,29 @@ export default function Analytics() {
         <div className="space-y-6">
           {/* Channel Overview Bar */}
           {ytData.channel && (
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-[#121624] via-[#161B2C] to-[#121624] border border-[#1E2438] flex flex-wrap items-center justify-between gap-4 text-xs">
+            <div className="p-4 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-wrap items-center justify-between gap-4 text-xs">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#E62117]/20 border border-[#E62117]/40 flex items-center justify-center font-black text-[#E62117] text-sm">
+                <div className="w-9 h-9 fk-cut-sm bg-[#E62117]/20 border border-[#E62117]/40 flex items-center justify-center font-black text-[#E62117] text-sm">
                   YT
                 </div>
                 <div>
-                  <div className="font-bold text-[#E4D6B5] text-sm">{ytData.channel.channel_title || 'Dwannellenga'}</div>
-                  <div className="text-[11px] text-[#8B8FA8]">Oficjalny Kanał YouTube Shorts</div>
+                  <div className="font-bold text-[#FFFFFF] text-sm">{ytData.channel.channel_title || 'Dwannellenga'}</div>
+                  <div className="text-[11px] text-[#A0A7B1]">Oficjalny Kanał YouTube Shorts</div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-6 text-[#8B8FA8]">
+              <div className="flex items-center gap-6 text-[#A0A7B1]">
                 <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-[#C89B3C]" />
-                  <span>Subskrybenci: <strong className="text-[#E4D6B5] font-mono">{ytData.channel.subscriber_count}</strong></span>
+                  <Users className="w-4 h-4 text-[#C8FF3A]" />
+                  <span>Subskrybenci: <strong className="text-[#FFFFFF] font-mono">{ytData.channel.subscriber_count}</strong></span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Eye className="w-4 h-4 text-[#2ECC71]" />
-                  <span>Łączne wyświetlenia: <strong className="text-[#E4D6B5] font-mono">{ytData.channel.total_channel_views.toLocaleString()}</strong></span>
+                  <span>Łączne wyświetlenia: <strong className="text-[#FFFFFF] font-mono">{ytData.channel.total_channel_views.toLocaleString()}</strong></span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Video className="w-4 h-4 text-[#4FA3F7]" />
-                  <span>Wszystkie filmy: <strong className="text-[#E4D6B5] font-mono">{ytData.channel.total_video_count}</strong></span>
+                  <Video className="w-4 h-4 text-[#5CAEFF]" />
+                  <span>Wszystkie filmy: <strong className="text-[#FFFFFF] font-mono">{ytData.channel.total_video_count}</strong></span>
                 </div>
               </div>
             </div>
@@ -457,14 +457,14 @@ export default function Analytics() {
 
           {/* KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Wyświetlenia ({timeRange.toUpperCase()})</span>
-                <Eye className="w-4 h-4 text-[#C89B3C]" />
+                <Eye className="w-4 h-4 text-[#C8FF3A]" />
               </div>
               <div className="mt-3">
-                <div className="text-2xl font-black text-[#E4D6B5]">
-                  {loading ? <RefreshCw className="w-5 h-5 animate-spin text-[#C89B3C]" /> : `${ytData.total_views.toLocaleString()} views`}
+                <div className="text-2xl font-black text-[#FFFFFF]">
+                  {loading ? <RefreshCw className="w-5 h-5 animate-spin text-[#C8FF3A]" /> : `${ytData.total_views.toLocaleString()} views`}
                 </div>
                 <div className="text-xs text-[#55E88D] mt-1 flex items-center gap-1 font-semibold">
                   <TrendingUp className="w-3 h-3" />
@@ -473,26 +473,26 @@ export default function Analytics() {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Engagement ({timeRange.toUpperCase()})</span>
                 <ThumbsUp className="w-4 h-4 text-[#2ECC71]" />
               </div>
               <div className="mt-3">
-                <div className="text-2xl font-black text-[#E4D6B5]">
+                <div className="text-2xl font-black text-[#FFFFFF]">
                   {ytData.total_likes} 👍 / {ytData.total_comments || 0} 💬
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Polubienia i komentarze widzów</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Polubienia i komentarze widzów</div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Top Video w okresie</span>
-                <Award className="w-4 h-4 text-[#E5C269]" />
+                <Award className="w-4 h-4 text-[#C8FF3A]" />
               </div>
               <div className="mt-3">
-                <div className="text-lg font-black text-[#E4D6B5] truncate">
+                <div className="text-lg font-black text-[#FFFFFF] truncate">
                   {ytData.videos[0]?.title || 'Katarina Triple Kill'}
                 </div>
                 <div className="text-xs text-[#55E88D] mt-1 font-semibold">
@@ -501,17 +501,17 @@ export default function Analytics() {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Retencja AVD & Swiped Away</span>
-                <Activity className="w-4 h-4 text-[#4FA3F7]" />
+                <Activity className="w-4 h-4 text-[#5CAEFF]" />
               </div>
               <div className="mt-3">
                 <div className="text-2xl font-black text-[#55E88D] flex items-baseline gap-2">
                   <span>{channelRetention?.channel_avg_view_pct ?? learning?.retention_analysis?.channel_avg_view_pct ?? 102.2}%</span>
-                  <span className="text-xs text-[#E5C269] font-bold">AVD</span>
+                  <span className="text-xs text-[#C8FF3A] font-bold">AVD</span>
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">
+                <div className="text-xs text-[#A0A7B1] mt-1">
                   Swiped: <strong className="text-white">{channelRetention?.channel_avg_swiped_away_pct ?? learning?.retention_analysis?.channel_avg_swiped_away_pct ?? 12.0}%</strong> • Hook: <strong className="text-white">{channelRetention?.channel_avg_hook_retention_pct ?? learning?.retention_analysis?.channel_avg_hook_retention_pct ?? 88.0}%</strong>
                 </div>
               </div>
@@ -519,13 +519,13 @@ export default function Analytics() {
           </div>
 
           {/* Action Breakdown Table */}
-          <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-4">
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-bold text-[#E4D6B5] flex items-center gap-2">
-                <Award className="w-4 h-4 text-[#C89B3C]" />
+              <div className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
+                <Award className="w-4 h-4 text-[#C8FF3A]" />
                 <span>Skuteczność formatów montażu (Kanał Dwannellenga)</span>
               </div>
-              <span className="text-xs font-mono text-[#C89B3C]">
+              <span className="text-xs font-mono text-[#C8FF3A]">
                 Przeanalizowano: {ytData.count} filmów w wybranym okresie
               </span>
             </div>
@@ -533,7 +533,7 @@ export default function Analytics() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-[#1E2438] text-[#8B8FA8] uppercase text-[10px] tracking-wider">
+                  <tr className="border-b border-[#272A2F] text-[#A0A7B1] uppercase text-[10px] tracking-wider">
                     <th className="pb-3 font-bold">Format / Typ Akcji</th>
                     <th className="pb-3 font-bold">Liczba Filmów</th>
                     <th className="pb-3 font-bold">Śr. Wyświetlenia</th>
@@ -543,13 +543,13 @@ export default function Analytics() {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {actionBreakdown.map((row) => (
-                    <tr key={row.type} className="hover:bg-[#1A1E30]/50 transition-colors">
-                      <td className="py-3 font-bold text-[#E4D6B5]">{row.type}</td>
-                      <td className="py-3 text-[#8B8FA8] font-mono">{row.count}</td>
-                      <td className="py-3 font-mono font-bold text-[#C89B3C]">{row.avgViews}</td>
+                    <tr key={row.type} className="hover:bg-[#17191C]/50 transition-colors">
+                      <td className="py-3 font-bold text-[#FFFFFF]">{row.type}</td>
+                      <td className="py-3 text-[#A0A7B1] font-mono">{row.count}</td>
+                      <td className="py-3 font-mono font-bold text-[#C8FF3A]">{row.avgViews}</td>
                       <td className="py-3 font-mono text-[#55E88D] font-bold">{row.perfRatio}</td>
                       <td className="py-3 text-right font-bold font-mono">
-                        <span className={`px-2 py-0.5 rounded text-[11px] ${row.isPromoted ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-slate-300'}`}>
+                        <span className={`px-2 py-0.5 rounded text-[11px] ${row.isPromoted ? 'bg-[#C8FF3A]/15 text-[#C8FF3A] border border-[#C8FF3A]/35' : 'bg-[#17191C] text-[#FFFFFF]'}`}>
                           {row.score}
                         </span>
                       </td>
@@ -561,31 +561,31 @@ export default function Analytics() {
           </div>
 
           {/* Published Videos List */}
-          <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-4">
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-bold text-[#E4D6B5] flex items-center gap-2">
+              <div className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
                 <Video className="w-4 h-4 text-[#E62117]" />
                 <span>Ostatnio Opublikowane Shorty na YouTube ({ytData.videos.length})</span>
               </div>
-              <span className="text-xs text-[#8B8FA8]">Dane pobrane na żywo z YouTube Data API</span>
+              <span className="text-xs text-[#A0A7B1]">Dane pobrane na żywo z YouTube Data API</span>
             </div>
 
             <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
               {ytData.videos.map((vid, idx) => (
                 <div
                   key={vid.video_id || idx}
-                  className="p-3.5 rounded-xl bg-[#0A0E1A] border border-[#1E2438] flex items-center justify-between hover:border-[#C89B3C]/40 transition-colors gap-4"
+                  className="p-3.5 fk-cut-sm bg-[#050505] border border-[#272A2F] flex items-center justify-between hover:border-[#C8FF3A]/40 transition-colors gap-4"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xs font-mono font-bold text-[#50546A] w-6">
+                    <span className="text-xs font-mono font-bold text-[#686E78] w-6">
                       #{String(idx + 1).padStart(2, '0')}
                     </span>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-[#E4D6B5] truncate max-w-xl">
+                      <div className="text-xs font-bold text-[#FFFFFF] truncate max-w-xl">
                         {vid.title}
                       </div>
-                      <div className="text-[11px] text-[#8B8FA8] flex items-center gap-2 mt-0.5">
-                        <span className="text-[#C89B3C] font-semibold">{vid.action_type ? vid.action_type.toUpperCase() : 'PENTAKILL'}</span>
+                      <div className="text-[11px] text-[#A0A7B1] flex items-center gap-2 mt-0.5">
+                        <span className="text-[#C8FF3A] font-semibold">{vid.action_type ? vid.action_type.toUpperCase() : 'PENTAKILL'}</span>
                         <span>•</span>
                         <span>{vid.published_at || vid.timestamp ? new Date(vid.published_at || vid.timestamp).toLocaleDateString() : 'Bieżący'}</span>
                       </div>
@@ -594,13 +594,13 @@ export default function Analytics() {
 
                   <div className="flex items-center gap-4 flex-shrink-0">
                     <div className="text-right">
-                      <div className="text-xs font-mono font-bold text-[#C89B3C]">
+                      <div className="text-xs font-mono font-bold text-[#C8FF3A]">
                         {vid.views ? `${vid.views.toLocaleString()} views` : '0 views'}
                       </div>
-                      <div className="text-[10px] text-[#8B8FA8] flex items-center justify-end gap-1.5 mt-0.5">
+                      <div className="text-[10px] text-[#A0A7B1] flex items-center justify-end gap-1.5 mt-0.5">
                         <span className="text-[#55E88D]">👍 {vid.likes || 0}</span>
                         <span>•</span>
-                        <span className="text-[#4FA3F7]">💬 {vid.comments || 0}</span>
+                        <span className="text-[#5CAEFF]">💬 {vid.comments || 0}</span>
                       </div>
                     </div>
 
@@ -609,7 +609,7 @@ export default function Analytics() {
                         href={vid.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="p-2 rounded-lg bg-[#1E2438] hover:bg-[#C89B3C] text-[#8B8FA8] hover:text-[#0A0E1A] transition-colors"
+                        className="p-2 rounded-lg bg-[#272A2F] hover:bg-[#C8FF3A] text-[#A0A7B1] hover:text-[#050505] transition-colors"
                         title="Otwórz Short na YouTube"
                       >
                         <ExternalLink className="w-4 h-4" />
@@ -629,9 +629,9 @@ export default function Analytics() {
       {activePlatform === 'instagram' && (
         <div className="space-y-6">
           {/* Profile Bar */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-[#121624] via-[#1E1428] to-[#121624] border border-[#E1306C]/30 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div className="p-4 fk-cut bg-[#0E0F11] border border-[#E1306C]/30 flex flex-wrap items-center justify-between gap-4 text-xs">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#FD1D1D] via-[#E1306C] to-[#833AB4] flex items-center justify-center font-black text-white text-sm shadow-md shadow-[#E1306C]/30">
+              <div className="w-10 h-10 fk-cut-sm bg-gradient-to-tr from-[#FD1D1D] via-[#E1306C] to-[#833AB4] flex items-center justify-center font-black text-white text-sm">
                 IG
               </div>
               <div>
@@ -641,11 +641,11 @@ export default function Analytics() {
                     Professional Creator
                   </span>
                 </div>
-                <div className="text-[11px] text-[#8B8FA8]">Instagram Graph API v21.0 • Reels Insights</div>
+                <div className="text-[11px] text-[#A0A7B1]">Instagram Graph API v21.0 • Reels Insights</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-6 text-[#8B8FA8]">
+            <div className="flex items-center gap-6 text-[#A0A7B1]">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-[#E1306C]" />
                 <span>Obserwujący: <strong className="text-white font-mono">{igData?.profile?.followers_count ?? 0}</strong></span>
@@ -663,8 +663,8 @@ export default function Analytics() {
 
           {/* KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Wyświetlenia / Plays</span>
                 <Play className="w-4 h-4 text-[#E1306C]" />
               </div>
@@ -679,8 +679,8 @@ export default function Analytics() {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Zasięg Odbiorców (Reach)</span>
                 <Users className="w-4 h-4 text-[#55E88D]" />
               </div>
@@ -688,12 +688,12 @@ export default function Analytics() {
                 <div className="text-2xl font-black text-white">
                   {igData?.total_reach ? `${igData.total_reach.toLocaleString()} kont` : '149 kont'}
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Unikalni widzowie w algorytmie Reels</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Unikalni widzowie w algorytmie Reels</div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Interakcje z Rolkami</span>
                 <Sparkles className="w-4 h-4 text-[#F77737]" />
               </div>
@@ -701,34 +701,34 @@ export default function Analytics() {
                 <div className="text-2xl font-black text-white">
                   {igData?.total_interactions ?? 1} interakcji
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">
+                <div className="text-xs text-[#A0A7B1] mt-1">
                   👍 {igData?.total_likes ?? 1} polubień • 💬 {igData?.total_comments ?? 0} komentarzy
                 </div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Współczynnik Zaangażowania</span>
-                <Activity className="w-4 h-4 text-[#C89B3C]" />
+                <Activity className="w-4 h-4 text-[#C8FF3A]" />
               </div>
               <div className="mt-3">
-                <div className="text-2xl font-black text-[#C89B3C]">
+                <div className="text-2xl font-black text-[#C8FF3A]">
                   {igData?.total_views ? `${((igData.total_interactions / igData.total_views) * 100).toFixed(1)}%` : '0.4%'}
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Engagement Rate (Interakcje / Zasięg)</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Engagement Rate (Interakcje / Zasięg)</div>
               </div>
             </div>
           </div>
 
           {/* Published Reels Table */}
-          <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-4">
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-bold text-[#E4D6B5] flex items-center gap-2">
+              <div className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
                 <Play className="w-4 h-4 text-[#E1306C]" />
                 <span>Opublikowane Rolki na Instagramie ({igData?.reels?.length ?? 1})</span>
               </div>
-              <span className="text-xs text-[#8B8FA8]">Pobrane z Instagram Graph API Insights</span>
+              <span className="text-xs text-[#A0A7B1]">Pobrane z Instagram Graph API Insights</span>
             </div>
 
             <div className="space-y-2">
@@ -748,17 +748,17 @@ export default function Analytics() {
               ]).map((reel: any, idx: number) => (
                 <div
                   key={reel.id || idx}
-                  className="p-4 rounded-xl bg-[#0A0E1A] border border-[#1E2438] flex items-center justify-between hover:border-[#E1306C]/40 transition-colors gap-4"
+                  className="p-4 fk-cut-sm bg-[#050505] border border-[#272A2F] flex items-center justify-between hover:border-[#E1306C]/40 transition-colors gap-4"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xs font-mono font-bold text-[#50546A] w-6">
+                    <span className="text-xs font-mono font-bold text-[#686E78] w-6">
                       #{String(idx + 1).padStart(2, '0')}
                     </span>
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-white truncate max-w-xl">
                         {reel.title}
                       </div>
-                      <div className="text-[11px] text-[#8B8FA8] flex items-center gap-2 mt-0.5">
+                      <div className="text-[11px] text-[#A0A7B1] flex items-center gap-2 mt-0.5">
                         <span className="text-[#E1306C] font-semibold">REEL</span>
                         <span>•</span>
                         <span>{reel.timestamp ? new Date(reel.timestamp).toLocaleDateString() : 'Bieżący'}</span>
@@ -773,12 +773,12 @@ export default function Analytics() {
                       <div className="text-xs font-mono font-bold text-[#E1306C]">
                         {reel.views ? `${reel.views.toLocaleString()} views` : '244 views'}
                       </div>
-                      <div className="text-[10px] text-[#8B8FA8] flex items-center justify-end gap-2 mt-0.5">
+                      <div className="text-[10px] text-[#A0A7B1] flex items-center justify-end gap-2 mt-0.5">
                         <span className="text-[#55E88D]">👍 {reel.likes || 1}</span>
                         <span>•</span>
-                        <span className="text-[#4FA3F7]">💬 {reel.comments || 0}</span>
+                        <span className="text-[#5CAEFF]">💬 {reel.comments || 0}</span>
                         <span>•</span>
-                        <span className="text-[#E5C269]">🔖 {reel.saved || 0}</span>
+                        <span className="text-[#C8FF3A]">🔖 {reel.saved || 0}</span>
                       </div>
                     </div>
 
@@ -787,7 +787,7 @@ export default function Analytics() {
                         href={reel.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="p-2 rounded-lg bg-[#1E2438] hover:bg-[#E1306C] text-[#8B8FA8] hover:text-white transition-colors"
+                        className="p-2 rounded-lg bg-[#272A2F] hover:bg-[#E1306C] text-[#A0A7B1] hover:text-white transition-colors"
                         title="Otwórz Rolkę na Instagramie"
                       >
                         <ExternalLink className="w-4 h-4" />
@@ -807,9 +807,9 @@ export default function Analytics() {
       {activePlatform === 'facebook' && (
         <div className="space-y-6">
           {/* Fanpage Overview Bar */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-[#121624] via-[#101C30] to-[#121624] border border-[#1877F2]/30 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div className="p-4 fk-cut bg-[#0E0F11] border border-[#1877F2]/30 flex flex-wrap items-center justify-between gap-4 text-xs">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#1877F2] flex items-center justify-center font-black text-white text-sm shadow-md shadow-[#1877F2]/30">
+              <div className="w-10 h-10 fk-cut-sm bg-[#1877F2] flex items-center justify-center font-black text-white text-sm">
                 FB
               </div>
               <div>
@@ -819,11 +819,11 @@ export default function Analytics() {
                     Oficjalna Strona Meta
                   </span>
                 </div>
-                <div className="text-[11px] text-[#8B8FA8]">Page ID: {fbData?.page?.id || '1398423656686108'} • Facebook Graph API v21.0</div>
+                <div className="text-[11px] text-[#A0A7B1]">Page ID: {fbData?.page?.id || '1398423656686108'} • Facebook Graph API v21.0</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-6 text-[#8B8FA8]">
+            <div className="flex items-center gap-6 text-[#A0A7B1]">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-[#1877F2]" />
                 <span>Obserwujący: <strong className="text-white font-mono">{fbData?.page?.followers_count ?? 0}</strong></span>
@@ -833,7 +833,7 @@ export default function Analytics() {
                 <span>Łączne wyświetlenia: <strong className="text-white font-mono">{fbData?.total_views ?? 29}</strong></span>
               </div>
               <div className="flex items-center gap-2">
-                <Video className="w-4 h-4 text-[#4FA3F7]" />
+                <Video className="w-4 h-4 text-[#5CAEFF]" />
                 <span>Wszystkie Wideo: <strong className="text-white font-mono">{fbData?.count ?? 2}</strong></span>
               </div>
             </div>
@@ -841,8 +841,8 @@ export default function Analytics() {
 
           {/* KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Odtworzenia Wideo / Views</span>
                 <Play className="w-4 h-4 text-[#1877F2]" />
               </div>
@@ -857,8 +857,8 @@ export default function Analytics() {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Reakcje Widzów</span>
                 <ThumbsUp className="w-4 h-4 text-[#55E88D]" />
               </div>
@@ -866,25 +866,25 @@ export default function Analytics() {
                 <div className="text-2xl font-black text-white">
                   {fbData?.total_reactions ?? 0} 👍
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Polubienia i reakcje na fanpage'u</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Polubienia i reakcje na fanpage'u</div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Dyskusje i Komentarze</span>
-                <MessageSquare className="w-4 h-4 text-[#4FA3F7]" />
+                <MessageSquare className="w-4 h-4 text-[#5CAEFF]" />
               </div>
               <div className="mt-3">
                 <div className="text-2xl font-black text-white">
                   {fbData?.total_comments ?? 0} 💬
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Komentarze pod rolkami</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Komentarze pod rolkami</div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Status Zaplanowanych</span>
                 <CheckCircle className="w-4 h-4 text-[#2ECC71]" />
               </div>
@@ -892,19 +892,19 @@ export default function Analytics() {
                 <div className="text-2xl font-black text-[#2ECC71]">
                   1 w chmurze
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Najbliższa publikacja: jutro 08:30</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Najbliższa publikacja: sloty 11:00 &amp; 21:30 CET</div>
               </div>
             </div>
           </div>
 
           {/* Published Videos List */}
-          <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-4">
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-bold text-[#E4D6B5] flex items-center gap-2">
+              <div className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
                 <Video className="w-4 h-4 text-[#1877F2]" />
                 <span>Opublikowane Wideo na Facebooku ({fbData?.videos?.length ?? 2})</span>
               </div>
-              <span className="text-xs text-[#8B8FA8]">Pobrane z Facebook Graph API</span>
+              <span className="text-xs text-[#A0A7B1]">Pobrane z Facebook Graph API</span>
             </div>
 
             <div className="space-y-2">
@@ -930,17 +930,17 @@ export default function Analytics() {
               ]).map((vid: any, idx: number) => (
                 <div
                   key={vid.id || idx}
-                  className="p-4 rounded-xl bg-[#0A0E1A] border border-[#1E2438] flex items-center justify-between hover:border-[#1877F2]/40 transition-colors gap-4"
+                  className="p-4 fk-cut-sm bg-[#050505] border border-[#272A2F] flex items-center justify-between hover:border-[#1877F2]/40 transition-colors gap-4"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xs font-mono font-bold text-[#50546A] w-6">
+                    <span className="text-xs font-mono font-bold text-[#686E78] w-6">
                       #{String(idx + 1).padStart(2, '0')}
                     </span>
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-white truncate max-w-xl">
                         {vid.title}
                       </div>
-                      <div className="text-[11px] text-[#8B8FA8] flex items-center gap-2 mt-0.5">
+                      <div className="text-[11px] text-[#A0A7B1] flex items-center gap-2 mt-0.5">
                         <span className="text-[#1877F2] font-semibold">FB REEL</span>
                         <span>•</span>
                         <span>{vid.timestamp ? new Date(vid.timestamp).toLocaleDateString() : 'Bieżący'}</span>
@@ -953,10 +953,10 @@ export default function Analytics() {
                       <div className="text-xs font-mono font-bold text-[#1877F2]">
                         {vid.views ? `${vid.views.toLocaleString()} views` : '0 views'}
                       </div>
-                      <div className="text-[10px] text-[#8B8FA8] flex items-center justify-end gap-2 mt-0.5">
+                      <div className="text-[10px] text-[#A0A7B1] flex items-center justify-end gap-2 mt-0.5">
                         <span className="text-[#55E88D]">👍 {vid.reactions || 0}</span>
                         <span>•</span>
-                        <span className="text-[#4FA3F7]">💬 {vid.comments || 0}</span>
+                        <span className="text-[#5CAEFF]">💬 {vid.comments || 0}</span>
                       </div>
                     </div>
 
@@ -965,7 +965,7 @@ export default function Analytics() {
                         href={vid.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="p-2 rounded-lg bg-[#1E2438] hover:bg-[#1877F2] text-[#8B8FA8] hover:text-white transition-colors"
+                        className="p-2 rounded-lg bg-[#272A2F] hover:bg-[#1877F2] text-[#A0A7B1] hover:text-white transition-colors"
                         title="Otwórz Rolkę na Facebooku"
                       >
                         <ExternalLink className="w-4 h-4" />
@@ -985,9 +985,9 @@ export default function Analytics() {
       {activePlatform === 'tiktok' && (
         <div className="space-y-6">
           {/* Profile Bar */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-[#121624] via-[#0E2028] to-[#121624] border border-[#00F2FE]/30 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div className="p-4 fk-cut bg-[#0E0F11] border border-[#00F2FE]/30 flex flex-wrap items-center justify-between gap-4 text-xs">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-black border border-[#00F2FE]/50 flex items-center justify-center font-black text-[#00F2FE] text-sm shadow-md shadow-[#00F2FE]/30">
+              <div className="w-10 h-10 fk-cut-sm bg-black border border-[#00F2FE]/50 flex items-center justify-center font-black text-[#00F2FE] text-sm">
                 TT
               </div>
               <div>
@@ -997,13 +997,13 @@ export default function Analytics() {
                     {ttData?.profile?.mode || 'Live Production'}
                   </span>
                 </div>
-                <div className="text-[11px] text-[#8B8FA8]">
+                <div className="text-[11px] text-[#A0A7B1]">
                   Content Posting API v2 • Token odświeżania ważny: <strong>{ttData?.profile?.refresh_expires_in_days ?? 358} dni</strong>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-6 text-[#8B8FA8]">
+            <div className="flex items-center gap-6 text-[#A0A7B1]">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-[#FE2C55]" />
                 <span>Obserwujący: <strong className="text-white font-mono">{ttData?.profile?.followers_count ?? 6}</strong></span>
@@ -1021,8 +1021,8 @@ export default function Analytics() {
 
           {/* KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Wyświetlenia Wideo (Views)</span>
                 <Play className="w-4 h-4 text-[#00F2FE]" />
               </div>
@@ -1037,8 +1037,8 @@ export default function Analytics() {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Polubienia i Serduszka</span>
                 <ThumbsUp className="w-4 h-4 text-[#FE2C55]" />
               </div>
@@ -1046,25 +1046,25 @@ export default function Analytics() {
                 <div className="text-2xl font-black text-white">
                   {ttData?.profile?.heart_count ?? ttData?.total_likes ?? 193} ❤️
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Łącznie {ttData?.total_likes ?? 69} 👍 z nowych filmów</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Łącznie {ttData?.total_likes ?? 69} 👍 z nowych filmów</div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Komentarze i Interakcje</span>
-                <MessageSquare className="w-4 h-4 text-[#4FA3F7]" />
+                <MessageSquare className="w-4 h-4 text-[#5CAEFF]" />
               </div>
               <div className="mt-3">
                 <div className="text-2xl font-black text-white">
                   {ttData?.total_comments ?? 5} 💬
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Dyskusje pod opublikowanymi shortami</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Dyskusje pod opublikowanymi shortami</div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Obserwujący & Status</span>
                 <Users className="w-4 h-4 text-[#2ECC71]" />
               </div>
@@ -1072,7 +1072,7 @@ export default function Analytics() {
                 <div className="text-2xl font-black text-[#2ECC71]">
                   {ttData?.profile?.followers_count ?? 6} obserwujących
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">
+                <div className="text-xs text-[#A0A7B1] mt-1">
                   <a
                     href="https://www.tiktok.com/@dwannellenga"
                     target="_blank"
@@ -1088,30 +1088,30 @@ export default function Analytics() {
           </div>
 
           {/* Published Videos List */}
-          <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-4">
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-bold text-[#E4D6B5] flex items-center gap-2">
+              <div className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
                 <Video className="w-4 h-4 text-[#00F2FE]" />
                 <span>Opublikowane Wideo na TikTok ({ttData?.videos?.length ?? 5})</span>
               </div>
-              <span className="text-xs text-[#8B8FA8]">Pobrane na żywo z TikTok Content Posting API</span>
+              <span className="text-xs text-[#A0A7B1]">Pobrane na żywo z TikTok Content Posting API</span>
             </div>
 
             <div className="space-y-2">
               {(ttData?.videos || []).map((vid: any, idx: number) => (
                 <div
                   key={vid.id || vid.publish_id || idx}
-                  className="p-3.5 rounded-xl bg-[#0A0E1A] border border-[#1E2438] flex items-center justify-between hover:border-[#00F2FE]/40 transition-colors gap-4"
+                  className="p-3.5 fk-cut-sm bg-[#050505] border border-[#272A2F] flex items-center justify-between hover:border-[#00F2FE]/40 transition-colors gap-4"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xs font-mono font-bold text-[#50546A] w-6">
+                    <span className="text-xs font-mono font-bold text-[#686E78] w-6">
                       #{String(idx + 1).padStart(2, '0')}
                     </span>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-[#E4D6B5] truncate max-w-xl">
+                      <div className="text-xs font-bold text-[#FFFFFF] truncate max-w-xl">
                         {vid.title || 'TikTok Short'}
                       </div>
-                      <div className="text-[11px] text-[#8B8FA8] flex items-center gap-2 mt-0.5">
+                      <div className="text-[11px] text-[#A0A7B1] flex items-center gap-2 mt-0.5">
                         <span className="text-[#00F2FE] font-semibold">TIKTOK</span>
                         <span>•</span>
                         <span>{vid.timestamp ? new Date(vid.timestamp).toLocaleDateString() : 'Bieżący'}</span>
@@ -1124,10 +1124,10 @@ export default function Analytics() {
                       <div className="text-xs font-mono font-bold text-[#00F2FE]">
                         {vid.views ? `${vid.views.toLocaleString()} views` : '0 views'}
                       </div>
-                      <div className="text-[10px] text-[#8B8FA8] flex items-center justify-end gap-2 mt-0.5">
+                      <div className="text-[10px] text-[#A0A7B1] flex items-center justify-end gap-2 mt-0.5">
                         <span className="text-[#55E88D]">👍 {vid.likes || 0}</span>
                         <span>•</span>
-                        <span className="text-[#4FA3F7]">💬 {vid.comments || 0}</span>
+                        <span className="text-[#5CAEFF]">💬 {vid.comments || 0}</span>
                       </div>
                     </div>
 
@@ -1136,7 +1136,7 @@ export default function Analytics() {
                         href={vid.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="p-2 rounded-lg bg-[#1E2438] hover:bg-[#00F2FE] text-[#8B8FA8] hover:text-black transition-colors"
+                        className="p-2 rounded-lg bg-[#272A2F] hover:bg-[#00F2FE] text-[#A0A7B1] hover:text-black transition-colors"
                         title="Otwórz film na TikTok"
                       >
                         <ExternalLink className="w-4 h-4" />
@@ -1156,29 +1156,29 @@ export default function Analytics() {
       {activePlatform === 'omni' && (
         <div className="space-y-6">
           {/* Ecosystem Bar */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-[#121624] via-[#1E1C24] to-[#121624] border border-[#C89B3C]/30 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div className="p-4 fk-cut bg-[#0E0F11] border border-[#C8FF3A]/30 flex flex-wrap items-center justify-between gap-4 text-xs">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#C89B3C] via-[#E5C269] to-[#785A28] flex items-center justify-center font-black text-[#0A0E1A] text-sm shadow-md shadow-[#C89B3C]/30">
+              <div className="w-10 h-10 fk-cut-sm bg-[#C8FF3A] flex items-center justify-center font-black text-[#050505] text-sm">
                 <Globe className="w-5 h-5" />
               </div>
               <div>
                 <div className="font-bold text-white text-sm flex items-center gap-2">
                   <span>Ekosystem Społecznościowy — Dwannellenga</span>
-                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-[#C89B3C]/20 border border-[#C89B3C]/40 text-[#C89B3C] font-bold">
+                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-[#C8FF3A]/20 border border-[#C8FF3A]/40 text-[#C8FF3A] font-bold">
                     Omnichannel v2
                   </span>
                 </div>
-                <div className="text-[11px] text-[#8B8FA8]">Połączone sieci: YouTube Shorts • Instagram Reels • Facebook Reels • TikTok</div>
+                <div className="text-[11px] text-[#A0A7B1]">Połączone sieci: YouTube Shorts • Instagram Reels • Facebook Reels • TikTok</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-6 text-[#8B8FA8]">
+            <div className="flex items-center gap-6 text-[#A0A7B1]">
               <div className="flex items-center gap-2">
                 <Play className="w-4 h-4 text-[#55E88D]" />
                 <span>Łączne wyświetlenia ekosystemu: <strong className="text-white font-mono font-bold">{omniData?.grand_total_views?.toLocaleString() || '83 299+'}</strong></span>
               </div>
               <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#C89B3C]" />
+                <Sparkles className="w-4 h-4 text-[#C8FF3A]" />
                 <span>Całkowity Engagement: <strong className="text-white font-mono font-bold">{omniData?.grand_total_engagement?.toLocaleString() || '4 100+'}</strong></span>
               </div>
             </div>
@@ -1186,10 +1186,10 @@ export default function Analytics() {
 
           {/* Big KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Całkowity Zasięg / Views</span>
-                <Globe className="w-4 h-4 text-[#C89B3C]" />
+                <Globe className="w-4 h-4 text-[#C8FF3A]" />
               </div>
               <div className="mt-3">
                 <div className="text-2xl font-black text-white">
@@ -1201,8 +1201,8 @@ export default function Analytics() {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Łączny Engagement</span>
                 <ThumbsUp className="w-4 h-4 text-[#2ECC71]" />
               </div>
@@ -1210,48 +1210,48 @@ export default function Analytics() {
                 <div className="text-2xl font-black text-white">
                   {omniData?.grand_total_engagement?.toLocaleString() || '4 120'} reakcji
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Polubienia, komentarze, zapisania i udostępnienia</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Polubienia, komentarze, zapisania i udostępnienia</div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Opublikowane Treści</span>
-                <Video className="w-4 h-4 text-[#4FA3F7]" />
+                <Video className="w-4 h-4 text-[#5CAEFF]" />
               </div>
               <div className="mt-3">
                 <div className="text-2xl font-black text-white">
                   {omniData?.total_published_videos || 201} materiałów
                 </div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Shorts, Rolki IG, Wideo FB, TikTok</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Shorts, Rolki IG, Wideo FB, TikTok</div>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-lg flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold text-[#8B8FA8] uppercase tracking-wider">
+            <div className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold text-[#A0A7B1] uppercase tracking-wider">
                 <span>Lider Odbiorców</span>
                 <Award className="w-4 h-4 text-[#E62117]" />
               </div>
               <div className="mt-3">
                 <div className="text-2xl font-black text-[#E62117]">YouTube (99.7%)</div>
-                <div className="text-xs text-[#8B8FA8] mt-1">Najszybciej rosnący: Instagram Reels</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Najszybciej rosnący: Instagram Reels</div>
               </div>
             </div>
           </div>
 
           {/* Platform Share Bars */}
-          <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-5">
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-5">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-bold text-[#E4D6B5] flex items-center gap-2">
-                <Layers className="w-4 h-4 text-[#C89B3C]" />
+              <div className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
+                <Layers className="w-4 h-4 text-[#C8FF3A]" />
                 <span>Rozkład Widowni Według Platform (Cross-Platform Share)</span>
               </div>
-              <span className="text-xs text-[#8B8FA8]">Dane zagregowane na żywo</span>
+              <span className="text-xs text-[#A0A7B1]">Dane zagregowane na żywo</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* YouTube Card */}
-              <div className="p-4 rounded-xl bg-[#0A0E1A] border border-[#E62117]/30 space-y-2">
+              <div className="p-4 fk-cut-sm bg-[#050505] border border-[#E62117]/30 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-white flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-[#E62117]" />
@@ -1261,20 +1261,20 @@ export default function Analytics() {
                     {omniData?.platforms?.youtube?.share_pct || 99.7}%
                   </span>
                 </div>
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-[#17191C] h-2 rounded-full overflow-hidden">
                   <div
                     className="bg-[#E62117] h-full rounded-full transition-all duration-500"
                     style={{ width: `${Math.min(100, Math.max(5, omniData?.platforms?.youtube?.share_pct || 99.7))}%` }}
                   />
                 </div>
-                <div className="text-[11px] text-[#8B8FA8] flex justify-between">
+                <div className="text-[11px] text-[#A0A7B1] flex justify-between">
                   <span>Wyświetlenia:</span>
                   <strong className="text-white font-mono">{omniData?.platforms?.youtube?.views?.toLocaleString() || ytData.total_views.toLocaleString()}</strong>
                 </div>
               </div>
 
               {/* Instagram Card */}
-              <div className="p-4 rounded-xl bg-[#0A0E1A] border border-[#E1306C]/30 space-y-2">
+              <div className="p-4 fk-cut-sm bg-[#050505] border border-[#E1306C]/30 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-white flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-[#E1306C]" />
@@ -1284,20 +1284,20 @@ export default function Analytics() {
                     {omniData?.platforms?.instagram?.share_pct || 0.3}%
                   </span>
                 </div>
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-[#17191C] h-2 rounded-full overflow-hidden">
                   <div
                     className="bg-gradient-to-r from-[#FD1D1D] to-[#E1306C] h-full rounded-full transition-all duration-500"
                     style={{ width: `${Math.min(100, Math.max(8, omniData?.platforms?.instagram?.share_pct || 8))}%` }}
                   />
                 </div>
-                <div className="text-[11px] text-[#8B8FA8] flex justify-between">
+                <div className="text-[11px] text-[#A0A7B1] flex justify-between">
                   <span>Wyświetlenia:</span>
                   <strong className="text-white font-mono">{omniData?.platforms?.instagram?.views || 244}</strong>
                 </div>
               </div>
 
               {/* Facebook Card */}
-              <div className="p-4 rounded-xl bg-[#0A0E1A] border border-[#1877F2]/30 space-y-2">
+              <div className="p-4 fk-cut-sm bg-[#050505] border border-[#1877F2]/30 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-white flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-[#1877F2]" />
@@ -1307,20 +1307,20 @@ export default function Analytics() {
                     {omniData?.platforms?.facebook?.share_pct || 0.1}%
                   </span>
                 </div>
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-[#17191C] h-2 rounded-full overflow-hidden">
                   <div
                     className="bg-[#1877F2] h-full rounded-full transition-all duration-500"
                     style={{ width: `${Math.min(100, Math.max(5, omniData?.platforms?.facebook?.share_pct || 5))}%` }}
                   />
                 </div>
-                <div className="text-[11px] text-[#8B8FA8] flex justify-between">
+                <div className="text-[11px] text-[#A0A7B1] flex justify-between">
                   <span>Wyświetlenia:</span>
                   <strong className="text-white font-mono">{omniData?.platforms?.facebook?.views || 29}</strong>
                 </div>
               </div>
 
               {/* TikTok Card */}
-              <div className="p-4 rounded-xl bg-[#0A0E1A] border border-[#00F2FE]/30 space-y-2">
+              <div className="p-4 fk-cut-sm bg-[#050505] border border-[#00F2FE]/30 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-white flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-[#00F2FE]" />
@@ -1328,10 +1328,10 @@ export default function Analytics() {
                   </span>
                   <span className="font-mono text-[#00F2FE] font-bold">Direct Post</span>
                 </div>
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-[#17191C] h-2 rounded-full overflow-hidden">
                   <div className="bg-[#00F2FE] h-full rounded-full transition-all duration-500" style={{ width: '12%' }} />
                 </div>
-                <div className="text-[11px] text-[#8B8FA8] flex justify-between">
+                <div className="text-[11px] text-[#A0A7B1] flex justify-between">
                   <span>Stan:</span>
                   <strong className="text-white font-mono">Sandbox Dev</strong>
                 </div>
@@ -1340,13 +1340,13 @@ export default function Analytics() {
           </div>
 
           {/* Top Cross-Platform Videos */}
-          <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-4">
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-bold text-[#E4D6B5] flex items-center gap-2">
-                <Award className="w-4 h-4 text-[#C89B3C]" />
+              <div className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
+                <Award className="w-4 h-4 text-[#C8FF3A]" />
                 <span>Top Treści w Całym Ekosystemie (Cross-Platform Leaderboard)</span>
               </div>
-              <span className="text-xs text-[#8B8FA8]">Ranking według liczby wyświetleń</span>
+              <span className="text-xs text-[#A0A7B1]">Ranking według liczby wyświetleń</span>
             </div>
 
             <div className="space-y-2">
@@ -1358,17 +1358,17 @@ export default function Analytics() {
                 return (
                   <div
                     key={idx}
-                    className="p-3.5 rounded-xl bg-[#0A0E1A] border border-[#1E2438] flex items-center justify-between hover:border-[#C89B3C]/40 transition-colors gap-4"
+                    className="p-3.5 fk-cut-sm bg-[#050505] border border-[#272A2F] flex items-center justify-between hover:border-[#C8FF3A]/40 transition-colors gap-4"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-xs font-mono font-bold text-[#50546A] w-6">
+                      <span className="text-xs font-mono font-bold text-[#686E78] w-6">
                         #{String(idx + 1).padStart(2, '0')}
                       </span>
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-white truncate max-w-xl">
                           {v.title}
                         </div>
-                        <div className="text-[11px] text-[#8B8FA8] flex items-center gap-2 mt-0.5">
+                        <div className="text-[11px] text-[#A0A7B1] flex items-center gap-2 mt-0.5">
                           <span
                             className={`px-1.5 py-0.2 rounded font-bold text-[9px] ${
                               isYt
@@ -1388,13 +1388,13 @@ export default function Analytics() {
 
                     <div className="flex items-center gap-4 flex-shrink-0">
                       <div className="text-right">
-                        <div className="text-xs font-mono font-bold text-[#C89B3C]">
+                        <div className="text-xs font-mono font-bold text-[#C8FF3A]">
                           {v.views ? `${v.views.toLocaleString()} views` : '0 views'}
                         </div>
-                        <div className="text-[10px] text-[#8B8FA8] flex items-center justify-end gap-1.5 mt-0.5">
+                        <div className="text-[10px] text-[#A0A7B1] flex items-center justify-end gap-1.5 mt-0.5">
                           <span className="text-[#55E88D]">👍 {v.likes || 0}</span>
                           <span>•</span>
-                          <span className="text-[#4FA3F7]">💬 {v.comments || 0}</span>
+                          <span className="text-[#5CAEFF]">💬 {v.comments || 0}</span>
                         </div>
                       </div>
 
@@ -1403,7 +1403,7 @@ export default function Analytics() {
                           href={v.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="p-2 rounded-lg bg-[#1E2438] hover:bg-[#C89B3C] text-[#8B8FA8] hover:text-[#0A0E1A] transition-colors"
+                          className="p-2 rounded-lg bg-[#272A2F] hover:bg-[#C8FF3A] text-[#A0A7B1] hover:text-[#050505] transition-colors"
                           title="Otwórz na platformie"
                         >
                           <ExternalLink className="w-4 h-4" />

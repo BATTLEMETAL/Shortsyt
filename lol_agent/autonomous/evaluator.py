@@ -46,11 +46,28 @@ except ImportError:
 
 KILL_WEIGHTS = {
     "PENTAKILL": 100.0,
-    "QUADRAKILL": 75.0,
-    "TRIPLE KILL": 50.0,
-    "DOUBLE KILL": 25.0,
+    "QUADRAKILL": 88.0,
+    "TRIPLE KILL": 74.0,
+    "DOUBLE KILL": 56.0,
     "KILL": 10.0,
 }
+
+
+def _player_hp_mask(frame: np.ndarray) -> np.ndarray:
+    """Zwraca maskę pikseli paska HP gracza (Standard Mode zielony LUB Colorblind złoty) poza górnym/dolnym HUD."""
+    h = frame.shape[0]
+    r = frame[:, :, 2]
+    g = frame[:, :, 1]
+    b = frame[:, :, 0]
+    ri = r.astype(np.int16)
+    gi = g.astype(np.int16)
+    bi = b.astype(np.int16)
+    gold_mask = (r > 160) & (g > 130) & (b < 110) & ((ri - bi) > 80)
+    green_mask = (g > 115) & (r < 110) & (b < 100) & ((gi - ri) > 35) & ((gi - bi) > 35)
+    hp_mask = gold_mask | green_mask
+    hp_mask[:int(h * 0.10), :] = 0
+    hp_mask[int(h * 0.82):, :] = 0
+    return hp_mask
 
 
 def _get_evaluator_cfg() -> dict:
@@ -66,12 +83,12 @@ def _get_evaluator_cfg() -> dict:
             return {
                 "base_kill_weights": {
                     "PENTAKILL": 100.0,
-                    "QUADRAKILL": 75.0,
-                    "TRIPLE KILL": 50.0,
-                    "DOUBLE KILL": 25.0,
-                    "SOLO BOLO": 95.0,
-                    "OUTPLAY": 80.0,
-                    "CLUTCH": 80.0,
+                    "QUADRAKILL": 88.0,
+                    "TRIPLE KILL": 74.0,
+                    "DOUBLE KILL": 56.0,
+                    "SOLO BOLO": 55.0,
+                    "OUTPLAY": 38.0,
+                    "CLUTCH": 65.0,
                     "KILL": 10.0,
                 },
                 # FIX: Pentakill i Quadrakill NIE są demoted — to najlepszy content kanału.
@@ -94,170 +111,190 @@ def evaluate_clip_quality(video_path: str, fast_mode: bool = False) -> dict:
         return {"error": f"File not found: {video_path}", "worthy": False, "score": 0}
 
     cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        return {"error": f"Cannot open video: {video_path}", "worthy": False, "score": 0}
-
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / fps if fps > 0 else 0.0
-
-    if duration < 5.0:
-        cap.release()
-        return {"error": "Clip too short (<5s)", "worthy": False, "score": 0, "tier": "REJECT"}
-
-    # Wczytaj konfigurację auto-tuningu ewaluatora
-    eval_cfg = _get_evaluator_cfg()
-    dynamic_kill_weights = eval_cfg.get("base_kill_weights", KILL_WEIGHTS)
-
-    # ── 1. OCR Kills Scan ──────────────────────────────────────────────────────
     try:
-        from lol_agent.lol_momentum_analyzer import _compute_kill_scores
-    except ImportError:
-        from lol_momentum_analyzer import _compute_kill_scores
-    scores_list, detected_kills = _compute_kill_scores(cap, fps, use_ocr=True)
+        if not cap.isOpened():
+            return {"error": f"Cannot open video: {video_path}", "worthy": False, "score": 0}
 
-    # ── 2. Kill Weight Score (35%) ─────────────────────────────────────────────
-    KILL_RANK = {
-        "PENTAKILL": 5,
-        "QUADRAKILL": 4,
-        "TRIPLE KILL": 3,
-        "DOUBLE KILL": 2,
-        "KILL": 1,
-    }
-    highest_kill = "NONE"
-    highest_rank = 0
-    if detected_kills:
-        for _, label in detected_kills:
-            lbl = label.upper()
-            rank = KILL_RANK.get(lbl, 0)
-            if rank > highest_rank:
-                highest_rank = rank
-                highest_kill = lbl
-            elif highest_rank == 0 and highest_kill == "NONE":
-                highest_kill = lbl
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps if fps > 0 else 0.0
 
-        kill_weight_score = float(dynamic_kill_weights.get(highest_kill, KILL_WEIGHTS.get(highest_kill, 10.0)))
-        if "PENTA" in highest_kill:
-            quadra_w = float(dynamic_kill_weights.get("QUADRAKILL", KILL_WEIGHTS.get("QUADRAKILL", 75.0)))
-            kill_weight_score = max(kill_weight_score, quadra_w, 75.0)
-        elif "QUADRA" in highest_kill:
-            triple_w = float(dynamic_kill_weights.get("TRIPLE KILL", KILL_WEIGHTS.get("TRIPLE KILL", 50.0)))
-            kill_weight_score = max(kill_weight_score, triple_w, 60.0)
+        if duration < 5.0:
+            return {"error": "Clip too short (<5s)", "worthy": False, "score": 0, "tier": "REJECT"}
 
-    # ── 3. Pacing Density Score (25%) ──────────────────────────────────────────
-    # Im szybciej fragi padają po sobie, tym większa dynamika dla widza
-    pacing_score = 0.0
-    pacing_delta = 0.0
-    if len(detected_kills) >= 2:
-        pacing_delta = detected_kills[-1][0] - detected_kills[0][0]
-        if pacing_delta <= 4.5:
-            pacing_score = 100.0   # Błyskawiczny reset (np. Katarina Shunpo combo)
-        elif pacing_delta <= 7.5:
-            pacing_score = 85.0    # Bardzo dynamiczna walka
-        elif pacing_delta <= 12.0:
-            pacing_score = 65.0    # Typowy teamfight
-        elif pacing_delta <= 18.0:
-            pacing_score = 40.0    # Rozciągnięty pościg
+        # Wczytaj konfigurację auto-tuningu ewaluatora
+        eval_cfg = _get_evaluator_cfg()
+        dynamic_kill_weights = eval_cfg.get("base_kill_weights", KILL_WEIGHTS)
+
+        # ── 1. OCR Kills Scan (główne źródło: lol_frag_detector, fallback: _compute_kill_scores) ─
+        detected_kills = []
+        frag_res = None
+        try:
+            try:
+                from lol_agent.lol_frag_detector import analyze_clip_frags
+            except ImportError:
+                from lol_frag_detector import analyze_clip_frags
+            frag_res = analyze_clip_frags(video_path, sample_fps=1.0)
+            detected_kills = [
+                (float(k.get("timestamp", 0.0)), str(k.get("label", "KILL")))
+                for k in (frag_res.kills or [])
+            ]
+        except Exception:
+            frag_res = None
+
+        if frag_res is None:
+            try:
+                from lol_agent.lol_momentum_analyzer import _compute_kill_scores
+            except ImportError:
+                from lol_momentum_analyzer import _compute_kill_scores
+            _, detected_kills = _compute_kill_scores(cap, fps, use_ocr=True)
+
+        # ── 2. Kill Weight Score (35%) ─────────────────────────────────────────────
+        KILL_RANK = {
+            "PENTAKILL": 5,
+            "QUADRAKILL": 4,
+            "TRIPLE KILL": 3,
+            "DOUBLE KILL": 2,
+            "KILL": 1,
+        }
+        frag_to_label = {
+            "pentakill": "PENTAKILL",
+            "quadrakill": "QUADRAKILL",
+            "triple": "TRIPLE KILL",
+            "double": "DOUBLE KILL",
+            "solo_bolo": "SOLO BOLO",
+            "clutch": "CLUTCH",
+            "outplay": "OUTPLAY",
+        }
+        highest_kill = "NONE"
+        highest_rank = 0
+        if detected_kills:
+            for _, label in detected_kills:
+                lbl = label.upper()
+                rank = KILL_RANK.get(lbl, 0)
+                if rank > highest_rank:
+                    highest_rank = rank
+                    highest_kill = lbl
+                elif highest_rank == 0 and highest_kill == "NONE":
+                    highest_kill = lbl
+        if frag_res is not None and frag_res.detected_frag_type:
+            mapped_lbl = frag_to_label.get(frag_res.detected_frag_type.lower(), "")
+            if mapped_lbl and KILL_RANK.get(mapped_lbl, 0) > highest_rank:
+                highest_rank = KILL_RANK[mapped_lbl]
+                highest_kill = mapped_lbl
+            elif mapped_lbl and highest_kill == "NONE":
+                highest_kill = mapped_lbl
+
+        kill_weight_score = 0.0
+        if highest_kill != "NONE":
+            kill_weight_score = float(dynamic_kill_weights.get(highest_kill, KILL_WEIGHTS.get(highest_kill, 10.0)))
+            if "PENTA" in highest_kill:
+                kill_weight_score = max(kill_weight_score, KILL_WEIGHTS["PENTAKILL"])
+            elif "QUADRA" in highest_kill:
+                kill_weight_score = max(kill_weight_score, KILL_WEIGHTS["QUADRAKILL"])
+            elif "TRIPLE" in highest_kill:
+                kill_weight_score = max(kill_weight_score, KILL_WEIGHTS["TRIPLE KILL"])
+            elif "DOUBLE" in highest_kill:
+                kill_weight_score = max(kill_weight_score, KILL_WEIGHTS["DOUBLE KILL"])
+
+        # ── 3. Pacing Density Score (25%) ──────────────────────────────────────────
+        # Im szybciej fragi padają po sobie, tym większa dynamika dla widza
+        pacing_score = 0.0
+        pacing_delta = 0.0
+        if len(detected_kills) >= 2:
+            pacing_delta = detected_kills[-1][0] - detected_kills[0][0]
+            if pacing_delta <= 4.5:
+                pacing_score = 100.0   # Błyskawiczny reset (np. Katarina Shunpo combo)
+            elif pacing_delta <= 7.5:
+                pacing_score = 85.0    # Bardzo dynamiczna walka
+            elif pacing_delta <= 12.0:
+                pacing_score = 65.0    # Typowy teamfight
+            elif pacing_delta <= 18.0:
+                pacing_score = 40.0    # Rozciągnięty pościg
+            else:
+                pacing_score = 15.0    # Zbyt wolne fragi
+        elif len(detected_kills) == 1:
+            pacing_score = 40.0
         else:
-            pacing_score = 15.0    # Zbyt wolne fragi
-    elif len(detected_kills) == 1:
-        pacing_score = 40.0
-    else:
-        pacing_score = 10.0
+            pacing_score = 10.0
 
-    # ── 4. Clutch HP Factor (20%) ──────────────────────────────────────────────
-    # Sprawdza czy gracz był bliski śmierci (żółty pasek HP) w trakcie walki
-    clutch_score = 50.0   # domyślnie neutralne 50 pkt
-    is_clutch = False
-    lowest_hp_ratio = 1.0
-    player_died = False
-
-    try:
-        # Próbkuj klatki wokół pierwszego killa
-        sample_start_t = max(0.0, (detected_kills[0][0] - 3.0) if detected_kills else (duration * 0.2))
-        sample_end_t   = min(duration, (detected_kills[-1][0] + 1.0) if detected_kills else (duration * 0.8))
-        
-        start_f = int(sample_start_t * fps)
-        end_f   = int(sample_end_t * fps)
-        step_f  = max(1, int(fps * 0.4))  # co ~0.4s
-
-        hp_widths = []
-        for f_idx in range(start_f, end_f, step_f):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                break
-            
-            # Wytnij żółty pasek HP gracza
-            h, w = frame.shape[:2]
-            # Maska żółtego paska gracza: R>160, G>130, B<110
-            r, g, b = frame[:, :, 2], frame[:, :, 1], frame[:, :, 0]
-            yellow_mask = (r > 160) & (g > 130) & (b < 110) & ((r.astype(int) - b.astype(int)) > 80)
-            
-            # Wyklucz górny HUD i minimapę
-            yellow_mask[:int(h * 0.10), :] = 0
-            yellow_mask[int(h * 0.82):, :] = 0
-            
-            non_zeros = np.count_nonzero(yellow_mask)
-            if non_zeros > 10:
-                hp_widths.append(non_zeros)
-
-        # Check if player is alive at the end of the clip (aftermath + trailing frames)
+        # ── 4. Clutch HP Factor (20%) ──────────────────────────────────────────────
+        # Sprawdza czy gracz był bliski śmierci (żółty pasek HP) w trakcie walki
+        clutch_score = 50.0   # domyślnie neutralne 50 pkt
+        is_clutch = False
+        lowest_hp_ratio = 1.0
         player_died = False
-        
-        # Check trailing frames (last 2.5s of clip)
-        trail_start_t = max(0.0, duration - 2.5)
-        trail_f_indices = [int(t * fps) for t in np.linspace(trail_start_t, duration - 0.2, 5)]
-        
-        trailing_hp_counts = []
-        trailing_saturations = []
-        
-        for f_idx in trail_f_indices:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
-            ret_t, frame_t = cap.read()
-            if ret_t and frame_t is not None:
-                h_t, w_t = frame_t.shape[:2]
-                r_t, g_t, b_t = frame_t[:, :, 2], frame_t[:, :, 1], frame_t[:, :, 0]
-                
-                # HP bar check
-                y_mask_t = (r_t > 160) & (g_t > 130) & (b_t < 110) & ((r_t.astype(int) - b_t.astype(int)) > 80)
-                y_mask_t[:int(h_t * 0.10), :] = 0
-                y_mask_t[int(h_t * 0.82):, :] = 0
-                trailing_hp_counts.append(np.count_nonzero(y_mask_t))
-                
-                # Gray screen check (center gameplay area saturation)
-                roi_center = frame_t[int(h_t * 0.2):int(h_t * 0.8), int(w_t * 0.2):int(w_t * 0.8)]
-                hsv_roi = cv2.cvtColor(roi_center, cv2.COLOR_BGR2HSV)
-                mean_sat = float(np.mean(hsv_roi[:, :, 1]))
-                trailing_saturations.append(mean_sat)
 
-        # Player is dead if:
-        # 1. Zero player HP detected in trailing frames, OR
-        # 2. Trailing screen saturation drops < 38 (monochrome gray death screen)
-        if trailing_hp_counts and max(trailing_hp_counts) < 6:
-            player_died = True
-        elif trailing_saturations and min(trailing_saturations) < 38.0:
-            player_died = True
+        try:
+            # Próbkuj klatki wokół pierwszego killa
+            sample_start_t = max(0.0, (detected_kills[0][0] - 3.0) if detected_kills else (duration * 0.2))
+            sample_end_t   = min(duration, (detected_kills[-1][0] + 1.0) if detected_kills else (duration * 0.8))
 
-        if hp_widths and not player_died:
-            max_hp_px = max(hp_widths)
-            min_hp_px = min(hp_widths)
-            if max_hp_px > 30:
-                lowest_hp_ratio = min_hp_px / float(max_hp_px)
-                if lowest_hp_ratio < 0.35:
-                    clutch_score = 100.0   # Przeżycie na <35% HP = MEGA CLUTCH!
-                    is_clutch = True
-                elif lowest_hp_ratio < 0.60:
-                    clutch_score = 80.0
-                    is_clutch = True
-                elif lowest_hp_ratio > 0.90:
-                    clutch_score = 40.0    # 100% HP przez cały czas = mniejsze emocje
-        elif player_died:
-            clutch_score = 0.0
-    except Exception as e:
-        pass
+            start_f = int(sample_start_t * fps)
+            end_f   = int(sample_end_t * fps)
+            step_f  = max(1, int(fps * 0.4))  # co ~0.4s
 
-    cap.release()
+            hp_widths = []
+            for f_idx in range(start_f, end_f, step_f):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    break
+
+                non_zeros = np.count_nonzero(_player_hp_mask(frame))
+                if non_zeros > 10:
+                    hp_widths.append(non_zeros)
+
+            # Check if player is alive at the end of the clip (aftermath + trailing frames)
+            player_died = False
+
+            # Check trailing frames (last 2.5s of clip)
+            trail_start_t = max(0.0, duration - 2.5)
+            trail_f_indices = [int(t * fps) for t in np.linspace(trail_start_t, duration - 0.2, 5)]
+
+            trailing_hp_counts = []
+            trailing_saturations = []
+
+            for f_idx in trail_f_indices:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+                ret_t, frame_t = cap.read()
+                if ret_t and frame_t is not None:
+                    h_t, w_t = frame_t.shape[:2]
+                    trailing_hp_counts.append(np.count_nonzero(_player_hp_mask(frame_t)))
+
+                    # Gray screen check (center gameplay area saturation)
+                    roi_center = frame_t[int(h_t * 0.2):int(h_t * 0.8), int(w_t * 0.2):int(w_t * 0.8)]
+                    hsv_roi = cv2.cvtColor(roi_center, cv2.COLOR_BGR2HSV)
+                    mean_sat = float(np.mean(hsv_roi[:, :, 1]))
+                    trailing_saturations.append(mean_sat)
+
+            # Player is dead if:
+            # 1. Zero player HP detected in trailing frames, OR
+            # 2. Trailing screen saturation drops < 38 (monochrome gray death screen)
+            if trailing_hp_counts and max(trailing_hp_counts) < 6:
+                player_died = True
+            elif trailing_saturations and min(trailing_saturations) < 38.0:
+                player_died = True
+
+            if hp_widths and not player_died:
+                max_hp_px = max(hp_widths)
+                min_hp_px = min(hp_widths)
+                if max_hp_px > 30:
+                    lowest_hp_ratio = min_hp_px / float(max_hp_px)
+                    if lowest_hp_ratio < 0.35:
+                        clutch_score = 100.0   # Przeżycie na <35% HP = MEGA CLUTCH!
+                        is_clutch = True
+                    elif lowest_hp_ratio < 0.60:
+                        clutch_score = 80.0
+                        is_clutch = True
+                    elif lowest_hp_ratio > 0.90:
+                        clutch_score = 40.0    # 100% HP przez cały czas = mniejsze emocje
+            elif player_died:
+                clutch_score = 0.0
+        except Exception as e:
+            pass
+    finally:
+        cap.release()
 
     # ── 5. Motion & VFX Intensity (20%) ────────────────────────────────────────
     # Proporcjonalne do gęstości akcji i wykrytych killów
@@ -315,15 +352,15 @@ def evaluate_clip_quality(video_path: str, fast_mode: bool = False) -> dict:
             elif "DOUBLE" in highest_kill:
                 inferred_act = "double"
             elif num_kills == 1:
-                inferred_act = "solo_bolo" if (is_clutch or duration <= 25.0) else "outplay"
+                inferred_act = "solo_bolo" if (is_clutch or "SOLO BOLO" in highest_kill) else "outplay"
                 if inferred_act == "solo_bolo":
-                    solo_base = float(dynamic_kill_weights.get("SOLO BOLO", 95.0))
-                    kill_weight_score = max(kill_weight_score, solo_base)
-                    highest_kill = "SOLO BOLO (1v1 DUEL)"
+                    solo_base = min(58.0, float(dynamic_kill_weights.get("SOLO BOLO", 55.0)))
+                    kill_weight_score = solo_base
+                    highest_kill = "SOLO BOLO (1v1 CLUTCH)" if is_clutch else "SOLO BOLO (1v1 DUEL)"
                 else:
-                    outplay_base = float(dynamic_kill_weights.get("OUTPLAY", 80.0))
-                    kill_weight_score = max(kill_weight_score, outplay_base)
-                    highest_kill = "OUTPLAY (CLEAN KILL)"
+                    outplay_base = min(42.0, float(dynamic_kill_weights.get("OUTPLAY", 38.0)))
+                    kill_weight_score = outplay_base
+                    highest_kill = "OUTPLAY (1-KILL)"
 
             raw_composite = (
                 kill_weight_score * 0.35 +

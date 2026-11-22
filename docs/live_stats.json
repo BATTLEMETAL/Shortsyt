@@ -3,10 +3,10 @@
   "service": "Shortsyt Studio Daemon",
   "brand": "FlikCut Studio",
   "version": "2.6.0-production",
-  "last_updated": "2026-11-11T12:33:06.149038+00:00",
-  "total_views": 99403,
-  "total_engagement": 494,
-  "total_published_videos": 98,
+  "last_updated": "2026-11-22T08:44:01.261456+00:00",
+  "total_views": 516285,
+  "total_engagement": 2773,
+  "total_published_videos": 288,
   "average_view_duration_pct": 108.8,
   "hardware_acceleration": "NVIDIA NVENC H.264 / AV1",
   "render_speed_multiplier": "8.4x realtime (< 12s per short)",
@@ -16,114 +16,129 @@
       "name": "YouTube Shorts",
       "status": "Connected & Publishing",
       "handle": "@Dwannellenga",
-      "views": 85075,
-      "videos_count": 50,
-      "share_pct": 85.6,
-      "engagement": 406,
+      "views": 506340,
+      "videos_count": 233,
+      "share_pct": 98.1,
+      "engagement": 2750,
       "auto_thumbnails": true
     },
     "tiktok": {
       "name": "TikTok",
       "status": "OAuth 2.0 PKCE Active",
       "handle": "@dwannellenga",
-      "views": 9940,
+      "views": 1051,
       "videos_count": 5,
-      "share_pct": 10.0,
-      "engagement": 74,
+      "share_pct": 0.2,
+      "engagement": 10,
       "direct_post_enabled": true
     },
     "instagram": {
       "name": "Instagram Reels",
       "status": "Graph API Connected",
       "handle": "@dwannellenga",
-      "views": 4318,
-      "videos_count": 20,
-      "share_pct": 4.3,
-      "engagement": 14,
+      "views": 8846,
+      "videos_count": 25,
+      "share_pct": 1.7,
+      "engagement": 13,
       "auto_thumbnails": true
     },
     "facebook": {
       "name": "Facebook Reels",
       "status": "Page Connected",
       "handle": "Dwannellenga",
-      "views": 70,
-      "videos_count": 23,
-      "share_pct": 0.1,
+      "views": 48,
+      "videos_count": 25,
+      "share_pct": 0.0,
       "engagement": 0,
       "auto_thumbnails": true
     }
   },
   "top_videos": [
     {
-      "platform": "tiktok",
-      "title": "SOLO BOLO - EGO CHECKED",
-      "views": 4067,
-      "likes": 17,
-      "comments": 3,
-      "url": "https://www.tiktok.com/@dwannellenga/video/7704512367207484694",
-      "timestamp": "2026-11-05T03:15:26.334895"
-    },
-    {
-      "platform": "tiktok",
-      "title": "Vanished Before They Could Run ⚡",
-      "views": 3407,
-      "likes": 22,
+      "platform": "youtube",
+      "title": "They Grouped For Free 💀 #shorts #leagueoflegends #lol",
+      "views": 5300,
+      "likes": 18,
       "comments": 1,
-      "url": "https://www.tiktok.com/@dwannellenga/video/7704841642921970977",
-      "timestamp": "2026-11-05T22:12:13.583076"
+      "url": "https://www.youtube.com/shorts/4Fyn2vIfQv8",
+      "timestamp": "2026-11-20T20:30:08Z"
     },
     {
       "platform": "youtube",
-      "title": "Vanished Before They Could Run ⚡ #shorts #leagueoflegends #lol",
-      "views": 2840,
-      "likes": 4,
-      "comments": 2,
-      "url": "https://www.youtube.com/shorts/IHxenMj6cHc",
-      "timestamp": "2026-11-05T21:16:44Z"
-    },
-    {
-      "platform": "youtube",
-      "title": "Thinking 1v1 Was Safe 👑 SOLO BOLO #shorts #leagueoflegends #lol",
-      "views": 2066,
-      "likes": 10,
+      "title": "Chasing Down the Double Kill CHAOS ⚡ #shorts #leagueoflegends #lol",
+      "views": 2289,
+      "likes": 8,
       "comments": 3,
-      "url": "https://www.youtube.com/shorts/HhEAqRFYnTM",
-      "timestamp": "2026-11-05T02:17:25Z"
+      "url": "https://www.youtube.com/shorts/nP2drnO5F_s",
+      "timestamp": "2026-11-16T13:00:32Z"
     },
     {
-      "platform": "youtube",
-      "title": "Walking Up Mid Is Crazy 💀 SOLO BOLO #shorts #leagueoflegends #lol",
-      "views": 1826,
-      "likes": 4,
+      "platform": "instagram",
+      "title": "Greedy Chase Punished Instantly 🔥",
+      "views": 2178,
+      "likes": 1,
       "comments": 0,
-      "url": "https://www.youtube.com/shorts/mg7bR7qcdCQ",
-      "timestamp": "2026-11-01T17:30:19Z"
+      "url": "https://www.instagram.com/reel/DgCOKxzCqP3/",
+      "timestamp": "2026-11-22T07:02:01+0000"
+    },
+    {
+      "platform": "instagram",
+      "title": "Greedy Chase Punished Instantly 🔥",
+      "views": 1978,
+      "likes": 1,
+      "comments": 0,
+      "url": "https://www.instagram.com/reel/DgCOQEnCkcS/",
+      "timestamp": "2026-11-22T07:02:49+0000"
     },
     {
       "platform": "youtube",
-      "title": "Bot Lane Hunt Turned Into CHAOS 💀 #shorts #leagueoflegends #lol",
-      "views": 1546,
-      "likes": 4,
+      "title": "Two Down Before They Reacted ⚡ #shorts #leagueoflegends #lol",
+      "views": 1883,
+      "likes": 9,
+      "comments": 3,
+      "url": "https://www.youtube.com/shorts/nnKwQS9hwUg",
+      "timestamp": "2026-11-17T10:00:12Z"
+    },
+    {
+      "platform": "youtube",
+      "title": "Pixel-Perfect Reset Execution ⚡ #shorts #leagueoflegends #lol",
+      "views": 1411,
+      "likes": 6,
       "comments": 1,
-      "url": "https://www.youtube.com/shorts/WX5B9yCEvNQ",
-      "timestamp": "2026-11-01T11:38:27Z"
+      "url": "https://www.youtube.com/shorts/GF1P5hZEw4Q",
+      "timestamp": "2026-11-19T11:51:01Z"
     }
   ],
   "scheduled_queue": [
     {
-      "id": "instagram_1794013960306",
-      "platform": "instagram",
-      "scheduled_time": "2026-11-07T07:30:00Z",
-      "caption_snippet": "Dropping frames and dropping health bars.\nWhat is the dirtiest Katarina pla...",
+      "id": "tiktok_1795202168977",
+      "platform": "tiktok",
+      "scheduled_time": "2026-11-22T10:00:00Z",
+      "caption_snippet": "Deleted in 2 Seconds Flat ⚡...",
       "has_thumbnail": true
     },
     {
-      "id": "instagram_1794185916404",
+      "id": "instagram_1795202168978",
       "platform": "instagram",
-      "scheduled_time": "2026-11-09T07:30:00Z",
-      "caption_snippet": "Dropped into the backline and let chaos take the wheel.\nWould you have surv...",
+      "scheduled_time": "2026-11-22T10:00:00Z",
+      "caption_snippet": "Deleted in 2 Seconds Flat ⚡\nGreedy chase or clean bait? Drop your take belo...",
+      "has_thumbnail": true
+    },
+    {
+      "id": "instagram_1795202337647",
+      "platform": "instagram",
+      "scheduled_time": "2026-11-22T20:30:00Z",
+      "caption_snippet": "Rampage Triple Kill! No Escape From Resets 💥\nDid enemy squad clump up for f...",
+      "has_thumbnail": true
+    },
+    {
+      "id": "tiktok_1795202337647",
+      "platform": "tiktok",
+      "scheduled_time": "2026-11-22T20:30:00Z",
+      "caption_snippet": "Rampage Triple Kill! No Escape From Resets 💥...",
       "has_thumbnail": true
     }
   ],
-  "recent_published": []
+  "recent_published": [],
+  "remote_tunnel_updated_at": "2026-11-22T09:45:47.066794"
 }

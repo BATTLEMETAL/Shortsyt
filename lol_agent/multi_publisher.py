@@ -129,16 +129,34 @@ def publish_multi_platform(
                 except Exception:
                     yt_tags = yt_copy.get("hashtags") or tags or []
 
-            yt_res = upload_lol_short(
-                video_path=video_path,
-                title=yt_title,
-                description=yt_desc,
-                tags=yt_tags,
-                privacy=privacy_yt,
-                thumbnail_path=resolved_thumb,
-                publish_at=publish_at,
-                pinned_comment=pinned_comment,
-            )
+            try:
+                from lol_agent.api.youtube_uploader import upload_video as _yt_upload_video
+            except Exception:
+                _yt_upload_video = None
+
+            if _yt_upload_video is not None:
+                # Aktywne konto (token z account_manager) + kolejka pending_comments.json przy publish_at
+                yt_res = _yt_upload_video(
+                    video_path=video_path,
+                    title=yt_title,
+                    description=yt_desc,
+                    tags=yt_tags,
+                    privacy=privacy_yt,
+                    pinned_comment=pinned_comment,
+                    thumbnail_path=resolved_thumb,
+                    publish_at=publish_at,
+                )
+            else:
+                yt_res = upload_lol_short(
+                    video_path=video_path,
+                    title=yt_title,
+                    description=yt_desc,
+                    tags=yt_tags,
+                    privacy=privacy_yt,
+                    thumbnail_path=resolved_thumb,
+                    publish_at=publish_at,
+                    pinned_comment=pinned_comment,
+                )
             return {
                 "success": True,
                 "video_id": yt_res.get("video_id"),
@@ -160,7 +178,8 @@ def publish_multi_platform(
                 hashtags=tt_tags,
                 privacy_level=privacy_tiktok,
                 publish_at=publish_at,
-                thumbnail_path=resolved_thumb
+                thumbnail_path=resolved_thumb,
+                peak_moment=peak_moment,
             )
         except Exception as e:
             return {"success": False, "error": str(e), "platform": "tiktok"}

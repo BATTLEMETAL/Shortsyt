@@ -22,8 +22,8 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "target_max_dur": 12.0,     # maksymalna długość shorta (10-12s złoty standard Shorts)
         "zoom_aggression": 1.30,    # mocny zoom-punch przy eliminacjach
         "slowmo_duration": 0.65,    # punktowe, dynamiczne zwolnienie na decydujący cios
-        "music_balance": 0.60,      # wyważona, dynamiczna muzyka NCS/Phonk w tle
-        "game_sound_balance": 0.85, # wyraźne dźwięki gry i zapowiedzi
+        "music_balance": 0.78,      # wyraźny sub-bas dropu bez zagłuszania dialogów
+        "game_sound_balance": 0.68, # dźwięki gry bez dudniącego <130 Hz pasma (highpass)
         "title_tone": "hype",
     },
     "balanced": {
@@ -35,8 +35,8 @@ PACING_PRESETS: Dict[str, Dict[str, Any]] = {
         "target_max_dur": 13.0,
         "zoom_aggression": 1.20,
         "slowmo_duration": 0.75,
-        "music_balance": 0.55,
-        "game_sound_balance": 0.85,
+        "music_balance": 0.74,
+        "game_sound_balance": 0.68,
         "title_tone": "narrative",
     },
     "cinematic": {

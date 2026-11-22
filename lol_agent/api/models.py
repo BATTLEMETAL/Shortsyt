@@ -142,6 +142,7 @@ class MultiPlatformUploadRequest(BaseModel):
     champion_name: Optional[str] = None
     action_type: Optional[str] = None
     rank: Optional[str] = None
+    tiktok_caption: Optional[str] = None
 
 
 class ScreenRecordRequest(BaseModel):
@@ -149,3 +150,8 @@ class ScreenRecordRequest(BaseModel):
     output_filename: Optional[str] = 'shortsyt_demo.mp4'
     fps: int = 30
     window_title: Optional[str] = None
+
+
+class CommentReplyRequest(BaseModel):
+    parent_id: str
+    text: str

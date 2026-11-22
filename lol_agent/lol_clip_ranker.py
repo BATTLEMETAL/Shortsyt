@@ -46,20 +46,45 @@ except ImportError:
 # Pobierz optymalne progi czasu trwania z tuning_config.json (Closed Pacing Loop)
 # Fallback do stałych jeśli learning_engine niedostępny.
 def _load_optimal_duration_range() -> tuple:
-    """Dynamicznie ładuje optymalne zakresy czasu shorta z tuning_config."""
+    """Dynamicznie ładuje optymalne zakresy czasu shorta z tuning_manager i learning_engine."""
+    params = {}
     try:
-        from lol_agent.autonomous.learning_engine import get_pacing_parameters
-        params = get_pacing_parameters()
+        from lol_agent.tuning_manager import get_pacing_parameters
+        params = get_pacing_parameters() or {}
     except Exception:
         try:
-            from autonomous.learning_engine import get_pacing_parameters
-            params = get_pacing_parameters()
+            from tuning_manager import get_pacing_parameters
+            params = get_pacing_parameters() or {}
         except Exception:
             params = {}
 
+    try:
+        try:
+            from lol_agent.learning_engine import get_learning_directive
+        except ImportError:
+            from learning_engine import get_learning_directive
+        directive = get_learning_directive() or {}
+        dur = directive.get("duration_analysis") or {}
+        best_b = dur.get("best_bucket")
+        b_stats = (dur.get("bucket_stats") or {}).get(best_b, {}) if best_b else {}
+        if best_b and (b_stats.get("reliable") or dur.get("clear_winner")):
+            bucket_ranges = {
+                "short_10_13s": (10.0, 13.5),
+                "balanced_14_17s": (13.5, 17.5),
+                "cinematic_18_25s": (17.5, 25.0),
+            }
+            if best_b in bucket_ranges:
+                return bucket_ranges[best_b]
+        if dur.get("reliable") and dur.get("recommended_range"):
+            rec = dur["recommended_range"]
+            if isinstance(rec, (list, tuple)) and len(rec) == 2:
+                return float(rec[0]), float(rec[1])
+    except Exception:
+        pass
+
     # Jeśli learning engine wskazuje na "short_10_13s" jako best_bucket,
     # ustaw OPTIMAL_MIN=10, OPTIMAL_MAX=16; w przeciwnym razie używaj 15-30s.
-    best_bucket = params.get("best_bucket", "")
+    best_bucket = params.get("best_bucket", "") or params.get("duration_bucket", "")
     if "10_13" in best_bucket or "short_10" in best_bucket:
         return 10.0, 16.0
     elif "13_17" in best_bucket or "short_13" in best_bucket:
@@ -281,7 +306,10 @@ def score_clip(video_path: str, verbose: bool = True) -> dict:
 
     # Try smart autonomous clutch evaluator first
     try:
-        from autonomous.evaluator import evaluate_clip_quality
+        try:
+            from lol_agent.autonomous.evaluator import evaluate_clip_quality
+        except ImportError:
+            from autonomous.evaluator import evaluate_clip_quality
         eval_res = evaluate_clip_quality(video_path)
         if "score" in eval_res and "error" not in eval_res:
             result = {

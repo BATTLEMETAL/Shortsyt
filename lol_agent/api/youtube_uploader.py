@@ -2,6 +2,7 @@
 Shortsyt API — YouTube OAuth 2.0 + upload
 Używa istniejącego client_secret.json i zapisuje token do accounts/lol_token.pickle
 """
+import copy
 import os
 import pickle
 import time
@@ -27,6 +28,9 @@ except ImportError:
         def __setstate__(self, state):
             if isinstance(state, dict): self.__dict__.update(state)
         def apply_headers(self, headers): pass
+        def maybe_start_refresh(self, *args, **kwargs): pass
+        def set_initial_regional_access_boundary(self, *args, **kwargs): pass
+        def enable_blocking_lookup(self, *args, **kwargs): pass
 
     _rab_mod = types.ModuleType("google.auth._regional_access_boundary_utils")
     _rab_mod.DummyRAB = DummyRAB
@@ -53,27 +57,88 @@ SCOPES = [
 ]
 
 
+def _get_yt_token_path() -> Path:
+    """Zwraca ścieżkę tokenu YouTube aktywnego konta (fallback do YT_TOKEN_PATH)."""
+    try:
+        try:
+            from lol_agent.account_manager import get_active_yt_token_path
+        except ImportError:
+            from account_manager import get_active_yt_token_path
+        return Path(get_active_yt_token_path())
+    except Exception:
+        return YT_TOKEN_PATH
+
+
+def ensure_rab_manager(creds: Optional[Credentials]) -> Optional[Credentials]:
+    """Odtwarza brakujące pola google-auth 2.55+ (zwł. _rab_manager) na załadowanych credentials."""
+    if creds is None:
+        return None
+    if getattr(creds, "_rab_manager", None) is None:
+        try:
+            from google.auth import _regional_access_boundary_utils
+            creds._rab_manager = _regional_access_boundary_utils._RegionalAccessBoundaryManager()
+        except Exception:
+            pass
+    if not hasattr(creds, "_use_non_blocking_refresh"):
+        try:
+            creds._use_non_blocking_refresh = False
+        except Exception:
+            pass
+    if not hasattr(creds, "_trust_boundary"):
+        try:
+            creds._trust_boundary = None
+        except Exception:
+            pass
+    return creds
+
+
 def _load_credentials() -> Optional[Credentials]:
-    """Załaduj credentials z pickle."""
-    if YT_TOKEN_PATH.exists():
-        with open(YT_TOKEN_PATH, "rb") as f:
-            return pickle.load(f)
+    """Załaduj credentials z pickle aktywnego konta."""
+    tok_path = _get_yt_token_path()
+    if tok_path.exists():
+        with open(tok_path, "rb") as f:
+            creds = pickle.load(f)
+        return ensure_rab_manager(creds)
     return None
 
 
 def _save_credentials(creds: Credentials):
-    """Zapisz credentials do pickle w sposób atomowy i bezpieczny."""
-    ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
-    if hasattr(creds, "_rab_manager"):
-        try:
-            delattr(creds, "_rab_manager")
-        except Exception:
-            pass
-    tmp_path = YT_TOKEN_PATH.with_suffix(".tmp")
+    """Zapisz credentials aktywnego konta do pickle bez mutowania żywego obiektu creds w pamięci."""
+    tok_path = _get_yt_token_path()
+    tok_path.parent.mkdir(parents=True, exist_ok=True)
+    to_dump = creds
+    try:
+        cloned = copy.copy(creds)
+        cloned.__dict__ = dict(getattr(creds, "__dict__", {}))
+        cloned.__dict__.pop("_rab_manager", None)
+        to_dump = cloned
+    except Exception:
+        to_dump = creds
+    tmp_path = tok_path.with_suffix(".tmp")
     with open(tmp_path, "wb") as f:
-        pickle.dump(creds, f)
-    import os
-    os.replace(tmp_path, YT_TOKEN_PATH)
+        pickle.dump(to_dump, f)
+    os.replace(tmp_path, tok_path)
+    ensure_rab_manager(creds)
+
+
+def get_valid_credentials(
+    require_token: bool = True,
+    ignore_refresh_error: bool = False,
+) -> Optional[Credentials]:
+    """Ładuje, odświeża (jeśli wygasły) i zapisuje token YouTube z zachowaniem _rab_manager."""
+    creds = _load_credentials()
+    if creds is None:
+        if require_token:
+            raise ValueError("Brak tokenu YouTube — wymagana autoryzacja")
+        return None
+    if creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            _save_credentials(creds)
+        except Exception:
+            if not ignore_refresh_error:
+                raise
+    return ensure_rab_manager(creds)
 
 
 def get_token_status() -> Dict[str, Any]:
@@ -110,8 +175,9 @@ def get_token_status() -> Dict[str, Any]:
     # (w trybie Testing Google Cloud token wygasa po 7 dniach od autoryzacji).
     days_remaining = 7
     expires_at = None
-    if YT_TOKEN_PATH.exists() and creds.refresh_token:
-        mtime = YT_TOKEN_PATH.stat().st_mtime
+    tok_path = _get_yt_token_path()
+    if tok_path.exists() and creds.refresh_token:
+        mtime = tok_path.stat().st_mtime
         days_since_auth = (time.time() - mtime) / 86400.0
         days_remaining = max(1, min(7, int(7 - days_since_auth) + (1 if (7 - days_since_auth) % 1 > 0.05 else 0)))
         expires_at = datetime.fromtimestamp(mtime + 7 * 86400, timezone.utc).isoformat()
@@ -329,8 +395,8 @@ def exchange_auth_code(code: str) -> Dict[str, Any]:
     return get_token_status()
 
 
-# ── Harmonogram Publikacji: 2 Shortsy dziennie (Morning Peak 08:30 + Evening Peak 18:30 CET) ──
-DAILY_PEAK_SLOTS_CET = ["08:30", "18:30"]
+# ── Harmonogram Publikacji: 2 Shortsy dziennie (Asia+EU Peak 11:00 + Evening+US Peak 21:30 CET) ──
+DAILY_PEAK_SLOTS_CET = ["11:00", "21:30"]
 
 
 def infer_frag_type_from_title(title: str) -> str:
@@ -376,11 +442,11 @@ def invalidate_publish_cache():
     _YT_API_RAW_CACHE["views_list"] = []
 
 
-def get_channel_videos_and_performance(max_results: int = 50, force_refresh: bool = False) -> Dict[str, Any]:
+def get_channel_videos_and_performance(max_results: int = 250, force_refresh: bool = False) -> Dict[str, Any]:
     """
     Pobiera z YouTube API oraz lokalnych baz (published_videos.jsonl, publishing_calendar.json, *.meta.json):
     1. Zaplanowane filmy (do obsadzenia w przyszłych slotach ze statusem 'scheduled')
-    2. Opublikowane filmy z historycznymi statystykami (wyświetlenia, polubienia, komentarze)
+    2. Opublikowane filmy z historycznymi statystykami (wyświetlenia, polubienia, komentarze, AVD%, engagedViews)
     3. Wskaźnik skuteczności (Performance Score) każdego opublikowanego Shorta w relacji do średniej kanału.
     Zoptymalizowane: Odpowiedzi YouTube API są buforowane przez 60s, a lokalne bazy rezerwacji czytane są ZAWSZE na żywo.
     """
@@ -397,28 +463,58 @@ def get_channel_videos_and_performance(max_results: int = 50, force_refresh: boo
     published: List[Dict[str, Any]] = []
     views_list: List[int] = []
 
-    # ── 1. YouTube Data API (cache 60s) ──
+    # ── 1. YouTube Data API (cache 60s, z paginacją powyżej 50 filmów) ──
     if not force_refresh and (now_ts - _YT_API_RAW_CACHE["timestamp"] < 60.0) and _YT_API_RAW_CACHE["timestamp"] > 0:
         scheduled = dict(_YT_API_RAW_CACHE["scheduled"])
         published = list(_YT_API_RAW_CACHE["published"])
         views_list = list(_YT_API_RAW_CACHE["views_list"])
     else:
         try:
-            creds = _load_credentials()
+            creds = get_valid_credentials(require_token=False, ignore_refresh_error=True)
             if creds:
-                if creds.expired and creds.refresh_token:
-                    try:
-                        creds.refresh(Request())
-                        _save_credentials(creds)
-                    except Exception:
-                        pass
                 youtube = build("youtube", "v3", credentials=creds)
                 ch = youtube.channels().list(part="contentDetails", mine=True).execute()
                 uploads_id = ch["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
-                pl = youtube.playlistItems().list(part="snippet,status", playlistId=uploads_id, maxResults=max_results).execute()
-                vids = [item["snippet"]["resourceId"]["videoId"] for item in pl.get("items", [])]
+
+                vids: List[str] = []
+                page_token = None
+                while len(vids) < max_results:
+                    batch_limit = min(50, max_results - len(vids))
+                    pl = youtube.playlistItems().list(
+                        part="snippet,status",
+                        playlistId=uploads_id,
+                        maxResults=batch_limit,
+                        pageToken=page_token,
+                    ).execute()
+                    for item in pl.get("items", []):
+                        vid_id = (item.get("snippet") or {}).get("resourceId", {}).get("videoId")
+                        if vid_id:
+                            vids.append(vid_id)
+                    page_token = pl.get("nextPageToken")
+                    if not page_token:
+                        break
+
+                bulk_yta: Dict[str, Dict[str, Any]] = {}
+                try:
+                    from .youtube_analytics import fetch_bulk_video_analytics
+                    bulk_yta = fetch_bulk_video_analytics(force_refresh=force_refresh)
+                except Exception:
+                    try:
+                        from lol_agent.api.youtube_analytics import fetch_bulk_video_analytics
+                        bulk_yta = fetch_bulk_video_analytics(force_refresh=force_refresh)
+                    except Exception:
+                        bulk_yta = {}
+
                 if vids:
-                    v_res = youtube.videos().list(part="snippet,status,statistics,contentDetails", id=",".join(vids)).execute()
+                    video_items = []
+                    for i in range(0, len(vids), 50):
+                        chunk = vids[i:i + 50]
+                        v_res = youtube.videos().list(
+                            part="snippet,status,statistics,contentDetails",
+                            id=",".join(chunk),
+                        ).execute()
+                        video_items.extend(v_res.get("items", []))
+
                     raw_published = []
                     import re as _re
 
@@ -433,7 +529,7 @@ def get_channel_videos_and_performance(max_results: int = 50, force_refresh: boo
                         s = int(m.group(3) or 0)
                         return float(h * 3600 + m_ * 60 + s)
 
-                    for v in v_res.get("items", []):
+                    for v in video_items:
                         st = v.get("status", {})
                         sn = v.get("snippet", {})
                         stats = v.get("statistics", {})
@@ -467,7 +563,7 @@ def get_channel_videos_and_performance(max_results: int = 50, force_refresh: boo
                                 eng_rate = round(((lk + cm) / vw * 100), 2) if vw > 0 else 0.0
                                 if vw > 0:
                                     views_list.append(vw)
-                                raw_published.append({
+                                entry = {
                                     "video_id": vid,
                                     "title": title,
                                     "thumbnail_url": thumb,
@@ -482,7 +578,16 @@ def get_channel_videos_and_performance(max_results: int = 50, force_refresh: boo
                                     "duration_s": dur_s,
                                     "champion": "Katarina",
                                     "frag_type": infer_frag_type_from_title(title),
-                                })
+                                }
+                                ya = bulk_yta.get(vid)
+                                if ya:
+                                    entry["avg_view_pct"] = ya.get("avg_view_pct")
+                                    entry["engaged_views"] = ya.get("engaged_views")
+                                    entry["engaged_view_rate_pct"] = ya.get("engaged_view_rate_pct")
+                                    entry["watch_time_hours"] = ya.get("watch_time_hours")
+                                    entry["shares"] = ya.get("shares")
+                                    entry["subscribers_gained"] = ya.get("subscribers_gained")
+                                raw_published.append(entry)
 
                     # Oblicz benchmark średniej kanału
                     avg_views = sum(views_list) / len(views_list) if views_list else 1
@@ -628,11 +733,11 @@ def get_occupied_publish_slots(force_refresh: bool = True) -> Dict[str, Dict[str
 
 def get_next_optimal_publish_time() -> Dict[str, Any]:
     """
-    Inteligentny dyspozytor harmonogramu (2 Shortsy dziennie: 08:30 i 18:30 CET).
+    Inteligentny dyspozytor harmonogramu (2 Shortsy dziennie: 11:00 i 21:30 CET).
     Pobiera listę zajętych slotów (z YouTube i lokalnie) i wybiera NAJBLIŻSZY WOLNY SLOT.
     Jeśli dzisiejsze sloty minęły lub są już zajęte, automatycznie przeskakuje na:
-      - Jutro o 08:30 CET (Morning Peak 🌅)
-      - Jutro o 18:30 CET (Evening Peak ⚡)
+      - Jutro o 11:00 CET (Asia+EU Peak 🌅)
+      - Jutro o 21:30 CET (Evening+US Peak ⚡)
       - Kolejne wolne dni w przód (Pojutrze itd.)
     Gwarantuje brak nakładania się filmów na ten sam slot.
     """
@@ -670,7 +775,7 @@ def get_next_optimal_publish_time() -> Dict[str, Any]:
             slot_utc = slot_dt_cet.astimezone(timezone.utc)
             iso_utc = slot_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-            slot_type = "Morning Peak 🌅" if h < 12 else "Evening Peak ⚡"
+            slot_type = "Asia+EU Peak 🌅" if h < 15 else "Evening+US Peak ⚡"
             if day_offset == 0:
                 label = f"Dzisiaj o {slot} CET ({slot_type})"
             elif day_offset == 1:
@@ -693,10 +798,10 @@ def get_next_optimal_publish_time() -> Dict[str, Any]:
             }
 
     # Fallback awaryjny
-    fallback_dt = (now_cet + timedelta(days=1)).replace(hour=8, minute=30, second=0)
+    fallback_dt = (now_cet + timedelta(days=1)).replace(hour=11, minute=0, second=0)
     return {
         "publish_at": fallback_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "label": "Jutro o 08:30 CET (Morning Peak 🌅)",
+        "label": "Jutro o 11:00 CET (Asia+EU Peak 🌅)",
         "local_time": fallback_dt.strftime("%Y-%m-%d %H:%M"),
         "peak_slots": DAILY_PEAK_SLOTS_CET,
         "occupied_count": len(occupied),
@@ -715,14 +820,7 @@ def upload_video(
     publish_at: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Upload wideo na YouTube z automatycznym komentarzem, miniaturką oraz opcjonalnym planowaniem (Peak Hours)."""
-    creds = _load_credentials()
-    if creds is None:
-        raise ValueError("Brak tokenu YouTube — wymagana autoryzacja")
-
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        _save_credentials(creds)
-
+    creds = get_valid_credentials(require_token=True)
     youtube = build("youtube", "v3", credentials=creds)
 
     video_path = Path(video_path)
@@ -922,18 +1020,36 @@ def _post_comment_with_retry(youtube, video_id: str, text: str, retries: int = 3
     return None
 
 
+def _read_pending_comments_queue(queue_path: Path) -> list:
+    """Bezpiecznie wczytuje pending_comments.json — odporny na pusty (0 B) lub uszkodzony plik."""
+    import json as _json
+    if not queue_path.exists():
+        return []
+    try:
+        raw = queue_path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return []
+        data = _json.loads(raw)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _write_pending_comments_queue(queue_path: Path, queue: list) -> None:
+    import json as _json
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = queue_path.with_suffix(".json.tmp")
+    tmp.write_text(_json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, queue_path)
+
+
 def _save_pending_comment(video_id: str, text: str) -> None:
     """Zapisuje komentarz do pliku kolejki JSON (do późniejszego wysłania po upublicznieniu)."""
-    import json as _json
     queue_path = ACCOUNTS_DIR / "pending_comments.json"
-    queue: list = []
-    if queue_path.exists():
-        try:
-            queue = _json.loads(queue_path.read_text(encoding="utf-8"))
-        except Exception:
-            queue = []
+    queue = _read_pending_comments_queue(queue_path)
+    queue = [item for item in queue if item.get("video_id") != video_id]
     queue.append({"video_id": video_id, "text": text, "created_at": datetime.now(timezone.utc).isoformat()})
-    queue_path.write_text(_json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_pending_comments_queue(queue_path, queue)
 
 
 def post_pinned_comment(video_id: str, text: str) -> Dict[str, Any]:
@@ -941,38 +1057,30 @@ def post_pinned_comment(video_id: str, text: str) -> Dict[str, Any]:
     Dodaj (lub ponów) przypięty komentarz do istniejącego publicznego filmu YouTube.
     Używane po upublicznieniu zaplanowanego Shorta.
     """
-    creds = _load_credentials()
-    if creds is None:
-        raise ValueError("Brak tokenu YouTube — wymagana autoryzacja")
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        _save_credentials(creds)
+    creds = get_valid_credentials(require_token=True)
     youtube = build("youtube", "v3", credentials=creds)
     comment_id = _post_comment_with_retry(youtube, video_id, text, retries=3)
     return {"video_id": video_id, "comment_id": comment_id, "ok": comment_id is not None}
 
 
-def flush_pending_comments() -> Dict[str, Any]:
+def flush_pending_comments(queue_path: Optional[Path] = None) -> Dict[str, Any]:
     """
     Sprawdza kolejkę oczekujących komentarzy i próbuje je dodać do już publicznych filmów.
-    Wywołaj ręcznie lub automatycznie po upublicznieniu zaplanowanego Shorta.
-    Zwraca: {"sent": [...], "still_pending": [...]}
+    Odporna na pusty plik pending_comments.json (0 B).
     """
-    import json as _json
-    queue_path = ACCOUNTS_DIR / "pending_comments.json"
-    if not queue_path.exists():
+    q_path = Path(queue_path) if queue_path is not None else (ACCOUNTS_DIR / "pending_comments.json")
+    if not q_path.exists():
         return {"sent": [], "still_pending": []}
 
-    queue: list = _json.loads(queue_path.read_text(encoding="utf-8"))
+    queue = _read_pending_comments_queue(q_path)
     if not queue:
+        if q_path.read_text(encoding="utf-8", errors="ignore").strip() != "[]":
+            _write_pending_comments_queue(q_path, [])
         return {"sent": [], "still_pending": []}
 
-    creds = _load_credentials()
+    creds = get_valid_credentials(require_token=False, ignore_refresh_error=True)
     if creds is None:
         return {"sent": [], "still_pending": queue, "error": "Brak tokenu"}
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        _save_credentials(creds)
     youtube = build("youtube", "v3", credentials=creds)
 
     sent = []
@@ -980,7 +1088,6 @@ def flush_pending_comments() -> Dict[str, Any]:
     for item in queue:
         vid = item["video_id"]
         txt = item["text"]
-        # Sprawdź czy film jest już publiczny
         try:
             res = youtube.videos().list(part="status", id=vid).execute()
             status = res["items"][0]["status"]["privacyStatus"] if res.get("items") else "unknown"
@@ -996,7 +1103,127 @@ def flush_pending_comments() -> Dict[str, Any]:
         else:
             still_pending.append(item)
 
-    # Zapisz tylko te które nadal czekają
-    queue_path.write_text(_json.dumps(still_pending, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_pending_comments_queue(q_path, still_pending)
     return {"sent": sent, "still_pending": still_pending}
+
+
+def _load_archive_recipe_context(video_id: str) -> Dict[str, Any]:
+    """Wczytuje kontekst klipu z recipes_archive/<video_id>.recipe.json na potrzeby propozycji odpowiedzi."""
+    import json as _json
+    rec_path = ACCOUNTS_DIR.parent / "lol_agent" / "recipes_archive" / f"{video_id}.recipe.json"
+    if not rec_path.exists():
+        return {}
+    try:
+        return _json.loads(rec_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def get_comment_reply_suggestions(max_videos: int = 5) -> Dict[str, Any]:
+    """
+    Pobiera ostatnie nieodpowiedziane komentarze widzów na ostatnich filmach kanału
+    i przygotowuje 2 bezpieczne propozycje odpowiedzi (merytoryczna + lekki banter),
+    do wysyłki po 1 kliknięciu w UI (zero ślepego auto-postowania bota).
+    """
+    creds = get_valid_credentials(require_token=False, ignore_refresh_error=True)
+    if creds is None:
+        return {"items": [], "error": "Brak tokenu YouTube"}
+
+    youtube = build("youtube", "v3", credentials=creds)
+    ch_res = youtube.channels().list(part="id,contentDetails", mine=True).execute()
+    if not ch_res.get("items"):
+        return {"items": []}
+
+    my_channel_id = ch_res["items"][0]["id"]
+    uploads_pl = ch_res["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    pl_res = youtube.playlistItems().list(part="snippet", playlistId=uploads_pl, maxResults=max(1, min(15, max_videos))).execute()
+
+    suggestions = []
+    for pl_item in pl_res.get("items", []):
+        vid = pl_item["snippet"]["resourceId"]["videoId"]
+        title = pl_item["snippet"].get("title", "")
+        try:
+            threads = youtube.commentThreads().list(
+                part="snippet,replies",
+                videoId=vid,
+                maxResults=10,
+                order="time",
+            ).execute()
+        except Exception:
+            continue
+
+        recipe = _load_archive_recipe_context(vid)
+        action_type = (recipe.get("action_type") or "outplay").replace("_", " ")
+
+        for th in threads.get("items", []):
+            top = th["snippet"]["topLevelComment"]
+            top_snip = top["snippet"]
+            author_cid = (top_snip.get("authorChannelId") or {}).get("value")
+            if author_cid == my_channel_id:
+                continue
+            replies = (th.get("replies") or {}).get("comments") or []
+            if any(((r.get("snippet") or {}).get("authorChannelId") or {}).get("value") == my_channel_id for r in replies):
+                continue
+
+            comment_text = (top_snip.get("textDisplay") or top_snip.get("textOriginal") or "").strip()
+            author_name = top_snip.get("authorDisplayName", "Viewer")
+            if not comment_text:
+                continue
+
+            drafts = None
+            try:
+                from lol_agent.synapsa_engine import generate_with_synapsa
+                syn = generate_with_synapsa(
+                    "comment_reply",
+                    {
+                        "video_title": title,
+                        "action_type": action_type,
+                        "recipe": recipe,
+                        "viewer_comment": comment_text,
+                        "viewer_author": author_name,
+                    },
+                    timeout=35,
+                )
+                if syn and isinstance(syn.get("replies"), list) and syn["replies"]:
+                    drafts = [str(r).strip() for r in syn["replies"] if str(r).strip()][:2]
+            except Exception:
+                drafts = None
+
+            if not drafts:
+                drafts = [
+                    f"Appreciate it! That {action_type} felt super tight in real time 😅",
+                    "Respect! Would you have greed-chased here too or backed off? 👀",
+                ]
+
+            suggestions.append({
+                "video_id": vid,
+                "video_title": title,
+                "parent_comment_id": top["id"],
+                "author": author_name,
+                "comment_text": comment_text,
+                "published_at": top_snip.get("publishedAt"),
+                "suggested_replies": drafts,
+            })
+
+    return {"items": suggestions, "count": len(suggestions)}
+
+
+def reply_to_youtube_comment(parent_id: str, text: str) -> Dict[str, Any]:
+    """Wysyła zatwierdzoną przez użytkownika odpowiedź na komentarz widza."""
+    clean_txt = (text or "").strip()
+    if not parent_id or not clean_txt:
+        raise ValueError("Wymagane parent_id oraz treść odpowiedzi")
+    creds = get_valid_credentials(require_token=True)
+    youtube = build("youtube", "v3", credentials=creds)
+    res = youtube.comments().insert(
+        part="snippet",
+        body={
+            "snippet": {
+                "parentId": parent_id,
+                "textOriginal": clean_txt,
+            }
+        },
+    ).execute()
+    return {"ok": True, "comment_id": res.get("id"), "parent_id": parent_id}
+
 

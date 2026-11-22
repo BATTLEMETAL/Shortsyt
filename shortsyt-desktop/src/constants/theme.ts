@@ -1,43 +1,46 @@
 /**
- * Shortsyt — Design System Tokens
- * Dark gaming aesthetic z LoL gold/blue palette
+ * Flikcut Studio — "The Cut" Design Tokens
+ * Mirrored from flikcut.com (k0..k3, volt #C8FF3A, crisp white & mute #A0A7B1)
  */
-
 export const Colors = {
-  // Tło
-  bg: '#0A0E1A',
-  bgDark: '#070A12',
-  bgCard: '#121624',
-  bgElevated: '#1A1E30',
-  bgInput: '#1E2338',
+  // Surfaces
+  bgPrimary: '#050505',      // k0 — Obsidian black canvas
+  bgCard: '#0E0F11',         // k1 — Primary card & sidebar surface
+  bgElevated: '#17191C',     // k2 — Elevated surface / table / modal panel
+  bgSubtle: '#272A2F',       // k3 — Subtle control / interactive neutral
+  bgGlass: 'rgba(14, 15, 17, 0.88)',
 
-  // Akcenty
-  gold: '#C89B3C',
-  goldLight: '#E5C269',
-  goldDim: '#7A6026',
-  blue: '#2A7FD4',
-  blueLight: '#4FA3F7',
-  blueDim: '#1B4D82',
-  red: '#E84040',
-  redLight: '#FF6060',
-  green: '#2ECC71',
-  greenLight: '#55E88D',
-  orange: '#F0893A',
+  // Accents
+  accentVolt: '#C8FF3A',     // Signature Flikcut Volt
+  accentVoltHover: '#AEE820',// Pressed / hover volt
+  accentGold: '#C8FF3A',     // Alias kept for backwards compatibility
+  accentGoldHover: '#AEE820',
+  accentBlue: '#5CAEFF',     // Secondary info highlight
 
-  // Tekst
-  textPrimary: '#E4D6B5',
-  textSecondary: '#8B8FA8',
-  textMuted: '#50546A',
+  // Text
+  textPrimary: '#FFFFFF',    // Crisp white heading / primary copy
+  textSecondary: '#A0A7B1',  // Technical mute grey
+  textMuted: '#686E78',      // Subtle caption grey
+  textInk: '#050505',        // Dark text on volt surfaces
 
-  // Ramki
-  border: '#1E2438',
-  borderLight: '#2D3550',
+  // Borders & Separators
+  borderSubtle: '#272A2F',   // Hairline neutral border
+  borderActive: '#C8FF3A',   // Active volt frame
+
+  // Semantic Status
+  success: '#C8FF3A',
+  successBg: 'rgba(200, 255, 58, 0.12)',
+  warning: '#FFB84D',
+  warningBg: 'rgba(255, 184, 77, 0.12)',
+  error: '#FF5C5C',
+  errorBg: 'rgba(255, 92, 92, 0.14)',
 };
 
+export const COLORS = Colors;
+
 export const Radius = {
-  sm: '8px',
-  md: '12px',
-  lg: '16px',
-  xl: '24px',
+  sm: '2px',
+  md: '4px',
+  lg: '8px',
   full: '9999px',
 };

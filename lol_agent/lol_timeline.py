@@ -20,6 +20,11 @@ MINI_SLOWMO_SPEED = 0.70     # zwolnienie na killach pośrednich
 MINI_SLOWMO_LEAD = 0.30      # s przed killem pośrednim
 MINI_SLOWMO_WINDOW = 0.70    # s całego okna killa pośredniego
 EASE_MAX = 0.15              # s rampy wejścia / wyjścia
+# Styl SPEED_RAMP_FLOW (zamiast cięć): martwy czas między killami leci szybciej
+FAST_FORWARD_SPEED = 3.0     # 2.5–3.5 wg dyrektywy bramek jakości
+FAST_GAP_MIN = 3.5           # s przerwy między killami, od której przyspieszamy
+FAST_TAIL = 0.9              # s po killu w normalnym tempie (widać skutek)
+FAST_LEAD = 1.0              # s przed następnym killem w normalnym tempie (widać wejście)
 
 
 def effective_edit_values(zoom_level: float, zoom_duration: float, slowmo_duration: float) -> Dict[str, float]:
@@ -93,6 +98,34 @@ def build_speed_segments(clip_duration: float,
     return segs
 
 
+def apply_fast_forward(segments: List[Dict], kill_times: Optional[List[float]], speed: float = FAST_FORWARD_SPEED) -> List[Dict]:
+    """
+    Styl SPEED_RAMP_FLOW: zero cięć. Odcinki w tempie 1.0 leżące w przerwie między killami dłuższej niż FAST_GAP_MIN
+    dostają prędkość `speed`; FAST_TAIL po killu i FAST_LEAD przed następnym zostają w tempie 1.0.
+    Zwolnień i zoomów nie rusza. kill_times: czasy killi w klipie (czas źródłowy).
+    """
+    ks = sorted(float(k) for k in (kill_times or []))
+    windows = [(a + FAST_TAIL, b - FAST_LEAD) for a, b in zip(ks, ks[1:]) if (b - a) > FAST_GAP_MIN]
+    windows = [(a, b) for a, b in windows if b - a > 0.3]
+    if not windows:
+        return segments
+    out: List[Dict] = []
+    for sg in segments:
+        if abs(sg["speed"] - 1.0) > 1e-6 or sg.get("zoom"):
+            out.append(sg); continue
+        cuts = [sg["start"], sg["end"]]
+        for a, b in windows:
+            cuts += [x for x in (a, b) if sg["start"] < x < sg["end"]]
+        cuts = sorted(set(cuts))
+        for a, b in zip(cuts, cuts[1:]):
+            if b - a < 0.05:
+                continue
+            mid = (a + b) / 2.0
+            fast = any(wa <= mid <= wb for wa, wb in windows)
+            out.append({"start": float(a), "end": float(b), "speed": float(speed if fast else 1.0), "zoom": False})
+    return out
+
+
 def output_duration(segments: List[Dict]) -> float:
     """Długość gotowego obrazu po rozciągnięciu."""
     return sum((s["end"] - s["start"]) / s["speed"] for s in segments)
@@ -132,20 +165,75 @@ def music_start_for_drop(drop_time: float, peak_in_output: float) -> Tuple[float
     return 0.0, round(-start, 3)
 
 
-def audio_warp_filter(segments: List[Dict], in_label: str, out_label: str) -> str:
+def coalesce_audio_segments(segments: List[Dict]) -> List[Dict]:
+    """Łączy sąsiednie odcinki audio o tej samej prędkości (zoom nie dzieli dźwięku)."""
+    merged: List[Dict] = []
+    for s in (segments or []):
+        start = float(s["start"])
+        end = float(s["end"])
+        speed = float(s["speed"])
+        if end <= start + 1e-4:
+            continue
+        if merged and abs(merged[-1]["speed"] - speed) < 1e-4 and abs(merged[-1]["end"] - start) <= 0.06:
+            merged[-1]["end"] = end
+        else:
+            merged.append({"start": start, "end": end, "speed": speed})
+    return merged
+
+
+def audio_warp_filter(
+    segments: List[Dict],
+    in_label: str,
+    out_label: str,
+    mode: str = "atempo",
+) -> str:
     """
-    Filtr FFmpeg, który rozciąga DŹWIĘK GRY tak samo jak obraz (atrim + atempo na odcinek, potem concat),
-    żeby uderzenia było słychać wtedy, kiedy je widać. atempo przyjmuje 0.5–100, nasze prędkości to 0.55–1.0.
+    Filtr FFmpeg rozciągający dźwięk gry zgodnie z osią czasu montażu.
+    - mode='atempo': zachowuje zgodność z klasycznymi testami (po segmencie + atempo).
+    - mode='clean': scala odcinki o stałej prędkości, normalizuje do 44.1kHz stereo,
+      dla slow-mo (<1.0) stosuje płynny tape slowdown (asetrate+aresample bez artefaktów WSOLA
+      i bez rozjazdu A/V), a na stykach dodaje mikro-fade 5ms eliminujący trzaski.
     """
     if not segments:
         return f"[{in_label}]anull[{out_label}]"
+
+    if mode != "clean":
+        parts, labels = [], []
+        for i, s in enumerate(segments):
+            lbl = f"gw{i}"
+            tempo = f",atempo={s['speed']:.4f}" if abs(s["speed"] - 1.0) > 1e-6 else ""
+            parts.append(f"[{in_label}]atrim=start={s['start']:.3f}:end={s['end']:.3f},asetpts=PTS-STARTPTS{tempo}[{lbl}]")
+            labels.append(f"[{lbl}]")
+        parts.append("".join(labels) + f"concat=n={len(segments)}:v=0:a=1[{out_label}]")
+        return ";".join(parts)
+
+    merged = coalesce_audio_segments(segments)
+    if not merged:
+        return f"[{in_label}]anull[{out_label}]"
+
     parts, labels = [], []
-    for i, s in enumerate(segments):
+    for i, s in enumerate(merged):
         lbl = f"gw{i}"
-        tempo = f",atempo={s['speed']:.4f}" if abs(s["speed"] - 1.0) > 1e-6 else ""
-        parts.append(f"[{in_label}]atrim=start={s['start']:.3f}:end={s['end']:.3f},asetpts=PTS-STARTPTS{tempo}[{lbl}]")
+        sp = s["speed"]
+        dur_out = (s["end"] - s["start"]) / max(sp, 1e-3)
+        if abs(sp - 1.0) <= 1e-4:
+            speed_flt = ""
+        elif sp < 1.0:
+            # Czyste zwolnienie bez ziarnistości/echa WSOLA i bez dryfu synchronizacji
+            speed_flt = f",asetrate=44100*{sp:.6f},aresample=44100"
+        else:
+            speed_flt = f",atempo={sp:.4f}"
+        fade_flt = ""
+        if dur_out > 0.04:
+            fade_out_st = max(0.0, dur_out - 0.006)
+            fade_flt = f",afade=t=in:st=0:d=0.005,afade=t=out:st={fade_out_st:.4f}:d=0.005"
+        parts.append(
+            f"[{in_label}]atrim=start={s['start']:.3f}:end={s['end']:.3f},"
+            f"aresample=44100,aformat=sample_rates=44100:channel_layouts=stereo,"
+            f"asetpts=PTS-STARTPTS{speed_flt}{fade_flt}[{lbl}]"
+        )
         labels.append(f"[{lbl}]")
-    parts.append("".join(labels) + f"concat=n={len(segments)}:v=0:a=1[{out_label}]")
+    parts.append("".join(labels) + f"concat=n={len(merged)}:v=0:a=1[{out_label}]")
     return ";".join(parts)
 
 

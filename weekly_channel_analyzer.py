@@ -9,17 +9,47 @@ Uruchom 1x w tygodniu. Analizuje kanał YT dark_mindset:
 import os
 import sys
 import json
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
+
+ROOT_DIR = Path(__file__).resolve().parent
+os.chdir(ROOT_DIR)
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 if sys.stdout.encoding != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
-from data_collector import get_authenticated_service
+try:
+    from data_collector import get_authenticated_service
+except ImportError:
+    from googleapiclient.discovery import build
+    from lol_agent.api.youtube_uploader import get_valid_credentials
 
-PROFILE_NAME  = "dark_mindset"
-REPORT_FILE   = f"weekly_report_{datetime.now().strftime('%Y-%m-%d')}.json"
+    def get_authenticated_service(profile_name: str = "dark_mindset"):
+        creds = get_valid_credentials(require_token=False, ignore_refresh_error=True)
+        if not creds:
+            return None
+        return build("youtube", "v3", credentials=creds)
+
+def _resolve_active_profile_name() -> str:
+    reg_path = ROOT_DIR / "accounts" / "profiles_registry.json"
+    try:
+        if reg_path.exists():
+            data = json.loads(reg_path.read_text(encoding="utf-8"))
+            active_id = data.get("active_account_id")
+            acc = (data.get("accounts") or {}).get(active_id or "") or {}
+            yt_tok = acc.get("yt_token_file") or "lol_token.pickle"
+            return yt_tok.replace("_token.pickle", "")
+    except Exception:
+        pass
+    return "lol"
+
+
+PROFILE_NAME  = _resolve_active_profile_name()
+REPORT_FILE   = str(ROOT_DIR / "logs" / f"weekly_report_{datetime.now().strftime('%Y-%m-%d')}.json")
 DAYS_BACK     = 7
 
 # ─── Kolory CLI ───────────────────────────────────────────
@@ -32,38 +62,51 @@ RESET  = "\033[0m"
 def fetch_channel_stats(youtube):
     """Pobiera podstawowe statystyki kanału."""
     res = youtube.channels().list(
-        part="statistics,snippet",
+        part="statistics,snippet,contentDetails",
         mine=True
     ).execute()
     ch = res["items"][0]
+    uploads_id = (ch.get("contentDetails") or {}).get("relatedPlaylists", {}).get("uploads")
     return {
         "name":        ch["snippet"]["title"],
         "subscribers": int(ch["statistics"].get("subscriberCount", 0)),
         "total_views": int(ch["statistics"].get("viewCount", 0)),
-        "video_count": int(ch["statistics"].get("videoCount", 0))
+        "video_count": int(ch["statistics"].get("videoCount", 0)),
+        "uploads_playlist_id": uploads_id,
     }
 
-def fetch_recent_shorts(youtube, days=7):
-    """Pobiera shortsy z ostatnich X dni."""
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%SZ')
-    search_res = youtube.search().list(
-        part="snippet",
-        forMine=True,
-        type="video",
-        videoDuration="short",
-        publishedAfter=since,
+def fetch_recent_shorts(youtube, days=7, uploads_playlist_id=None):
+    """Pobiera shortsy z ostatnich X dni przez playlistItems (1 unit zamiast 100 w search)."""
+    since_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    if not uploads_playlist_id:
+        ch_res = youtube.channels().list(part="contentDetails", mine=True).execute()
+        uploads_playlist_id = ch_res["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+    pl_res = youtube.playlistItems().list(
+        part="contentDetails,snippet",
+        playlistId=uploads_playlist_id,
         maxResults=50,
-        order="date"
     ).execute()
 
-    video_ids = [item["id"]["videoId"] for item in search_res.get("items", [])]
+    video_ids = []
+    for item in pl_res.get("items", []):
+        pub_str = (item.get("contentDetails") or {}).get("videoPublishedAt") or (item.get("snippet") or {}).get("publishedAt")
+        vid = (item.get("contentDetails") or {}).get("videoId")
+        if not vid or not pub_str:
+            continue
+        try:
+            pub_dt = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
+            if pub_dt >= since_dt:
+                video_ids.append(vid)
+        except Exception:
+            video_ids.append(vid)
+
     if not video_ids:
         return []
 
-    # Pobierz szczegóły każdego wideo
     details_res = youtube.videos().list(
         part="snippet,statistics,contentDetails",
-        id=",".join(video_ids)
+        id=",".join(video_ids[:50])
     ).execute()
 
     shorts = []
@@ -154,7 +197,7 @@ def main():
     print(f"   🎬 Liczba filmów: {channel['video_count']}")
 
     print(f"\n🔍 Pobieranie shortów z ostatnich {DAYS_BACK} dni...")
-    shorts = fetch_recent_shorts(youtube, DAYS_BACK)
+    shorts = fetch_recent_shorts(youtube, DAYS_BACK, uploads_playlist_id=channel.get("uploads_playlist_id"))
     print(f"✅ Znaleziono {len(shorts)} shortów.\n")
 
     print("┌─ TOP SHORTSY ─────────────────────────────────────┐")
@@ -174,6 +217,7 @@ def main():
         "shorts_analyzed": shorts,
         "recommendations": recs
     }
+    os.makedirs(os.path.dirname(REPORT_FILE), exist_ok=True)
     with open(REPORT_FILE, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=4, ensure_ascii=False)
 

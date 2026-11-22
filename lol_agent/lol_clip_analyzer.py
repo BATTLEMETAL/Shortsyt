@@ -103,10 +103,22 @@ def _extract_frames_for_vision(video_path: str, n: int = 4) -> list:
 
 def _detect_champion_vision(video_path: str) -> str:
     """
-    Uzywaj Gemini Vision TYLKO do wykrycia championa.
-    Timing i kill detection -> momentum analyzer (OCR jest pewniejszy).
-    Zwraca: nazwa championa lub "" jesli nie wykryto.
+    Lokalna identyfikacja championa przez lol_screen_inspector (0 tokenów Gemini).
+    Gemini Vision działa wyłącznie jako opcjonalny fallback gdy SYNAPSA_ALLOW_GEMINI_VISION=1.
     """
+    try:
+        try:
+            from lol_agent.lol_screen_inspector import detect_champion_local
+        except ImportError:
+            from lol_screen_inspector import detect_champion_local
+        local_champ = detect_champion_local(video_path, default_champion="Katarina")
+        if local_champ:
+            return local_champ
+    except Exception:
+        pass
+
+    if os.getenv("SYNAPSA_ALLOW_GEMINI_VISION") != "1":
+        return ""
     if not GENAI_OK or not GEMINI_API_KEY:
         return ""
 

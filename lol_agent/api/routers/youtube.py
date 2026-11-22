@@ -10,11 +10,12 @@ from ..config import LOL_TEMP_DIR, LOL_OUTPUT_DIR
 from ..helpers import _record_publication, set_push_token
 from ..models import (
     YouTubeAuthCodeRequest, YouTubeUploadRequest,
-    PostCommentRequest, RegisterPushTokenRequest
+    PostCommentRequest, RegisterPushTokenRequest, CommentReplyRequest
 )
 from ..youtube_uploader import (
     get_token_status, get_auth_url, exchange_auth_code, upload_video,
-    get_next_optimal_publish_time, post_pinned_comment, flush_pending_comments
+    get_next_optimal_publish_time, post_pinned_comment, flush_pending_comments,
+    get_comment_reply_suggestions, reply_to_youtube_comment
 )
 
 router = APIRouter(tags=["YouTube"])
@@ -100,6 +101,23 @@ async def yt_post_comment(video_id: str, req: PostCommentRequest, payload: dict 
     loop = asyncio.get_event_loop()
     res = await loop.run_in_executor(None, lambda: post_pinned_comment(video_id, req.text))
     return res
+
+
+@router.get("/youtube/comments/suggestions")
+async def yt_comment_suggestions(max_videos: int = 5, payload: dict = Depends(verify_token)):
+    """Pobiera nieodpowiedziane komentarze widzów wraz z propozycjami odpowiedzi pod 1-klik."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: get_comment_reply_suggestions(max_videos=max_videos))
+
+
+@router.post("/youtube/comments/reply")
+async def yt_reply_comment(req: CommentReplyRequest, payload: dict = Depends(verify_token)):
+    """Wysyła zatwierdzoną przez użytkownika odpowiedź na komentarz widza."""
+    loop = asyncio.get_event_loop()
+    try:
+        return await loop.run_in_executor(None, lambda: reply_to_youtube_comment(req.parent_id, req.text))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/youtube/next-peak-slot")

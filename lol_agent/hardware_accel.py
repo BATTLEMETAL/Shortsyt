@@ -52,12 +52,16 @@ def get_optimal_encoder_args(quality: str = 'high') -> List[str]:
 
     if enc == 'h264_nvenc':
         if quality == 'high':
-            cq = '18'
+            cq, maxrate, bufsize = '19', '16M', '32M'
         elif quality == 'draft':
-            cq = '23'
+            cq, maxrate, bufsize = '23', '10M', '20M'
         else:  # ultra-fast preview
-            cq = '28'
-        return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq', '-cq', cq, '-b:v', '0', '-pix_fmt', 'yuv420p']
+            cq, maxrate, bufsize = '28', '6M', '12M'
+        return [
+            '-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
+            '-rc', 'vbr', '-cq', cq, '-b:v', '0', '-maxrate', maxrate, '-bufsize', bufsize,
+            '-pix_fmt', 'yuv420p',
+        ]
 
     elif enc == 'h264_amf':
         bitrate = '18M' if quality == 'high' else ('12M' if quality == 'draft' else '8M')
@@ -68,8 +72,16 @@ def get_optimal_encoder_args(quality: str = 'high') -> List[str]:
         return ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-global_quality', q, '-pix_fmt', 'yuv420p']
 
     else:
-        crf = '18' if quality == 'high' else ('22' if quality == 'draft' else '26')
-        return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', crf, '-threads', '0', '-pix_fmt', 'yuv420p']
+        if quality == 'high':
+            crf, maxrate, bufsize = '18', '16M', '32M'
+        elif quality == 'draft':
+            crf, maxrate, bufsize = '22', '10M', '20M'
+        else:
+            crf, maxrate, bufsize = '26', '6M', '12M'
+        return [
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', crf,
+            '-maxrate', maxrate, '-bufsize', bufsize, '-threads', '0', '-pix_fmt', 'yuv420p',
+        ]
 
 if __name__ == '__main__':
     enc, summary = detect_hardware()

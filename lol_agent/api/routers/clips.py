@@ -1,21 +1,47 @@
 """
 Shortsyt API — Router: Clips, Outputs, Thumbnails & Camera Preview
 """
+import io
 import json
 import os
 import subprocess
+import threading
 from pathlib import Path
 from typing import Optional
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, Response
+from PIL import Image, ImageOps
 
 from ..auth import verify_token, verify_token_flexible
 from ..config import LOL_INPUT_DIR, LOL_OUTPUT_DIR, LOL_TEMP_DIR
 from ..helpers import _load_meta, _save_meta
 from ..models import AutoDetectRequest, SaveMetadataRequest, AnalyzeFragRequest
+
+try:
+    from lol_agent.outplayed_db import (
+        TIER_RANKS as _TIER_RANKS,
+        get_outplayed_clip_info,
+        load_outplayed_index,
+        parse_outplayed_path_info,
+    )
+except ImportError:
+    from outplayed_db import (  # type: ignore
+        TIER_RANKS as _TIER_RANKS,
+        get_outplayed_clip_info,
+        load_outplayed_index,
+        parse_outplayed_path_info,
+    )
+
+try:
+    from lol_agent.medal_db import get_clip_metadata as _get_medal_metadata
+except ImportError:
+    try:
+        from medal_db import get_clip_metadata as _get_medal_metadata  # type: ignore
+    except ImportError:
+        _get_medal_metadata = None  # type: ignore
 
 router = APIRouter(tags=["Files", "Clips"])
 
@@ -53,18 +79,26 @@ def scan_available_clips(folder: Optional[str] = None) -> list:
     seen_paths = set()
     clips = []
 
+    try:
+        outplayed_index = load_outplayed_index()
+    except Exception:
+        outplayed_index = {}
+
     for s_dir in search_dirs:
         if not s_dir.exists():
             continue
         for ext in ["*.mp4", "*.mov", "*.mkv", "*.avi"]:
             for f in s_dir.rglob(ext):
+                if any("recently deleted" in part.lower() for part in f.parts):
+                    continue
                 full_path_str = str(f.resolve())
                 if full_path_str in seen_paths:
                     continue
                 seen_paths.add(full_path_str)
 
                 try:
-                    size_bytes = f.stat().st_size
+                    stat_res = f.stat()
+                    size_bytes = stat_res.st_size
                     if size_bytes < 3 * 1024 * 1024:
                         continue
                 except Exception:
@@ -81,18 +115,87 @@ def scan_available_clips(folder: Optional[str] = None) -> list:
                         pass
 
                 pre_item = pre_analysis_map.get(f.name, {})
+                path_info = parse_outplayed_path_info(full_path_str)
+                op_info = get_outplayed_clip_info(full_path_str, index=outplayed_index)
+
+                champion = ""
+                is_favorite = False
+                event_tier = ""
+                event_tier_rank: Optional[int] = None
+                event_source = "none"
+                best_event_time_s: Optional[float] = None
+                est_first_kill_s: Optional[float] = None
+                est_last_kill_s: Optional[float] = None
+                total_kills_in_clip: Optional[int] = None
+                match_kda = ""
+
+                if op_info:
+                    champion = str(op_info.get("champion") or "")
+                    is_favorite = bool(op_info.get("is_favorite", False))
+                    event_tier = str(op_info.get("event_tier") or "")
+                    event_tier_rank = op_info.get("event_tier_rank")
+                    event_source = str(op_info.get("source") or "outplayed_backup")
+                    best_event_time_s = op_info.get("best_event_time_s")
+                    est_first_kill_s = op_info.get("est_first_kill_s")
+                    est_last_kill_s = op_info.get("est_last_kill_s")
+                    total_kills_in_clip = op_info.get("total_kills_in_clip")
+                    match_kda = str(op_info.get("match_kda") or "")
+                elif _get_medal_metadata is not None and "medal" in full_path_str.lower():
+                    try:
+                        medal_info = _get_medal_metadata(full_path_str) or {}
+                    except Exception:
+                        medal_info = {}
+                    if medal_info:
+                        champion = str(medal_info.get("champion") or "")
+                        raw_act = str(medal_info.get("action_type") or "").lower()
+                        for m_kw, m_tier in (
+                            ("penta", "pentakill"),
+                            ("quadra", "quadrakill"),
+                            ("triple", "triple"),
+                            ("double", "double"),
+                            ("kill", "single_kill"),
+                        ):
+                            if m_kw in raw_act:
+                                event_tier = m_tier
+                                event_tier_rank = _TIER_RANKS.get(m_tier)
+                                event_source = "medal_db"
+                                break
+
+                if not event_tier and pre_item.get("action_type"):
+                    pre_act = str(pre_item.get("action_type") or "").strip().lower()
+                    if pre_act in _TIER_RANKS:
+                        event_tier = pre_act
+                        event_tier_rank = _TIER_RANKS[pre_act]
+                        if event_source == "none":
+                            event_source = "scan_cache"
+
+                if not champion and pre_item.get("champion"):
+                    champion = str(pre_item.get("champion") or "")
 
                 clips.append({
                     "filename": f.name,
                     "path": full_path_str,
                     "size_mb": round(size_bytes / 1024 / 1024, 1),
-                    "modified": f.stat().st_mtime,
+                    "modified": stat_res.st_mtime,
                     "already_published": is_dup,
                     "published_url": pub_url,
                     "duplicate_reason": dup_reason,
                     "pre_score": pre_item.get("score"),
                     "pre_action": pre_item.get("action_type"),
                     "pre_recommendation": pre_item.get("recommendation"),
+                    "match_folder": (op_info or {}).get("match_folder") or path_info["match_folder"],
+                    "match_date": (op_info or {}).get("match_date") or path_info["match_date"],
+                    "clip_base_key": (op_info or {}).get("clip_base_key") or path_info["clip_base_key"],
+                    "champion": champion,
+                    "is_favorite": is_favorite,
+                    "event_tier": event_tier,
+                    "event_tier_rank": event_tier_rank,
+                    "event_source": event_source,
+                    "best_event_time_s": best_event_time_s,
+                    "est_first_kill_s": est_first_kill_s,
+                    "est_last_kill_s": est_last_kill_s,
+                    "total_kills_in_clip": total_kills_in_clip,
+                    "match_kda": match_kda,
                 })
 
     clips.sort(key=lambda x: x["modified"], reverse=True)
@@ -354,29 +457,83 @@ def save_output_metadata(filename: str, req: SaveMetadataRequest, payload: dict 
     return {"status": "saved", "filename": filename, "needs_rerender": needs_rerender}
 
 
+def _sanitize_single_filename(name: str) -> str:
+    """Waliduje pojedynczą nazwę pliku (bez path traversal)."""
+    raw = str(name or "").strip()
+    if (
+        not raw
+        or raw in (".", "..")
+        or "\x00" in raw
+        or "/" in raw
+        or "\\" in raw
+        or ".." in raw
+        or Path(raw).name != raw
+    ):
+        raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku.")
+    return raw
+
+
+def _thumbnail_search_dirs() -> list[Path]:
+    return [Path(LOL_TEMP_DIR), Path(LOL_OUTPUT_DIR), Path(__file__).resolve().parent.parent.parent / "thumbnails"]
+
+
+def _find_output_video(safe_filename: str) -> Path:
+    for d in (Path(LOL_TEMP_DIR), Path(LOL_OUTPUT_DIR)):
+        fp = d / safe_filename
+        if fp.is_file():
+            return fp
+    raise HTTPException(status_code=404, detail=f"Plik wideo nie znaleziony: {safe_filename}")
+
+
+def _cleanup_stale_thumbnails(thumb_name: str, keep_path: Path) -> None:
+    try:
+        keep_resolved = keep_path.resolve()
+    except Exception:
+        keep_resolved = keep_path
+    for d in _thumbnail_search_dirs():
+        cand = d / thumb_name
+        try:
+            if cand.is_file() and cand.resolve() != keep_resolved:
+                cand.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _persist_thumbnail_links(video_filename: str, thumb_path: Path) -> None:
+    _save_meta(video_filename, {
+        "thumbnail_path": str(thumb_path),
+        "thumbnail_filename": thumb_path.name,
+    })
+    try:
+        try:
+            from lol_agent.synapsa_overnight_batch import update_overnight_item_thumbnail
+        except ImportError:
+            from synapsa_overnight_batch import update_overnight_item_thumbnail  # type: ignore
+        update_overnight_item_thumbnail(video_filename, str(thumb_path))
+    except Exception:
+        pass
+
+
 @router.get("/outputs/{filename}")
 def stream_output(
     filename: str,
     payload: dict = Depends(verify_token_flexible),
 ):
     """Streamuj gotowy Short do podglądu."""
-    search_dirs = [LOL_TEMP_DIR, LOL_OUTPUT_DIR]
-    for d in search_dirs:
-        fp = Path(d) / filename
-        if fp.exists():
-            return FileResponse(
-                str(fp),
-                media_type="video/mp4",
-                headers={"Accept-Ranges": "bytes"},
-            )
-    raise HTTPException(status_code=404, detail=f"Plik nie znaleziony: {filename}")
+    safe_name = _sanitize_single_filename(filename)
+    fp = _find_output_video(safe_name)
+    return FileResponse(
+        str(fp),
+        media_type="video/mp4",
+        headers={"Accept-Ranges": "bytes"},
+    )
 
 
 @router.get("/thumbnails")
 def list_thumbnails(payload: dict = Depends(verify_token)):
     """Lista wygenerowanych miniaturek Shorts."""
     thumbs = []
-    search_dirs = [LOL_TEMP_DIR, LOL_OUTPUT_DIR, Path(__file__).parent.parent.parent / "thumbnails"]
+    search_dirs = _thumbnail_search_dirs()
     seen = set()
     for search_dir in search_dirs:
         if Path(search_dir).exists():
@@ -398,15 +555,176 @@ def list_thumbnails(payload: dict = Depends(verify_token)):
 @router.get("/thumbnails/{filename}")
 def stream_thumbnail(filename: str):
     """Pobierz plik miniaturki JPG (9:16)."""
-    search_dirs = [LOL_TEMP_DIR, LOL_OUTPUT_DIR, Path(__file__).parent.parent.parent / "thumbnails"]
-    for d in search_dirs:
-        fp = Path(d) / filename
-        if fp.exists():
+    safe_name = _sanitize_single_filename(filename)
+    for d in _thumbnail_search_dirs():
+        fp = Path(d) / safe_name
+        if fp.is_file():
             return FileResponse(
                 str(fp),
                 media_type="image/jpeg",
+                headers={"Cache-Control": "no-cache, max-age=0"},
             )
-    raise HTTPException(status_code=404, detail=f"Miniaturka nie znaleziona: {filename}")
+    raise HTTPException(status_code=404, detail=f"Miniaturka nie znaleziona: {safe_name}")
+
+
+@router.post("/outputs/{filename}/thumbnail")
+async def upload_output_thumbnail(
+    filename: str,
+    file: UploadFile = File(...),
+    payload: dict = Depends(verify_token),
+):
+    """Wgrywa własną miniaturkę (JPG/PNG/WebP), konwertuje do 1080x1920 JPG i podpina pod Shorta."""
+    safe_video = _sanitize_single_filename(filename)
+    video_fp = _find_output_video(safe_video)
+
+    allowed_exts = {".jpg", ".jpeg", ".png", ".webp"}
+    if file.filename:
+        ext = Path(file.filename).suffix.lower()
+        if ext and ext not in allowed_exts:
+            raise HTTPException(status_code=400, detail=f"Obsługiwane formaty miniaturek: JPG, PNG, WebP (otrzymano {ext}).")
+
+    max_bytes = 15 * 1024 * 1024
+    raw_bytes = await file.read(max_bytes + 1)
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Przesłany plik miniaturki jest pusty.")
+    if len(raw_bytes) > max_bytes:
+        raise HTTPException(status_code=413, detail="Plik miniaturki przekracza limit 15 MB.")
+
+    try:
+        with Image.open(io.BytesIO(raw_bytes)) as img:
+            norm = ImageOps.exif_transpose(img).convert("RGB")
+            fitted = ImageOps.fit(norm, (1080, 1920), method=Image.Resampling.LANCZOS)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Nieprawidłowy plik graficzny: {exc}")
+
+    dest = video_fp.with_name(f"{video_fp.stem}_thumb.jpg")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(f"{dest.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        fitted.save(tmp, format="JPEG", quality=92, optimize=True)
+        os.replace(tmp, dest)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+
+    _cleanup_stale_thumbnails(dest.name, dest)
+    _persist_thumbnail_links(safe_video, dest)
+    return {
+        "status": "ok",
+        "thumbnail_filename": dest.name,
+        "thumbnail_path": str(dest),
+        "size_kb": round(dest.stat().st_size / 1024, 1),
+    }
+
+
+@router.post("/outputs/{filename}/thumbnail/regenerate")
+def regenerate_output_thumbnail(
+    filename: str,
+    payload: dict = Depends(verify_token),
+):
+    """Generuje ponownie miniaturkę 9:16 z klatki akcji wyrenderowanego Shorta."""
+    safe_video = _sanitize_single_filename(filename)
+    video_fp = _find_output_video(safe_video)
+    meta = _load_meta(safe_video) or {}
+
+    overnight_item = None
+    try:
+        try:
+            from lol_agent.synapsa_overnight_batch import load_latest_overnight_batch
+        except ImportError:
+            from synapsa_overnight_batch import load_latest_overnight_batch  # type: ignore
+        batch = load_latest_overnight_batch() or {}
+        for it in (batch.get("items") or []):
+            if Path(str(it.get("output_filename") or "")).name == safe_video:
+                overnight_item = it
+                break
+    except Exception:
+        overnight_item = None
+
+    action_type = str(meta.get("action_type") or (overnight_item or {}).get("action_type") or "outplay")
+    champion_name = str(meta.get("champion_name") or (overnight_item or {}).get("champion_name") or "Katarina")
+    clip_start = meta.get("clip_start") if meta.get("clip_start") is not None else (overnight_item or {}).get("clip_start")
+    peak_moment = meta.get("peak_moment") if meta.get("peak_moment") is not None else (overnight_item or {}).get("peak_moment")
+
+    dur_s = 0.0
+    cap = cv2.VideoCapture(str(video_fp))
+    try:
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        frames = float(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+        if fps > 0.0 and frames > 0.0:
+            dur_s = frames / fps
+    finally:
+        cap.release()
+    if dur_s <= 0.0:
+        dur_s = float(meta.get("duration") or (overnight_item or {}).get("duration_s") or 15.0)
+
+    thumb_time = max(0.5, min(max(0.8, dur_s - 0.8), dur_s * 0.55))
+    if peak_moment is not None:
+        try:
+            rel_peak = float(peak_moment) - (float(clip_start) if clip_start is not None else 0.0)
+            if 0.2 <= rel_peak <= max(0.5, dur_s - 0.5):
+                thumb_time = rel_peak
+        except (TypeError, ValueError):
+            pass
+
+    try:
+        try:
+            from lol_agent.lol_thumbnail import generate_thumbnail
+        except ImportError:
+            from lol_thumbnail import generate_thumbnail  # type: ignore
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Moduł miniaturek niedostępny: {exc}")
+
+    dest = video_fp.with_name(f"{video_fp.stem}_thumb.jpg")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_jpg = dest.with_name(f"{dest.stem}.regen_{os.getpid()}_{threading.get_ident()}.jpg")
+    src_path = meta.get("source_path") or (overnight_item or {}).get("source_path")
+    has_clean_src = bool(src_path and Path(str(src_path)).is_file())
+    if has_clean_src:
+        src_peak = (
+            float(peak_moment)
+            if peak_moment is not None
+            else (float(clip_start or 0.0) + float(thumb_time))
+        )
+    else:
+        src_peak = None
+    try:
+        generated = generate_thumbnail(
+            video_path=str(video_fp),
+            peak_moment=thumb_time,
+            action_label=action_type.upper().replace("_", " "),
+            champion_name=champion_name,
+            output_path=str(tmp_jpg),
+            source_clip_path=str(src_path) if has_clean_src else None,
+            source_peak_moment=src_peak,
+        )
+        if not generated or not Path(generated).is_file():
+            raise HTTPException(status_code=500, detail="Nie udało się wygenerować miniaturki z wideo.")
+        os.replace(generated, dest)
+    except HTTPException:
+        try:
+            tmp_jpg.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+    except Exception as exc:
+        try:
+            tmp_jpg.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Błąd generowania miniaturki: {exc}")
+
+    _cleanup_stale_thumbnails(dest.name, dest)
+    _persist_thumbnail_links(safe_video, dest)
+    return {
+        "status": "ok",
+        "thumbnail_filename": dest.name,
+        "thumbnail_path": str(dest),
+        "size_kb": round(dest.stat().st_size / 1024, 1),
+    }
 
 
 @router.get("/camera-preview")

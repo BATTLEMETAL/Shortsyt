@@ -13,7 +13,7 @@ import {
   Zap,
   RotateCcw
 } from 'lucide-react';
-import { apiGetTuningConfig, apiSaveTuningConfig } from '../lib/api';
+import { apiGetTuningConfig, apiSaveTuningConfig, apiGetLearningStatus } from '../lib/api';
 
 export interface TuningProfile {
   pacing: 'aggressive' | 'balanced' | 'cinematic' | 'custom';
@@ -72,6 +72,7 @@ export default function FeedbackTuning() {
   const [profile, setProfile] = useState<TuningProfile>(DEFAULT_TUNING);
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
+  const [directorGate, setDirectorGate] = useState<any>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileRef = useRef<TuningProfile>(DEFAULT_TUNING);
   const isInitialLoad = useRef(true);
@@ -150,6 +151,12 @@ export default function FeedbackTuning() {
       setLoading(false);
     }
     load().then(() => { isInitialLoad.current = false; });
+    apiGetLearningStatus()
+      .then((res) => {
+        const p48 = (res?.directive as any)?.post_48h_gate_summary;
+        if (p48) setDirectorGate(p48);
+      })
+      .catch(() => {});
 
     // Przy odmontowaniu komponentu (np. kliknięcie innej zakładki w menu) natychmiast zapisz
     return () => {
@@ -234,30 +241,30 @@ export default function FeedbackTuning() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#0A0E1A] p-6 lg:p-8 space-y-6 text-[#E4D6B5]">
+    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#050505] p-6 lg:p-8 space-y-6 text-[#FFFFFF]">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#1E2438]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#272A2F]">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-[#E4D6B5] flex items-center gap-2.5">
-            <SlidersHorizontal className="w-6 h-6 text-[#C89B3C]" />
+          <h1 className="text-2xl font-black tracking-tight text-[#FFFFFF] flex items-center gap-2.5">
+            <SlidersHorizontal className="w-6 h-6 text-[#C8FF3A]" />
             <span>Dostrajanie Stylu Montażu & Feedback AI</span>
           </h1>
-          <p className="text-xs text-[#8B8FA8] mt-1 font-medium">
+          <p className="text-xs text-[#A0A7B1] mt-1 font-medium">
             Spersonalizuj zachowanie algorytmów kamery, dźwięku, cięcia i promptów Gemini pod Twój unikalny styl kanału Dwannellenga
           </p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#121624] border border-[#C89B3C]/40 text-xs">
-            <span className="text-[#8B8FA8]">Aktywny profil:</span>
-            <span className="text-[#C89B3C] font-black">
+          <div className="flex items-center gap-2 px-3 py-1.5 fk-cut-sm bg-[#0E0F11] border border-[#C8FF3A]/40 text-xs">
+            <span className="text-[#A0A7B1]">Aktywny profil:</span>
+            <span className="text-[#C8FF3A] font-black">
               {profile.pacing === 'aggressive' ? 'Ekstremalnie Szybkie 🔥 (10-13s)' :
                profile.pacing === 'balanced' ? 'Zbalansowane ✅ (14-17s)' :
                profile.pacing === 'cinematic' ? 'Cinematic 🎬 (20-25s)' : 'Własny ⚙️'}
             </span>
           </div>
           {isSaved && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#2ECC71]/20 border border-[#2ECC71]/50 text-[#55E88D] text-xs font-bold animate-fade-in shadow-md shadow-[#2ECC71]/10">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 fk-cut-sm bg-[#2ECC71]/20 border border-[#2ECC71]/50 text-[#55E88D] text-xs font-bold animate-fade-in">
               <CheckCircle2 className="w-4 h-4" />
               <span>Zapisano w silniku!</span>
             </div>
@@ -267,14 +274,14 @@ export default function FeedbackTuning() {
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* Section 1: Pacing & Montaż */}
-        <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-5">
+        <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-bold text-[#E4D6B5]">
-              <Scissors className="w-4 h-4 text-[#C89B3C]" />
+            <div className="flex items-center gap-2 text-sm font-bold text-[#FFFFFF]">
+              <Scissors className="w-4 h-4 text-[#C8FF3A]" />
               <span>Tryb Dynamiki & Presety Montażu (Pacing)</span>
             </div>
             {profile.pacing === 'custom' && (
-              <span className="text-[11px] bg-[#C89B3C]/20 border border-[#C89B3C]/40 text-[#C89B3C] font-bold px-2 py-0.5 rounded-md">
+              <span className="text-[11px] bg-[#C8FF3A]/20 border border-[#C8FF3A]/40 text-[#C8FF3A] font-bold px-2 py-0.5 rounded-md">
                 Własne parametry (Ręczne dostrojenie)
               </span>
             )}
@@ -290,27 +297,27 @@ export default function FeedbackTuning() {
               <div
                 key={opt.id}
                 onClick={() => handleSelectPacing(opt.id as any)}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                className={`p-4 fk-cut-sm border cursor-pointer transition-all ${
                   profile.pacing === opt.id
-                    ? 'bg-[#C89B3C]/15 border-[#C89B3C] shadow-md shadow-[#C89B3C]/10'
-                    : 'bg-[#0A0E1A] border-[#1E2438] hover:border-[#8B8FA8]/40'
+                    ? 'bg-[#C8FF3A]/15 border-[#C8FF3A]'
+                    : 'bg-[#050505] border-[#272A2F] hover:border-[#A0A7B1]/40'
                 }`}
               >
-                <div className="text-xs font-black text-[#E4D6B5] flex items-center justify-between">
+                <div className="text-xs font-black text-[#FFFFFF] flex items-center justify-between">
                   <span>{opt.title}</span>
-                  {profile.pacing === opt.id && <span className="w-2 h-2 rounded-full bg-[#C89B3C]" />}
+                  {profile.pacing === opt.id && <span className="w-2 h-2 rounded-full bg-[#C8FF3A]" />}
                 </div>
-                <div className="text-[11px] text-[#8B8FA8] mt-1.5 leading-relaxed">{opt.desc}</div>
+                <div className="text-[11px] text-[#A0A7B1] mt-1.5 leading-relaxed">{opt.desc}</div>
               </div>
             ))}
           </div>
 
           {/* Sliders (Ręczna zmiana parametrów) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-3 border-t border-[#1E2438]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-3 border-t border-[#272A2F]">
             <div>
               <div className="flex justify-between text-xs font-semibold mb-1.5">
-                <span className="text-[#8B8FA8]">Siła Zoom-Punch (Kill Impact):</span>
-                <span className="font-mono text-[#C89B3C] font-bold">{(profile?.zoomAggression ?? 1.20).toFixed(2)}x</span>
+                <span className="text-[#A0A7B1]">Siła Zoom-Punch (Kill Impact):</span>
+                <span className="font-mono text-[#C8FF3A] font-bold">{(profile?.zoomAggression ?? 1.20).toFixed(2)}x</span>
               </div>
               <input
                 type="range"
@@ -319,9 +326,9 @@ export default function FeedbackTuning() {
                 step="0.05"
                 value={profile?.zoomAggression ?? 1.20}
                 onChange={(e) => handleSliderChange('zoomAggression', parseFloat(e.target.value))}
-                className="w-full accent-[#C89B3C] cursor-pointer"
+                className="w-full accent-[#C8FF3A] cursor-pointer"
               />
-              <div className="flex justify-between text-[10px] text-[#50546A] mt-1">
+              <div className="flex justify-between text-[10px] text-[#686E78] mt-1">
                 <span>Subtelny (1.05x)</span>
                 <span>Mocny LoL Punch (1.35x)</span>
               </div>
@@ -329,8 +336,8 @@ export default function FeedbackTuning() {
 
             <div>
               <div className="flex justify-between text-xs font-semibold mb-1.5">
-                <span className="text-[#8B8FA8]">Długość Slow-Mo na Peak Action:</span>
-                <span className="font-mono text-[#C89B3C] font-bold">{(profile?.slowmoDuration ?? 1.4).toFixed(1)}s</span>
+                <span className="text-[#A0A7B1]">Długość Slow-Mo na Peak Action:</span>
+                <span className="font-mono text-[#C8FF3A] font-bold">{(profile?.slowmoDuration ?? 1.4).toFixed(1)}s</span>
               </div>
               <input
                 type="range"
@@ -339,9 +346,9 @@ export default function FeedbackTuning() {
                 step="0.1"
                 value={profile?.slowmoDuration ?? 1.4}
                 onChange={(e) => handleSliderChange('slowmoDuration', parseFloat(e.target.value))}
-                className="w-full accent-[#C89B3C] cursor-pointer"
+                className="w-full accent-[#C8FF3A] cursor-pointer"
               />
-              <div className="flex justify-between text-[10px] text-[#50546A] mt-1">
+              <div className="flex justify-between text-[10px] text-[#686E78] mt-1">
                 <span>Szybkie (0.8s)</span>
                 <span>Dramatyczne (2.5s)</span>
               </div>
@@ -352,8 +359,8 @@ export default function FeedbackTuning() {
         {/* Section 2: Audio & Title Tone */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Audio Mixing */}
-          <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-4">
-            <div className="flex items-center gap-2 text-sm font-bold text-[#E4D6B5]">
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#FFFFFF]">
               <Volume2 className="w-4 h-4 text-[#2ECC71]" />
               <span>Balans Dźwięku (Muzyka vs Gra)</span>
             </div>
@@ -361,7 +368,7 @@ export default function FeedbackTuning() {
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between text-xs font-semibold mb-1.5">
-                  <span className="text-[#8B8FA8]">Głośność Muzyki NCS / Phonk:</span>
+                  <span className="text-[#A0A7B1]">Głośność Muzyki NCS / Phonk:</span>
                   <span className="font-mono text-[#55E88D] font-bold">{Math.round((profile?.musicBalance ?? 0.55) * 100)}%</span>
                 </div>
                 <input
@@ -377,8 +384,8 @@ export default function FeedbackTuning() {
 
               <div>
                 <div className="flex justify-between text-xs font-semibold mb-1.5">
-                  <span className="text-[#8B8FA8]">Dźwięk Gry (VFX / Announcer / Kills):</span>
-                  <span className="font-mono text-[#4FA3F7] font-bold">{Math.round((profile?.gameSoundBalance ?? 0.85) * 100)}%</span>
+                  <span className="text-[#A0A7B1]">Dźwięk Gry (VFX / Announcer / Kills):</span>
+                  <span className="font-mono text-[#5CAEFF] font-bold">{Math.round((profile?.gameSoundBalance ?? 0.85) * 100)}%</span>
                 </div>
                 <input
                   type="range"
@@ -387,16 +394,16 @@ export default function FeedbackTuning() {
                   step="0.05"
                   value={profile?.gameSoundBalance ?? 0.85}
                   onChange={(e) => handleSliderChange('gameSoundBalance', parseFloat(e.target.value))}
-                  className="w-full accent-[#2A7FD4] cursor-pointer"
+                  className="w-full accent-[#5CAEFF] cursor-pointer"
                 />
               </div>
             </div>
           </div>
 
           {/* AI Title Style */}
-          <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-4">
-            <div className="flex items-center gap-2 text-sm font-bold text-[#E4D6B5]">
-              <Sparkles className="w-4 h-4 text-[#C89B3C]" />
+          <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#FFFFFF]">
+              <Sparkles className="w-4 h-4 text-[#C8FF3A]" />
               <span>Ton Generowania Tytułów i Hashtagów</span>
             </div>
 
@@ -409,17 +416,17 @@ export default function FeedbackTuning() {
                 <div
                   key={t.id}
                   onClick={() => handleSelectTone(t.id as any)}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                  className={`p-3 fk-cut-sm border cursor-pointer transition-all ${
                     profile.titleTone === t.id
-                      ? 'bg-[#C89B3C]/15 border-[#C89B3C]'
-                      : 'bg-[#0A0E1A] border-[#1E2438] hover:border-white/20'
+                      ? 'bg-[#C8FF3A]/15 border-[#C8FF3A]'
+                      : 'bg-[#050505] border-[#272A2F] hover:border-white/20'
                   }`}
                 >
-                  <div className="text-xs font-bold text-[#E4D6B5] flex items-center justify-between">
+                  <div className="text-xs font-bold text-[#FFFFFF] flex items-center justify-between">
                     <span>{t.title}</span>
-                    {profile.titleTone === t.id && <span className="w-2 h-2 rounded-full bg-[#C89B3C]" />}
+                    {profile.titleTone === t.id && <span className="w-2 h-2 rounded-full bg-[#C8FF3A]" />}
                   </div>
-                  <div className="text-[10px] text-[#8B8FA8] mt-0.5">{t.desc}</div>
+                  <div className="text-[10px] text-[#A0A7B1] mt-0.5">{t.desc}</div>
                 </div>
               ))}
             </div>
@@ -427,14 +434,14 @@ export default function FeedbackTuning() {
         </div>
 
         {/* Section 3: User Direct Instructions / Prompt Feedback */}
-        <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] shadow-xl space-y-4">
-          <div className="flex items-center gap-2 text-sm font-bold text-[#E4D6B5]">
-            <MessageSquare className="w-4 h-4 text-[#C89B3C]" />
+        <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
+          <div className="flex items-center gap-2 text-sm font-bold text-[#FFFFFF]">
+            <MessageSquare className="w-4 h-4 text-[#C8FF3A]" />
             <span>Wskazówki dla Agenta AI (Prompt Context & Feedback)</span>
           </div>
 
           <div>
-            <label className="text-xs text-[#8B8FA8] font-semibold block mb-2">
+            <label className="text-xs text-[#A0A7B1] font-semibold block mb-2">
               Wytyczne przekazywane bezpośrednio do generatora metadanych i promptów kanału Dwannellenga (aktualizują się przy zmianie tonu):
             </label>
             <textarea
@@ -442,14 +449,14 @@ export default function FeedbackTuning() {
               value={profile.userNotes}
               onChange={(e) => handleNotesChange(e.target.value)}
               placeholder="np. Dodawaj zawsze nazwę skina do opisu, preferuj utwory z mocnym dropem basu, wyłączaj intro jeśli akcja zaczyna się od razu..."
-              className="w-full p-3.5 rounded-xl bg-[#0A0E1A] border border-[#1E2438] text-xs text-[#E4D6B5] focus:outline-none focus:border-[#C89B3C] font-mono leading-relaxed"
+              className="w-full p-3.5 fk-cut-sm bg-[#050505] border border-[#272A2F] text-xs text-[#FFFFFF] focus:outline-none focus:border-[#C8FF3A] font-mono leading-relaxed"
             />
           </div>
 
           <div className="flex items-center justify-end pt-2">
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-[#C89B3C] hover:bg-[#E5C269] text-[#0A0E1A] text-xs font-black transition-colors flex items-center gap-2 shadow-lg shadow-[#C89B3C]/20"
+              className="px-6 py-2.5 fk-cut-sm bg-[#C8FF3A] hover:bg-[#C8FF3A] text-[#050505] text-xs font-black transition-colors flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
               <span>Zapisz Mój Profil Stylu</span>
@@ -457,6 +464,39 @@ export default function FeedbackTuning() {
           </div>
         </div>
       </form>
+
+      {/* Section 4: Synapsa AI Montage Director — Kontrakty Skutków & Wnioski 48h */}
+      {directorGate && (
+        <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#FFFFFF]">
+              <Cpu className="w-4 h-4 text-[#C8FF3A]" />
+              <span>Synapsa AI Montage Director — Kontrakty Skutków &amp; Wnioski 48h</span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] font-mono">
+              <span className="px-2 py-0.5 fk-cut-sm bg-[#55E88D]/15 text-[#55E88D] border border-[#55E88D]/30">
+                Rollback Guard: AKTYWNY
+              </span>
+              <span className="px-2 py-0.5 fk-cut-sm bg-[#050505] text-[#A0A7B1] border border-[#272A2F]">
+                48h: {directorGate.total_verified_48h ?? 0} | RWI: {directorGate.avg_rwi_score ?? '-'} | Trudne klipy: {directorGate.hard_cases_count ?? 0}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {(directorGate.synapsa_director_insights || []).map((ins: any, idx: number) => (
+              <div key={idx} className="p-3.5 fk-cut-sm bg-[#050505] border border-[#272A2F] space-y-1.5">
+                <div className="text-[11px] font-mono font-bold text-[#C8FF3A] uppercase">
+                  {ins.target}
+                </div>
+                <div className="text-xs text-[#FFFFFF] leading-snug">{ins.observation}</div>
+                <div className="text-[11px] text-[#55E88D] font-mono">Akcja: {ins.action_taken}</div>
+                <div className="text-[11px] text-[#A0A7B1]">Efekt: {ins.expected_impact}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

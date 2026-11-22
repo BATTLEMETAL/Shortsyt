@@ -1,20 +1,26 @@
 {
  "_about": "Reguły silnika Flikcut w jednym miejscu. tests/test_rules.py porównuje te liczby z kodem: zmiana w kodzie bez zmiany tutaj (albo odwrotnie) wywala test. Tak poprawka nie znika po cichu trzy zmiany później. Pola 'doc' i 'open' są dla ludzi.",
- "version": "2026-11-11",
+ "version": "2026-11-12",
  "edit_limits": {
   "zoom_max": 1.12,
-  "zoom_window_max": 0.40,
-  "slowmo_window_max": 0.70,
-  "mini_slowmo_speed": 0.70,
-  "mini_slowmo_lead": 0.30,
-  "mini_slowmo_window": 0.70,
+  "zoom_window_max": 0.4,
+  "slowmo_window_max": 0.7,
+  "mini_slowmo_speed": 0.7,
+  "mini_slowmo_lead": 0.3,
+  "mini_slowmo_window": 0.7,
   "ease_max": 0.15,
   "doc": "lol_timeline.py. Reżyser i tuning mogą prosić o więcej (zoom 1.25, slow-mo 1.6 s); edytor przycina do tych wartości i wypisuje to w logu."
  },
  "frame": {
-  "source": [1920, 1080],
+  "source": [
+   1920,
+   1080
+  ],
   "crop_width": 608,
-  "output": [1080, 1920],
+  "output": [
+   1080,
+   1920
+  ],
   "doc": "Kadr 9:16 z 1080p ma 608 px (parzyście; 607 wywala NVENC). Źródła inne niż 1920x1080 są normalizowane przy wycinaniu (lol_editor.NORMALIZE_SOURCE)."
  },
  "camera": {
@@ -32,13 +38,43 @@
   "doc": "smart_camera.CAMERA. Wartości są takie, jakie stały w kodzie przekazanym 11.11.2026."
  },
  "camera_open": [
-  {"rule": "snap_delta_px", "code": 220, "guidelines": 280, "todo": "PROJECT_GUIDELINES mówi 280, kod 220. Rozstrzygnąć na klipie z Flashem i wpisać jedną liczbę w obu miejscach."},
-  {"rule": "górna maska HUD", "code": "cała szerokość, y < 140", "guidelines": "y < 95 tylko dla x 680..1240", "todo": "Dokumentacja opisuje to jako naprawioną AWARIĘ 3 (ślepota w rzece), a kod ma starą maskę z komentarzem 'zgodnie z backup a6ec349'. Poprawka zniknęła przy przywróceniu kopii. Sprawdzić na klipie z rzeki."},
-  {"rule": "dolny HUD", "code": "y > 815", "guidelines": "y > 864"},
-  {"rule": "marginesy", "code": "x < 85, x > 1720", "guidelines": "x < 45, x > 1740"},
-  {"rule": "portrety sojuszników", "code": "y < 550, x > 1450", "guidelines": "y < 450, x > 1540"},
-  {"rule": "geometria paska gracza", "code": "szer. 42..155, wys. 4..26, proporcja 2..18", "guidelines": "szer. 18..150, wys. 5..18, proporcja 2..12"},
-  {"rule": "złota maska", "code": "r>165, g>130, b<115", "guidelines": "r>175, g>140, b<95"}
+  {
+   "rule": "snap_delta_px",
+   "code": 220,
+   "guidelines": 280,
+   "todo": "PROJECT_GUIDELINES mówi 280, kod 220. Rozstrzygnąć na klipie z Flashem i wpisać jedną liczbę w obu miejscach."
+  },
+  {
+   "rule": "górna maska HUD",
+   "code": "cała szerokość, y < 140",
+   "guidelines": "y < 95 tylko dla x 680..1240",
+   "todo": "Dokumentacja opisuje to jako naprawioną AWARIĘ 3 (ślepota w rzece), a kod ma starą maskę z komentarzem 'zgodnie z backup a6ec349'. Poprawka zniknęła przy przywróceniu kopii. Sprawdzić na klipie z rzeki."
+  },
+  {
+   "rule": "dolny HUD",
+   "code": "y > 815",
+   "guidelines": "y > 864"
+  },
+  {
+   "rule": "marginesy",
+   "code": "x < 85, x > 1720",
+   "guidelines": "x < 45, x > 1740"
+  },
+  {
+   "rule": "portrety sojuszników",
+   "code": "y < 550, x > 1450",
+   "guidelines": "y < 450, x > 1540"
+  },
+  {
+   "rule": "geometria paska gracza",
+   "code": "szer. 42..155, wys. 4..26, proporcja 2..18",
+   "guidelines": "szer. 18..150, wys. 5..18, proporcja 2..12"
+  },
+  {
+   "rule": "złota maska",
+   "code": "r>165, g>130, b<115",
+   "guidelines": "r>175, g>140, b<95"
+  }
  ],
  "duration_targets_open": {
   "frag_detector_default": "10..13 s (target_min_dur, target_max_dur)",
@@ -57,5 +93,138 @@
   "shrink_k": 10.0,
   "zero_views_threshold": 50,
   "doc": "learning_engine.py. Wniosek staje się ustawieniem dopiero przy tej liczbie filmów i przewadze 15 % nad drugim."
+ },
+ "timeline_fast_forward": {
+  "speed": 3.0,
+  "gap_min": 3.5,
+  "tail": 0.9,
+  "lead": 1.0,
+  "doc": "lol_timeline.apply_fast_forward: styl SPEED_RAMP_FLOW."
+ },
+ "raw_material": {
+  "min_height": 720,
+  "min_fps": 30.0,
+  "min_tracking": 0.65,
+  "min_combat_share": 0.3,
+  "combat_before_kill": 3.0,
+  "combat_after_kill": 1.0,
+  "instant_death_sec": 1.2,
+  "doc": "lol_quality_validator.is_raw_material_viable (bramka 0)."
+ },
+ "quality_gate": {
+  "threshold": 70,
+  "max_retries": 2,
+  "beat_ok_sec": 0.5,
+  "beat_warn_sec": 1.0,
+  "beat_fail_sec": 1.5,
+  "kill_coverage_min": 0.75,
+  "hook_first_frame_min": 50,
+  "hook_first_kill_max_sec": 8.0,
+  "camera_peak_step_max_px": 65.0,
+  "unverified_drop_score": 60,
+  "fallback": {
+   "ERR_PACING": "SPEED_RAMP_FLOW",
+   "ERR_BEAT_SYNC": "BEAT_REALIGN",
+   "ERR_HOOK": "IN_MEDIA_RES",
+   "ERR_CAMERA": "CINEMATIC_DUEL"
+  },
+  "not_measured": [
+   "procent HP (clutch <15 %)",
+   "unik skillshota",
+   "kradzież Barona / smoka",
+   "pasywny kill",
+   "pierwsze uderzenie (jest tylko czas killa)"
+  ],
+  "open": "Próg 70 pochodzi z dyrektywy, nie z danych: ocena koreluje z wyświetleniami na 0,29. Zadanie 51 wyznaczy próg i wagi z wyników kanału.",
+  "doc": "lol_quality_gate.py. Short poniżej progu nie jest publikowany: diagnoza → styl zapasowy → ponowny render (max_retries) → rejected_montages/."
+ },
+ "camera_shunpo_policy": {
+  "champion": "Katarina",
+  "motion_rule": "smooth_pan_or_instant_shunpo_snap",
+  "max_smooth_step_px": 80.0,
+  "shunpo_range_px_1080p": 520.0,
+  "shunpo_target_snap_tol_px": 140.0,
+  "valid_jump_targets": [
+   "katarina_passive_dagger",
+   "enemy_champion_hp_bar"
+  ],
+  "post_snap_behavior": "center_on_katarina",
+  "post_snap_center_lock_frames": 2,
+  "doc": "Ruch kamery ma być płynny (<=80px/próbkę) lub natychmiastowy skok przy użyciu E (Shunpo) Katariny na sztylet pasywny albo bezpośrednio na przeciwnika; po doskoku kamera natychmiast centruje kadr 9:16 dokładnie na Katarinie."
+ },
+ "high_retention_reference": {
+  "high_avd_threshold_pct": 100.0,
+  "high_avd_video_count": 96,
+  "high_avd_median_views": 1982,
+  "low_avd_video_count": 43,
+  "low_avd_median_views": 1485,
+  "best_duration_bucket": "balanced_14_17s",
+  "target_duration_range_s": [
+   11.8,
+   17.7
+  ],
+  "viral_avg_duration_s": 15.0,
+  "min_qa_score_high_retention": 96,
+  "hook_retention_by_action": {
+   "triple": 88.2,
+   "solo_bolo": 85.8,
+   "double": 82.3,
+   "outplay": 76.2,
+   "clutch": 75.9
+  },
+  "recommended_montage": {
+   "style": "PRIMARY",
+   "operation": "KEEP_FULL_CONTINUOUS",
+   "zoom_max": 1.12,
+   "slowmo_window_max": 0.7,
+   "music_volume": 0.55,
+   "game_volume": 0.85,
+   "camera_mode_multi": "tight_player",
+   "camera_mode_solo": "duel_centroid"
+  }
+ },
+ "overlay_and_retention_policy": {
+  "max_intro_lead_in_s": 4.2,
+  "max_intro_lead_in_objective_s": 5.2,
+  "combat_start_scan": "backward_from_first_kill_enemy_hp_only",
+  "hook_fade_in_at_t0": false,
+  "hud_kill_y_ratio": 0.175,
+  "banner_kill_y_ratio": 0.235,
+  "cta_y_px": 1380,
+  "hud_counter_rule": "match_max_banner_tier_expectation",
+  "audio_video_sync": "ffprobe_video_dur_plus_atrim_and_shortest_alimiter_0.80_level_disabled",
+  "shunpo_camera_edge_guard_px": 145,
+  "pre_render_synapsa_hook": true,
+  "banned_generic_hooks": [
+   "INSANE OUTPLAY!",
+   "CLEAN OUTPLAY",
+   "CLEAN MECHANICAL OUTPLAY",
+   "MECHANICAL OUTPLAY",
+   "NICE PLAY"
+  ]
+ },
+ "watchability_rubric": {
+  "weights": {
+   "hook_frame0": 22.0,
+   "framing": 24.0,
+   "overlay_clarity": 20.0,
+   "audio_sync": 20.0,
+   "pacing": 14.0
+  },
+  "no_change_thresholds": {
+   "mean_frame_mad_lt": 1.8,
+   "changed_frames_ratio_lt": 0.08,
+   "abs_delta_watchability_lt": 1.5,
+   "abs_delta_dur_lt": 0.2,
+   "abs_delta_clip_lte": 2,
+   "abs_delta_av_lt": 0.02
+  },
+  "verdict_thresholds": {
+   "better_delta_min": 2.5,
+   "worse_delta_max": -2.5,
+   "critical_clip_increase": 20,
+   "acceptable_shunpo_step_px": 520.0,
+   "chaotic_cam_step_px": 600.0
+  }
  }
 }

@@ -8,6 +8,7 @@ import Outputs from './screens/Outputs';
 import Analytics from './screens/Analytics';
 import FeedbackTuning from './screens/FeedbackTuning';
 import Settings from './screens/Settings';
+import Comments from './screens/Comments';
 import DarkAgent from './screens/DarkAgent';
 import { CalendarScheduler } from './screens/CalendarScheduler';
 import { apiHealthCheck, apiGetStatus } from './lib/api';
@@ -52,12 +53,12 @@ export default function App() {
 
   return (
     <HashRouter>
-      <div className="flex h-screen w-screen overflow-hidden bg-[#0A0E1A] text-[#E4D6B5]">
+      <div className="flex h-screen w-screen overflow-hidden bg-[#050505] text-[#FFFFFF]">
         {/* Left Navigation Sidebar */}
         <Sidebar backendConnected={backendConnected} pipelineRunning={pipelineRunning} />
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#0A0E1A] p-6">
+        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#050505] p-4 pb-24 md:p-6">
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Dashboard onStatusChange={handleStatusChange} />} />
@@ -68,6 +69,7 @@ export default function App() {
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/dark" element={<DarkAgent />} />
               <Route path="/tuning" element={<FeedbackTuning />} />
+              <Route path="/comments" element={<Comments />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from ..auth import verify_token, verify_token_flexible
 from ..config import LOL_TEMP_DIR, LOL_OUTPUT_DIR
-from ..helpers import _record_publication, _load_meta, _save_meta
+from ..helpers import _record_publication, _load_meta, _save_meta, _archive_and_schedule_48h
 from ..models import (
     TikTokAuthCodeRequest,
     TikTokUploadRequest,
@@ -270,6 +270,13 @@ async def publish_all(
     rnk = req.rank or meta.get("rank") or "Challenger"
     peak = meta.get("peak_moment") or meta.get("clip_peak")
     thumb_to_use = req.thumbnail_path or meta.get("thumbnail_path")
+    if not thumb_to_use or not Path(str(thumb_to_use)).is_file():
+        thumb_stem = Path(filename).stem
+        for d in (LOL_TEMP_DIR, LOL_OUTPUT_DIR):
+            cand_thumb = Path(d) / f"{thumb_stem}_thumb.jpg"
+            if cand_thumb.is_file():
+                thumb_to_use = str(cand_thumb)
+                break
 
     # Gwarancja bogatych tagów YouTube (450+ znaków, canonical, bez #)
     tags_to_use = req.tags or meta.get("tags") or []
@@ -303,6 +310,27 @@ async def publish_all(
     title_to_use = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", req.title)
     desc_to_use = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", desc_to_use)
 
+    copy_override = None
+    if req.tiktok_caption and req.tiktok_caption.strip():
+        try:
+            from ...multi_platform_copywriter import generate_all_platform_copy
+            copy_override = generate_all_platform_copy(
+                champion=champ,
+                action_type=action,
+                base_metadata={"title": title_to_use, "description": desc_to_use, "tags": tags_to_use},
+                platforms=req.platforms,
+            )
+            if "tiktok" in copy_override:
+                raw_tt = req.tiktok_caption.strip()
+                extracted_tags = [m.lower() for m in re.findall(r"#([a-zA-Z0-9_]+)", raw_tt)]
+                clean_tt_line = re.sub(r"#\S+", "", raw_tt).strip()
+                copy_override["tiktok"]["title"] = clean_tt_line[:180] or title_to_use
+                copy_override["tiktok"]["caption"] = raw_tt
+                if extracted_tags:
+                    copy_override["tiktok"]["hashtags"] = extracted_tags[:8]
+        except Exception:
+            copy_override = None
+
     loop = asyncio.get_event_loop()
     results = await loop.run_in_executor(
         None,
@@ -318,6 +346,7 @@ async def publish_all(
             share_to_ig_feed=req.share_to_ig_feed,
             thumbnail_path=thumb_to_use,
             publish_at=req.publish_at,
+            copy_by_platform=copy_override,
             pinned_comment=pinned_to_use,
             champion_name=champ,
             action_type=action,
@@ -377,6 +406,30 @@ async def publish_all(
             pub_path = Path(__file__).resolve().parent.parent.parent / "published_videos.jsonl"
             with open(pub_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(pub_log, ensure_ascii=False) + "\n")
+
+            # Archiwizacja .recipe.json (ID wszystkich platform) + Bramka 48h — jak w /youtube/upload
+            try:
+                primary_id = results.get("youtube", {}).get("video_id")
+                if primary_id:
+                    platform_ids = {
+                        "video_id": primary_id,
+                        "url": results["youtube"].get("url"),
+                        "tiktok": results.get("tiktok") if results.get("tiktok", {}).get("success") else None,
+                        "instagram": results.get("instagram") if results.get("instagram", {}).get("success") else None,
+                        "facebook": results.get("facebook") if results.get("facebook", {}).get("success") else None,
+                        "scheduled_publish_at": req.publish_at,
+                    }
+                    platform_ids = {k: v for k, v in platform_ids.items() if v is not None}
+                    _archive_and_schedule_48h(
+                        video_path,
+                        primary_id,
+                        results["youtube"],
+                        results["youtube"].get("title") or title_to_use,
+                        meta,
+                        platform_ids=platform_ids,
+                    )
+            except Exception as arch_err:
+                print(f"⚠️ [social.publish] Błąd archiwizacji recipe / Bramki 48h: {arch_err}")
             try:
                 from lol_agent.api.youtube_uploader import invalidate_publish_cache
                 invalidate_publish_cache()
@@ -405,4 +458,66 @@ def get_social_analytics(platform: str = "all", refresh: bool = False, payload: 
         return get_tiktok_analytics(force_refresh=refresh)
     else:
         return get_omnichannel_analytics(force_refresh=refresh)
+
+
+class SocialCopyPreviewRequest(BaseModel):
+    title: str
+    champion_name: str = "Katarina"
+    action_type: str = "outplay"
+
+
+@router.get("/social/queue")
+def get_social_queue(payload: dict = Depends(verify_token_flexible)):
+    """Zwraca kolejkę zaplanowanych publikacji TikTok/Instagram/Facebook wraz z podsumowaniem."""
+    from ...scheduled_queue import _load_queue, _QUEUE_LOCK
+    with _QUEUE_LOCK:
+        items = list(_load_queue())
+    items.sort(key=lambda x: str(x.get("publish_at") or ""), reverse=True)
+    summary = {
+        "total": len(items),
+        "pending": sum(1 for i in items if i.get("status") == "pending"),
+        "published": sum(1 for i in items if i.get("status") == "published"),
+        "failed": sum(1 for i in items if i.get("status") == "failed"),
+    }
+    return {"items": items, "summary": summary}
+
+
+@router.post("/social/queue/flush")
+async def flush_social_queue_endpoint(payload: dict = Depends(verify_token_flexible)):
+    """Ręcznie uruchamia wysyłkę zaległych pozycji z kolejki TikTok/IG/FB oraz przypiętych komentarzy YT."""
+    from ...scheduled_queue import check_and_flush_scheduled_posts
+    from ..youtube_uploader import flush_pending_comments
+
+    loop = asyncio.get_event_loop()
+    flushed_posts = await loop.run_in_executor(None, check_and_flush_scheduled_posts)
+    flushed_comments = await loop.run_in_executor(None, flush_pending_comments)
+    fc_count = (
+        len(flushed_comments.get("sent") or [])
+        if isinstance(flushed_comments, dict)
+        else int(flushed_comments or 0)
+    )
+    return {
+        "ok": True,
+        "flushed_posts": int(flushed_posts or 0),
+        "flushed_comments": fc_count,
+    }
+
+
+@router.post("/social/preview-copy")
+def preview_social_copy(req: SocialCopyPreviewRequest, payload: dict = Depends(verify_token_flexible)):
+    """Generuje deterministyczny podgląd opisu + hashtagów dla TikTok, Instagram i Facebooka."""
+    from ...multi_platform_copywriter import generate_all_platform_copy
+    copies = generate_all_platform_copy(
+        champion=req.champion_name or "Katarina",
+        action_type=req.action_type or "outplay",
+        base_metadata={"title": req.title or ""},
+        platforms=["tiktok", "instagram", "facebook"],
+    )
+    tt = copies.get("tiktok", {})
+    tt_tags = " ".join(f"#{t}" for t in (tt.get("hashtags") or []))
+    tt_copy_text = f"{tt.get('title', '').strip()}\n{tt_tags}".strip()
+    return {
+        "tiktok_copy_text": tt_copy_text,
+        "copies": copies,
+    }
 

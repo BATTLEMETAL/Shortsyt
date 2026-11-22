@@ -24,6 +24,21 @@ def start_pipeline(req: PipelineStartRequest, payload: dict = Depends(verify_tok
     """Uruchom renderowanie klipu."""
     try:
         try:
+            from lol_agent.synapsa_overnight_batch import get_overnight_status
+        except ImportError:
+            from synapsa_overnight_batch import get_overnight_status
+        if get_overnight_status().get("status") in ("scanning", "rendering", "evaluating"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Tryb nocny (Overnight Batch) jest w trakcie pracy — zatrzymaj go przed ręcznym renderem.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    try:
+        try:
             from lol_agent.run_lol_agent import check_duplicate_clip
         except ImportError:
             from run_lol_agent import check_duplicate_clip

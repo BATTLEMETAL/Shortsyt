@@ -1,6 +1,6 @@
 """
 Shortsyt API — Kalendarz Publikacji i Rezerwacja Pipeline
-Zarządza harmonogramem publikacji na YouTube Shorts w oparciu o Peak Hours (08:30, 12:00, 18:30, 20:30 CET)
+Zarządza harmonogramem publikacji na YouTube Shorts w oparciu o Peak Hours (11:00 i 21:30 CET)
 oraz rezerwacjami slotów produkcyjnych.
 """
 import os
@@ -17,7 +17,7 @@ except Exception:
     TZ_CET = timezone(timedelta(hours=2))
 
 CALENDAR_FILE = Path(__file__).resolve().parent.parent / "publishing_calendar.json"
-PEAK_HOURS_CET = ["08:30", "18:30"]
+PEAK_HOURS_CET = ["11:00", "21:30"]
 
 
 def _load_calendar_db() -> Dict[str, Any]:
@@ -42,11 +42,11 @@ def _save_calendar_db(data: Dict[str, Any]):
 
 def get_calendar_slots(start_date: Optional[str] = None, days: int = 14, force_refresh: bool = False) -> List[Dict[str, Any]]:
     """
-    Zwraca siatkę slotów publikacji na zadany okres (2 Shortsy dziennie: 08:30 i 18:30 CET).
+    Zwraca siatkę slotów publikacji na zadany okres (2 Shortsy dziennie: 11:00 i 21:30 CET).
     Łączy:
     1. Opublikowane filmy z YouTube z historycznymi statystykami i Wskaźnikiem Skuteczności
     2. Zaplanowane filmy na YouTube (status 'scheduled')
-    3. Przyszłe okna Peak Hours (08:30 i 18:30 CET) z zapisanymi rezerwacjami
+    3. Przyszłe okna Peak Hours (11:00 i 21:30 CET) z zapisanymi rezerwacjami
     """
     db = _load_calendar_db()
     now_cet = datetime.now(TZ_CET)
@@ -108,7 +108,7 @@ def get_calendar_slots(start_date: Optional[str] = None, days: int = 14, force_r
             "created_at": pub.get("datetime_utc"),
         })
 
-    # 3. Wygeneruj sloty na dziś i kolejne dni (dokładnie 2 okna dziennie: 08:30 i 18:30 CET)
+    # 3. Wygeneruj sloty na dziś i kolejne dni (dokładnie 2 okna dziennie: 11:00 i 21:30 CET)
     if start_date:
         try:
             start_dt = datetime.fromisoformat(start_date).replace(tzinfo=TZ_CET)
@@ -212,6 +212,53 @@ def get_calendar_slots(start_date: Optional[str] = None, days: int = 14, force_r
                 })
         except Exception:
             pass
+
+    # 5. Powiąż wpisy z kolejki TikTok / Instagram / Facebook (scheduled_social_queue.json)
+    try:
+        try:
+            from lol_agent.scheduled_queue import _load_queue
+        except ImportError:
+            from scheduled_queue import _load_queue
+        queue_items = _load_queue() or []
+    except Exception:
+        queue_items = []
+
+    if queue_items:
+        parsed_q = []
+        for qi in queue_items:
+            pub_raw = str(qi.get("publish_at") or "")
+            q_dt = None
+            if pub_raw:
+                try:
+                    q_dt = datetime.fromisoformat(pub_raw.replace("Z", "+00:00"))
+                except Exception:
+                    q_dt = None
+            parsed_q.append((qi, q_dt))
+
+        for s in slots:
+            s_dt = None
+            try:
+                if s.get("datetime_utc"):
+                    s_dt = datetime.fromisoformat(str(s["datetime_utc"]).replace("Z", "+00:00"))
+            except Exception:
+                s_dt = None
+
+            matched = []
+            for qi, q_dt in parsed_q:
+                if s_dt and q_dt and abs((s_dt - q_dt).total_seconds()) <= 900:
+                    matched.append({
+                        "id": qi.get("id"),
+                        "platform": qi.get("platform"),
+                        "status": qi.get("status"),
+                        "publish_at": qi.get("publish_at"),
+                        "caption": qi.get("caption", "")[:120],
+                        "hashtags": (qi.get("extra") or {}).get("hashtags") or [],
+                        "url": (qi.get("result") or {}).get("url"),
+                        "publish_id": (qi.get("result") or {}).get("publish_id"),
+                        "error": qi.get("error"),
+                    })
+            if matched:
+                s["social_queue"] = matched
 
     # Posortuj chronologicznie (najpierw historia, potem dziś, potem przyszłość)
     slots.sort(key=lambda s: s["datetime_utc"])

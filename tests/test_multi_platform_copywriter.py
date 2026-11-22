@@ -260,3 +260,21 @@ class TestGenerateAll:
     def test_empty_platforms_list_returns_empty_dict(self):
         result = generate_all_platform_copy("Katarina", "outplay", platforms=[])
         assert result == {}
+
+    @patch("lol_agent.multi_platform_copywriter._call_gemini")
+    def test_base_metadata_prevents_gemini_hallucination_and_strips_yt_tags(self, mock_gemini):
+        mock_gemini.return_value = "DRAGON STEAL + QUADRA!"
+        base = {"title": "Deleted in 2 Seconds Flat ⚡ #shorts #leagueoflegends #lol"}
+        result = generate_all_platform_copy(
+            "Katarina",
+            "double",
+            base_metadata=base,
+            platforms=["tiktok", "instagram"],
+        )
+        mock_gemini.assert_not_called()
+        assert result["tiktok"]["title"] == "Deleted in 2 Seconds Flat ⚡"
+        assert "#shorts" not in result["tiktok"]["caption"].lower()
+        assert "doublekill" in result["tiktok"]["hashtags"]
+        assert "fyp" in result["tiktok"]["hashtags"]
+        assert len(result["tiktok"]["hashtags"]) <= 5
+        assert result["instagram"]["title"].startswith("Deleted in 2 Seconds Flat")

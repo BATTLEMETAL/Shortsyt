@@ -29,8 +29,16 @@ echo       [Ostrzezenie] Serwer moze jeszcze startowac.
 :backend_ready
 echo       Serwer backendu FastAPI jest aktywny [OK]
 
-:: 2. Launch Shortsyt Studio Desktop Application
-echo [2/2] Uruchamianie aplikacji Shortsyt Studio...
+:: 2. Launch Flikcut / Shortsyt Studio Desktop Application
+echo [2/2] Uruchamianie aplikacji Flikcut Studio...
+if exist "%~dp0shortsyt-desktop\dist-installer\win-unpacked\Flikcut Studio.exe" (
+    start "" /d "%~dp0shortsyt-desktop\dist-installer\win-unpacked" "%~dp0shortsyt-desktop\dist-installer\win-unpacked\Flikcut Studio.exe"
+    echo.
+    echo [OK] Flikcut Studio zostalo pomyslnie uruchomione!
+    ping 127.0.0.1 -n 3 >nul
+    exit /b 0
+)
+
 if exist "%~dp0shortsyt-desktop\dist-installer\win-unpacked\Shortsyt Studio.exe" (
     start "" /d "%~dp0shortsyt-desktop\dist-installer\win-unpacked" "%~dp0shortsyt-desktop\dist-installer\win-unpacked\Shortsyt Studio.exe"
     echo.

@@ -3,6 +3,7 @@ Shortsyt API — Helpers, Metadane, Sync & Persistence
 """
 import json
 import os
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,7 @@ from .models import YouTubeUploadRequest
 DARK_ROOT = Path(__file__).parent.parent.parent  # shortsyt root
 
 _push_token: Optional[str] = None
+_META_LOCK = threading.Lock()
 
 
 def get_push_token() -> Optional[str]:
@@ -36,17 +38,27 @@ def _meta_path_for(filename: str) -> Path:
 
 
 def _save_meta(filename: str, data: dict) -> None:
-    """Zapisuje metadane jako plik .meta.json obok pliku wideo."""
-    meta_path = _meta_path_for(filename)
-    meta_path.parent.mkdir(parents=True, exist_ok=True)
-    existing = {}
-    if meta_path.exists():
+    """Zapisuje metadane jako plik .meta.json obok pliku wideo (atomowo i bezpiecznie wątkowo)."""
+    with _META_LOCK:
+        meta_path = _meta_path_for(filename)
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if meta_path.exists():
+            try:
+                existing = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        existing.update(data)
+        tmp = meta_path.with_name(f"{meta_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
         try:
-            existing = json.loads(meta_path.read_text(encoding="utf-8"))
+            tmp.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, meta_path)
         except Exception:
-            pass
-    existing.update(data)
-    meta_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise
 
 
 def _load_meta(filename: str) -> dict:
@@ -58,6 +70,77 @@ def _load_meta(filename: str) -> dict:
         except Exception:
             pass
     return {}
+
+
+def _archive_and_schedule_48h(video_path: str, vid_id: str, result: dict, title: str, meta: dict,
+                              platform_ids: Optional[dict] = None) -> None:
+    """Archiwizuje .recipe.json (z ID wszystkich platform) i planuje Bramkę 48h. Wspólne dla /youtube/upload i /social/publish-all."""
+    action = meta.get("action_type", "outplay")
+    champ = meta.get("champion_name", "Katarina")
+    initial_qa = meta.get("qa_score")
+    if initial_qa is None:
+        initial_qa = 85
+    qa_details = meta.get("qa_details", [])
+    duration_s = meta.get("duration", 15.0)
+    if vid_id:
+        recipe_data = None
+        measured_data = {}
+        try:
+            try:
+                from lol_agent.lol_quality_gate import attach_publication_to_recipe, read_recipe, measure as measure_recipe
+            except ImportError:
+                from lol_quality_gate import attach_publication_to_recipe, read_recipe, measure as measure_recipe
+            attach_publication_to_recipe(video_path, video_id=vid_id, platform_ids=platform_ids or result)
+            recipe_data = read_recipe(video_path)
+            if recipe_data:
+                measured_data = measure_recipe(recipe_data)
+        except Exception as rec_err:
+            print(f"[Publish] Warning archiving recipe: {rec_err}")
+
+        real_music = (
+            ((recipe_data or {}).get("music") or {}).get("track")
+            or measured_data.get("track")
+            or meta.get("music_file", "")
+        )
+        real_beat_err = measured_data.get("beat_error_sec")
+        if real_beat_err is None:
+            real_beat_err = meta.get("beat_sync_error", 0.0)
+        real_kill_cov = meta.get("kill_coverage_pct")
+        if real_kill_cov is None and isinstance(qa_details, dict):
+            rg = qa_details.get("recipe_gate") or {}
+            if rg.get("kill_coverage_pct") is not None:
+                real_kill_cov = rg.get("kill_coverage_pct")
+        if real_kill_cov is None:
+            mei_av = (meta.get("mei") or {}).get("action_visibility_pct")
+            real_kill_cov = float(mei_av) if mei_av is not None else 100.0
+        mei_payload = dict(meta.get("mei") or {})
+        if measured_data.get("style"):
+            mei_payload.setdefault("montage_style", measured_data["style"])
+        if measured_data.get("first_kill_out_sec") is not None:
+            mei_payload.setdefault("first_kill_out_sec", measured_data["first_kill_out_sec"])
+        if measured_data.get("camera_peak_step_px") is not None:
+            mei_payload.setdefault("camera_peak_step_px", measured_data["camera_peak_step_px"])
+
+        try:
+            try:
+                from lol_agent.lol_performance_tracker import schedule_check
+            except ImportError:
+                from lol_performance_tracker import schedule_check
+            schedule_check(
+                video_id=vid_id,
+                video_url=result.get("url", f"https://www.youtube.com/shorts/{vid_id}"),
+                title=title,
+                action_type=action,
+                champion=champ,
+                quality_score=float(initial_qa),
+                music_file=str(real_music or ""),
+                beat_sync_error=float(real_beat_err or 0.0),
+                kill_coverage_pct=float(real_kill_cov),
+                duration_s=float(duration_s),
+                mei=mei_payload,
+            )
+        except Exception as se:
+            print(f"[Publish] Warning: could not schedule performance check: {se}")
 
 
 def _record_publication(video_path: str, filename: str, result: dict, req: YouTubeUploadRequest) -> None:
@@ -109,27 +192,9 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
     except Exception as e:
         print(f"[Publish] Warning: could not write published_videos.jsonl: {e}")
 
-    # Zaplanuj automatyczną weryfikację wydajności (48h) w pending_checks.json
     vid_id = result.get("video_id")
     if vid_id:
-        try:
-            try:
-                from lol_agent.lol_performance_tracker import schedule_check
-            except ImportError:
-                from lol_performance_tracker import schedule_check
-            schedule_check(
-                video_id=vid_id,
-                video_url=result.get("url", f"https://www.youtube.com/shorts/{vid_id}"),
-                title=result.get("title", req.title),
-                action_type=action,
-                champion=champ,
-                quality_score=float(initial_qa),
-                music_file=meta.get("music_file", ""),
-                beat_sync_error=0.0,
-                kill_coverage_pct=100.0,
-            )
-        except Exception as se:
-            print(f"[Publish] Warning: could not schedule performance check: {se}")
+        _archive_and_schedule_48h(video_path, vid_id, result, result.get("title", req.title), meta)
 
     if source_path and Path(source_path).exists():
         try:
@@ -221,8 +286,31 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                     "total_video_count": int(ch["statistics"].get("videoCount", 0)),
                 }
 
-                pl_res = youtube.playlistItems().list(part="snippet,contentDetails", playlistId=uploads_id, maxResults=50).execute()
-                v_ids = [it["contentDetails"]["videoId"] for it in pl_res.get("items", [])]
+                v_ids = []
+                page_token = None
+                while len(v_ids) < 250:
+                    batch_limit = min(50, 250 - len(v_ids))
+                    pl_res = youtube.playlistItems().list(
+                        part="snippet,contentDetails",
+                        playlistId=uploads_id,
+                        maxResults=batch_limit,
+                        pageToken=page_token,
+                    ).execute()
+                    for it in pl_res.get("items", []):
+                        vid_id = (it.get("contentDetails") or {}).get("videoId")
+                        if vid_id:
+                            v_ids.append(vid_id)
+                    page_token = pl_res.get("nextPageToken")
+                    if not page_token:
+                        break
+
+                # Pobierz zbiorcze metryki YouTube Analytics API v2 jednym zapytaniem
+                bulk_yta = {}
+                try:
+                    from .youtube_analytics import fetch_bulk_video_analytics
+                    bulk_yta = fetch_bulk_video_analytics(force_refresh=force)
+                except Exception:
+                    pass
 
                 # Wczytaj mapowanie video_id z published_videos.jsonl dla precyzyjnych metadanych
                 local_meta_by_id = {}
@@ -243,8 +331,15 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
 
                 videos = []
                 if v_ids:
-                    v_res = youtube.videos().list(part="snippet,statistics,contentDetails", id=",".join(v_ids[:50])).execute()
-                    for item in v_res.get("items", []):
+                    video_items = []
+                    for i in range(0, len(v_ids), 50):
+                        v_res = youtube.videos().list(
+                            part="snippet,statistics,contentDetails",
+                            id=",".join(v_ids[i:i + 50]),
+                        ).execute()
+                        video_items.extend(v_res.get("items", []))
+
+                    for idx, item in enumerate(video_items):
                         vid = item["id"]
                         snippet = item["snippet"]
                         stats = item.get("statistics", {})
@@ -259,19 +354,20 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                         champ = loc_meta.get("champion") or ("Katarina" if "katarina" in title.lower() else "League of Legends")
                         initial_qa = loc_meta.get("initial_qa_score")
 
-                        # Spróbuj pobrać realną retencję z YouTube Analytics API
+                        ya = bulk_yta.get(vid, {})
                         ret_str = None
-                        try:
-                            from .youtube_analytics import fetch_video_retention_data
-                            r_dur = float(loc_meta.get("duration_s", 15.0))
-                            r_data = fetch_video_retention_data(vid, duration_s=r_dur)
-                            if r_data and r_data.get("status") == "success" and r_data.get("hook_retention_pct"):
-                                ret_str = f"{r_data.get('hook_retention_pct'):.1f}%"
-                        except Exception:
-                            pass
+                        if idx < 10:
+                            try:
+                                from .youtube_analytics import fetch_video_retention_data
+                                r_dur = float(loc_meta.get("duration_s", 15.0))
+                                r_data = fetch_video_retention_data(vid, duration_s=r_dur)
+                                if r_data and r_data.get("status") == "success" and r_data.get("hook_retention_pct"):
+                                    ret_str = f"{r_data.get('hook_retention_pct'):.1f}%"
+                            except Exception:
+                                pass
 
-                        if not ret_str:
-                            ret_str = "84.5%" if views > 2500 else ("71.2%" if views > 1200 else ("62.0%" if views > 500 else "54.0%"))
+                        if not ret_str and ya.get("avg_view_pct") is not None:
+                            ret_str = f"{float(ya['avg_view_pct']):.1f}%"
 
                         videos.append({
                             "video_id": vid,
@@ -282,6 +378,12 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                             "likes": likes,
                             "comments": comments,
                             "retention": ret_str,
+                            "avg_view_pct": ya.get("avg_view_pct"),
+                            "engaged_views": ya.get("engaged_views"),
+                            "engaged_view_rate_pct": ya.get("engaged_view_rate_pct"),
+                            "watch_time_hours": ya.get("watch_time_hours"),
+                            "shares": ya.get("shares"),
+                            "subscribers_gained": ya.get("subscribers_gained"),
                             "initial_qa_score": initial_qa,
                             "timestamp": pub_at,
                             "published_at": pub_at,

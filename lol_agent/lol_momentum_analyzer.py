@@ -60,7 +60,7 @@ import re as _re_init
 KILL_PATTERNS: List[Tuple[object, Tuple[int, str]]] = [
     (_re_init.compile(r'penta(?:kill|kut|kit|kil|ktl|\s*kill)?', _re_init.I), (100, "PENTAKILL")),
     (_re_init.compile(r'quadra(?:kill|kut|kit|kil|ktl|\s*kill)?', _re_init.I), (80,  "QUADRAKILL")),
-    (_re_init.compile(r'triple(?:kill|kut|kit|kil|ktl|\s*kill|\s*kut|\s*kit)?', _re_init.I), (60,  "TRIPLE KILL")),
+    (_re_init.compile(r'tri[pbl][ilf1][eif]?(?:kill|kut|kit|kil|kin|ktl|\s*ki[a-z]*)?|triple(?:kill|kut|kit|kil|ktl|\s*kill|\s*kut|\s*kit)?', _re_init.I), (60,  "TRIPLE KILL")),
     (_re_init.compile(r'double(?:kill|kut|kit|kil|ktl|\s*kill|\s*kut|\s*kit)?', _re_init.I), (40,  "DOUBLE KILL")),
     (_re_init.compile(r'first\s*blood', _re_init.I), (35,  "FIRST BLOOD")),
     (_re_init.compile(r'shut\s*down|shutdown', _re_init.I), (35,  "SHUTDOWN")),

@@ -89,6 +89,21 @@ except ImportError:
 LOG_FILE = os.path.join(os.path.dirname(__file__), "lol_agent.log")
 
 
+# Bramka jakości: ocena po renderze zatrzymuje publikację i uruchamia ponowny montaż (OPUS_QUALITY_GATES_DIRECTIVE.md)
+try:
+    from lol_quality_gate import run_gate, attach_publication_to_recipe
+    from lol_quality_validator import is_raw_material_viable
+    from lol_editor import MUSIC_DROP_VERIFIED
+    QUALITY_GATE_OK = True
+except ImportError:
+    QUALITY_GATE_OK = False
+    attach_publication_to_recipe = None
+try:
+    from qa_after_render import collect_qa_metrics
+except ImportError:
+    collect_qa_metrics = None
+
+
 def log(message: str):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     entry = f"[{timestamp}] {message}"
@@ -576,7 +591,23 @@ def run_pipeline(
         except Exception as _e:
             log(f"   ⚠️  Pre-Flight error (pomijam): {_e}")
 
-    final_video = render_short(
+    # ── BRAMKA 0: czy surowy materiał nadaje się do montażu (zero renderu dla śmieci) ──
+    if QUALITY_GATE_OK:
+        try:
+            _pf = locals().get("_vr")
+            _ok0, _code0, _why0 = is_raw_material_viable(
+                final_peaks, analysis["peak_start"], analysis["peak_end"],
+                tracking_confidence=getattr(_pf, "tracking_confidence", None),
+            )
+            if not _ok0:
+                log(f"❌ REJECTED ({_code0}): {_why0}")
+                log("   ⏭️  Klip odrzucony przed renderem (bramka 0).")
+                return None
+            log(f"   ✅ Bramka 0: {_why0}")
+        except Exception as _e0:
+            log(f"   ⚠️  Bramka 0 error (pomijam): {_e0}")
+
+    _render_kwargs = dict(
         source_path=source_clip,
         clip_start=analysis["peak_start"],
         clip_end=analysis["peak_end"],
@@ -591,6 +622,25 @@ def run_pipeline(
         preferred_track=preferred_music,
         combat_segments=combat_segs,
     )
+    final_video = render_short(**_render_kwargs)
+
+    # ── BRAMKA 2: ocena po renderze. Poniżej progu: diagnoza → styl zapasowy → ponowny render → albo odrzucenie ──
+    _gate_quality = None
+    if QUALITY_GATE_OK and QUALITY_SCORER_OK and final_video:
+        _gate = run_gate(
+            final_video, render_short, _render_kwargs, score_short,
+            {"source_path": source_clip, "analysis": analysis},
+            verified_tracks=sorted(MUSIC_DROP_VERIFIED), log=log,
+            qa_fn=collect_qa_metrics,
+        )
+        _gate_quality = _gate["quality"]
+        try:
+            save_quality_log(_gate_quality)
+        except Exception:
+            pass
+        if not _gate["video"]:
+            return None
+        final_video = _gate["video"]
 
 
 
@@ -643,10 +693,46 @@ def run_pipeline(
         log(f"   📑 Smart title: {metadata['title']}")
         log(f"   💡 {metadata.get('why_this_title', '')}")
     else:
+        _extra_ctx = {
+            "kill_count": len(final_peaks or []),
+            "clip_duration": round(float(analysis.get("clip_duration") or 15.0), 1),
+            "peaks": final_peaks or [],
+            "objective_secured": bool(analysis.get("objective_secured", False)),
+            "objective_label": str(analysis.get("objective_label") or ""),
+        }
+        try:
+            from hard_case_learner import get_hard_case_by_source
+            _hc = get_hard_case_by_source(source_clip)
+            if _hc and _hc.get("objective_secured"):
+                _extra_ctx["objective_secured"] = True
+                _extra_ctx["objective_label"] = _hc.get("objective_label", "DRAGON_OR_OBJECTIVE_SLAIN")
+        except Exception:
+            pass
+        try:
+            from lol_screen_inspector import inspect_clip_screens
+            _st = inspect_clip_screens(
+                source_clip,
+                peaks=final_peaks,
+                trim_start=float(analysis.get("peak_start") or 0.0),
+                clip_duration=float(analysis.get("clip_duration") or 15.0),
+            )
+            _extra_ctx.update({
+                "kill_span_s": _st.get("kill_span_s", 0.0),
+                "min_hp_pct": _st.get("min_hp_pct"),
+                "low_hp_survival": bool(_st.get("low_hp_survival")),
+                "clean_stomp": bool(_st.get("clean_stomp")),
+                "enemies_in_fight": _st.get("enemies_in_fight", 1),
+                "combo_tempo": _st.get("combo_tempo", ""),
+                "hud_spells_used": _st.get("hud_spells_used") or {},
+                "screen_telemetry": _st,
+            })
+        except Exception:
+            pass
         metadata = generate_metadata(
             action_type=analysis["action_type"],
             champion_name=champion or metadata_champion_guess(source_clip),
             rank=rank,
+            extra_context=_extra_ctx,
         )
 
     if custom_title:
@@ -694,8 +780,11 @@ def run_pipeline(
         return final_video
 
     # === Quality gate: score montage before uploading ===
-    quality_result = None
-    if QUALITY_SCORER_OK:
+    quality_result = locals().get("_gate_quality")
+    if quality_result is None and os.environ.get("SHORTSYT_ALLOW_UNSCORED") != "1":
+        log("⛔ Brak oceny jakości (bramka albo scorer niedostępne): NIE publikuję. Awaryjnie: SHORTSYT_ALLOW_UNSCORED=1")
+        return None
+    if QUALITY_SCORER_OK and quality_result is None:
         from lol_editor import MUSIC_DROP_MAP
         music_fname = os.path.basename(getattr(render_short, '_last_music', '') or '')
         # Find which music was used by checking lol_temp for audio files
@@ -721,7 +810,8 @@ def run_pipeline(
             log(f"   Issues: {'; '.join(quality_result['issues'][:2])}")
             if quality_result.get("recommendation"):
                 log(f"   Suggestion: {quality_result['recommendation']}")
-            log("   Proceeding with upload anyway (score gate is advisory)")
+            log("⛔ Ocena poniżej progu: short NIE zostanie opublikowany.")
+            return None
         else:
             log(f"Quality gate PASSED: {quality_result['score']:.0f}/100")
 
@@ -864,6 +954,11 @@ def run_pipeline(
     pub_log_path = os.path.join(os.path.dirname(__file__), "published_videos.jsonl")
     with open(pub_log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(pub_log, ensure_ascii=False) + "\n")
+    if attach_publication_to_recipe and final_video:
+        try:
+            attach_publication_to_recipe(final_video, video_id=result.get("video_id"), platform_ids=pub_log)
+        except Exception as _rec_err:
+            log(f"   ⚠️ Nie udało się dopisać video_id do recipe: {_rec_err}")
 
     # Save clip hash & stem so same clip is never uploaded twice
     try:

@@ -4,7 +4,7 @@ Uruchom: uvicorn lol_agent.api.main:app --host 0.0.0.0 --port 8765 --reload
 """
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,7 +28,7 @@ from .models import (
 from .youtube_uploader import flush_pending_comments
 
 # Routers
-from .routers import auth, pipeline, clips, youtube, calendar, learning, system, social
+from .routers import auth, pipeline, clips, youtube, calendar, learning, system, social, accounts, overnight
 from .routers.clips import list_clips, auto_detect_clip, scan_available_clips
 
 
@@ -93,6 +93,23 @@ async def lifespan(app: FastAPI):
                         except Exception as se:
                             import logging
                             logging.getLogger("shortsyt.sync").debug("Live stats sync: %s", se)
+
+                        # Proaktywna rotacja lol_temp/ + utrzymanie ważności tokenów OAuth 24/7
+                        try:
+                            from lol_agent.temp_cleaner import cleanup_temp_directory
+                            cleanup_temp_directory(max_age_days=14, dry_run=False)
+                        except Exception as tc_err:
+                            import logging
+                            logging.getLogger("shortsyt.cleaner").debug("Temp cleaner: %s", tc_err)
+
+                        try:
+                            from .youtube_uploader import get_valid_credentials
+                            from lol_agent.tiktok_publisher import load_tiktok_token
+                            get_valid_credentials(require_token=False, ignore_refresh_error=True)
+                            load_tiktok_token()
+                        except Exception as tok_err:
+                            import logging
+                            logging.getLogger("shortsyt.tokens").debug("Token watchdog: %s", tok_err)
                     except Exception as pe:
                         import logging
                         logging.getLogger("shortsyt.tracker").debug("Tracker check: %s", pe)
@@ -110,6 +127,16 @@ async def lifespan(app: FastAPI):
     tracker_task = asyncio.create_task(_tracker_loop())
     yield
     stop_event.set()
+    try:
+        from lol_agent.synapsa_overnight_batch import stop_overnight_batch
+        stop_overnight_batch()
+    except Exception:
+        pass
+    try:
+        from . import pipeline_runner
+        pipeline_runner.stop_pipeline(clear_queue=True)
+    except Exception:
+        pass
     flusher_task.cancel()
     tracker_task.cancel()
     try:
@@ -126,6 +153,8 @@ tags_metadata = [
     {"name": "Calendar", "description": "Harmonogram publikacji z auto-uzupełnianiem i optymalizacją peak hours."},
     {"name": "Learning", "description": "Silnik samouczący: retencja widzów, optymalizacja wag akcji, testy A/B i rekomendacje."},
     {"name": "System", "description": "Diagnostyka sprzętowa (GPU/NVENC), tuning parametrów i benchmarking."},
+    {"name": "Accounts", "description": "Zarządzanie wieloma profilami kont, tokenami i wytycznymi kontentu."},
+    {"name": "Overnight", "description": "Tryb nocny: skan folderu, lokalny montaż Top 5 (bez uploadu) i rekomendacja Synapsy."},
 ]
 
 app = FastAPI(
@@ -157,6 +186,8 @@ app.include_router(calendar.router)
 app.include_router(learning.router)
 app.include_router(system.router)
 app.include_router(social.router)
+app.include_router(accounts.router)
+app.include_router(overnight.router)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STATYCZNY FRONTEND SPA (Electron / Browser)
@@ -168,10 +199,14 @@ if DIST_DIR.exists() and (DIST_DIR / "index.html").exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
-        target = DIST_DIR / full_path
-        if full_path and target.is_file():
+        norm = full_path.replace("\\", "/")
+        if norm.startswith(("thumbnails/", "outputs/")):
+            raise HTTPException(status_code=404, detail="Not found")
+        dist_root = DIST_DIR.resolve()
+        target = (dist_root / norm).resolve()
+        if full_path and target.is_relative_to(dist_root) and target.is_file():
             return FileResponse(target)
-        return FileResponse(DIST_DIR / "index.html")
+        return FileResponse(dist_root / "index.html")
 else:
     @app.get("/", tags=["System"])
     def root():

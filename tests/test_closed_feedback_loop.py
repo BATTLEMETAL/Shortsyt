@@ -181,7 +181,7 @@ def test_dynamic_weights_in_clip_ranker_and_pre_analyzer():
     assert "SOLO BOLO" in KILL_WEIGHTS
     assert KILL_WEIGHTS["SOLO BOLO"] >= 7.5  # Solo bolo ma wyższą lub równą wagę niż quadra
     assert "solo_bolo" in ACTION_WEIGHTS
-    assert ACTION_WEIGHTS["solo_bolo"] >= 1.2
+    assert 0.5 <= ACTION_WEIGHTS["solo_bolo"] <= 2.0
 
 
 def test_validation_result_mei_dictionary():

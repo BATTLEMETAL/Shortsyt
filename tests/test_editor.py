@@ -125,10 +125,10 @@ def test_build_text_overlay_filters():
         video_duration=15.0,
         show_duration=2.5,
     )
-    assert len(filters) == 2
+    assert len(filters) >= 2
     assert "drawbox" in filters[0]
     assert "drawtext" in filters[1]
-    assert "DOUBLE KILL" in filters[1]
+    assert "DOUBLE KILL" in " ".join(filters[1:])
 
 
 def test_build_dynamic_captions_filters():
@@ -155,10 +155,10 @@ def test_build_cta_overlay_filters():
         cta_text="CLEAN OUTPLAY OR PURE LUCK? RATE 1-10",
         show_duration=1.8,
     )
-    assert len(filters) == 2
+    assert len(filters) >= 2
     assert "drawbox" in filters[0]
     assert "drawtext" in filters[1]
-    assert "RATE 1-10" in filters[1]
+    assert "RATE 1-10" in " ".join(filters[1:])
 
 
 def test_apply_overlays_unified_single_ffmpeg_invocation(tmp_path, monkeypatch):

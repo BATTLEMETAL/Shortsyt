@@ -52,35 +52,61 @@ except ImportError:
 
 _CACHE_RETENTION: Dict[str, Dict[str, Any]] = {}
 _CACHE_CHANNEL_RETENTION: Dict[str, Any] = {"timestamp": 0.0, "data": None}
+_CACHE_BULK_VIDEOS: Dict[str, Any] = {"timestamp": 0.0, "days": None, "data": None}
+_CACHE_AUDIENCE_INSIGHTS: Dict[str, Any] = {"timestamp": 0.0, "data": None}
+
+
+def invalidate_analytics_cache() -> None:
+    """Czyści pamięć podręczną YouTube Analytics (np. przy zmianie aktywnego konta)."""
+    _CACHE_RETENTION.clear()
+    _CACHE_CHANNEL_RETENTION["timestamp"] = 0.0
+    _CACHE_CHANNEL_RETENTION["data"] = None
+    _CACHE_BULK_VIDEOS["timestamp"] = 0.0
+    _CACHE_BULK_VIDEOS["data"] = None
+    _CACHE_AUDIENCE_INSIGHTS["timestamp"] = 0.0
+    _CACHE_AUDIENCE_INSIGHTS["data"] = None
+
+
+def _get_yt_token_path() -> Path:
+    try:
+        try:
+            from lol_agent.account_manager import get_active_yt_token_path
+        except ImportError:
+            from account_manager import get_active_yt_token_path
+        return Path(get_active_yt_token_path())
+    except Exception:
+        return YT_TOKEN_PATH
 
 
 def _get_services() -> Tuple[Optional[Any], Optional[Any], Optional[str]]:
     """Zwraca instancje (youtube_v3, youtubeAnalytics_v2, channel_id)."""
-    if not YT_TOKEN_PATH.exists():
+    tok_path = _get_yt_token_path()
+    if not tok_path.exists():
         return None, None, None
 
     try:
-        with open(YT_TOKEN_PATH, "rb") as f:
-            creds = pickle.load(f)
+        from .youtube_uploader import get_valid_credentials
+    except ImportError:
+        try:
+            from lol_agent.api.youtube_uploader import get_valid_credentials
+        except ImportError:
+            get_valid_credentials = None
+
+    try:
+        creds = None
+        if get_valid_credentials is not None:
+            creds = get_valid_credentials(require_token=False, ignore_refresh_error=True)
+        else:
+            with open(tok_path, "rb") as f:
+                creds = pickle.load(f)
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception:
+                    pass
 
         if not creds:
             return None, None, None
-
-        if creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                if hasattr(creds, "_rab_manager"):
-                    try:
-                        delattr(creds, "_rab_manager")
-                    except Exception:
-                        pass
-                tmp_path = YT_TOKEN_PATH.with_suffix(".tmp")
-                with open(tmp_path, "wb") as f:
-                    pickle.dump(creds, f)
-                import os
-                os.replace(tmp_path, YT_TOKEN_PATH)
-            except Exception:
-                pass
 
         yt = build("youtube", "v3", credentials=creds)
         yta = build("youtubeAnalytics", "v2", credentials=creds)
@@ -368,6 +394,237 @@ def fetch_channel_retention_overview(max_videos: int = 35) -> Dict[str, Any]:
 
     _CACHE_CHANNEL_RETENTION["timestamp"] = now
     _CACHE_CHANNEL_RETENTION["data"] = result
+    return result
+
+
+def fetch_bulk_video_analytics(days: int = 3650, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
+    """
+    Pobiera w jednym zapytaniu zbiorcze metryki YouTube Analytics API v2 dla filmów na kanale
+    (engagedViews, averageViewPercentage, averageViewDuration, estimatedMinutesWatched, shares, subscribersGained).
+    Zwraca słownik {video_id: {...}}. Buforowane przez 10 minut.
+    """
+    global _CACHE_BULK_VIDEOS
+    now = time.time()
+    if (
+        not force_refresh
+        and _CACHE_BULK_VIDEOS["data"] is not None
+        and _CACHE_BULK_VIDEOS["days"] == days
+        and (now - _CACHE_BULK_VIDEOS["timestamp"] < 600.0)
+    ):
+        return _CACHE_BULK_VIDEOS["data"]
+
+    _, yta, channel_id = _get_services()
+    if not yta or not channel_id:
+        return {}
+
+    end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if days >= 3650:
+        start_date = "2020-01-01"
+    else:
+        start_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    metrics_str = (
+        "views,engagedViews,averageViewDuration,averageViewPercentage,"
+        "estimatedMinutesWatched,likes,dislikes,comments,shares,subscribersGained,subscribersLost"
+    )
+    out: Dict[str, Dict[str, Any]] = {}
+    start_index = 1
+    try:
+        while True:
+            res = yta.reports().query(
+                ids=f"channel=={channel_id}",
+                startDate=start_date,
+                endDate=end_date,
+                metrics=metrics_str,
+                dimensions="video",
+                sort="-views",
+                maxResults=200,
+                startIndex=start_index,
+            ).execute()
+            rows = res.get("rows", []) or []
+            cols = [c["name"] for c in res.get("columnHeaders", [])]
+            for r in rows:
+                row_map = dict(zip(cols, r))
+                vid = row_map.get("video")
+                if not vid:
+                    continue
+                vw = int(row_map.get("views") or 0)
+                eng_vw = int(row_map.get("engagedViews") or 0)
+                est_min = float(row_map.get("estimatedMinutesWatched") or 0.0)
+                out[vid] = {
+                    "views": vw,
+                    "engaged_views": eng_vw,
+                    "engaged_view_rate_pct": round((eng_vw / vw) * 100.0, 1) if vw > 0 else 0.0,
+                    "avg_view_duration_s": round(float(row_map.get("averageViewDuration") or 0.0), 1),
+                    "avg_view_pct": round(float(row_map.get("averageViewPercentage") or 0.0), 1),
+                    "est_minutes_watched": round(est_min, 1),
+                    "watch_time_hours": round(est_min / 60.0, 2),
+                    "likes": int(row_map.get("likes") or 0),
+                    "dislikes": int(row_map.get("dislikes") or 0),
+                    "comments": int(row_map.get("comments") or 0),
+                    "shares": int(row_map.get("shares") or 0),
+                    "subscribers_gained": int(row_map.get("subscribersGained") or 0),
+                    "subscribers_lost": int(row_map.get("subscribersLost") or 0),
+                }
+            if len(rows) < 200:
+                break
+            start_index += 200
+    except Exception as e:
+        print(f"[YouTubeAnalytics] Błąd pobierania bulk video analytics: {e}")
+        if _CACHE_BULK_VIDEOS["data"] is not None:
+            return _CACHE_BULK_VIDEOS["data"]
+        return {}
+
+    _CACHE_BULK_VIDEOS["timestamp"] = now
+    _CACHE_BULK_VIDEOS["days"] = days
+    _CACHE_BULK_VIDEOS["data"] = out
+    return out
+
+
+def fetch_channel_audience_insights(force_refresh: bool = False) -> Dict[str, Any]:
+    """
+    Pobiera z YouTube Analytics API v2 zagregowane dane odbiorców i okresu (30d i 365d),
+    źródła ruchu, geografię (top 10 krajów) oraz demografię. Buforowane przez 10 minut.
+    """
+    global _CACHE_AUDIENCE_INSIGHTS
+    now = time.time()
+    if (
+        not force_refresh
+        and _CACHE_AUDIENCE_INSIGHTS["data"] is not None
+        and (now - _CACHE_AUDIENCE_INSIGHTS["timestamp"] < 600.0)
+    ):
+        return _CACHE_AUDIENCE_INSIGHTS["data"]
+
+    _, yta, channel_id = _get_services()
+    if not yta or not channel_id:
+        return {"status": "error", "message": "Brak dostępu do YouTube Analytics API."}
+
+    now_utc = datetime.now(timezone.utc)
+    end_date = now_utc.strftime("%Y-%m-%d")
+    start_30 = (now_utc - timedelta(days=30)).strftime("%Y-%m-%d")
+    start_365 = (now_utc - timedelta(days=365)).strftime("%Y-%m-%d")
+
+    def _query_period(sd: str) -> Dict[str, Any]:
+        try:
+            res = yta.reports().query(
+                ids=f"channel=={channel_id}",
+                startDate=sd,
+                endDate=end_date,
+                metrics=(
+                    "views,engagedViews,averageViewDuration,averageViewPercentage,"
+                    "estimatedMinutesWatched,likes,dislikes,comments,shares,"
+                    "subscribersGained,subscribersLost"
+                ),
+            ).execute()
+            cols = [c["name"] for c in res.get("columnHeaders", [])]
+            rows = res.get("rows", []) or []
+            if not rows:
+                return {}
+            m = dict(zip(cols, rows[0]))
+            vw = int(m.get("views") or 0)
+            eng_vw = int(m.get("engagedViews") or 0)
+            est_min = float(m.get("estimatedMinutesWatched") or 0.0)
+            sub_g = int(m.get("subscribersGained") or 0)
+            sub_l = int(m.get("subscribersLost") or 0)
+            return {
+                "views": vw,
+                "engaged_views": eng_vw,
+                "engaged_view_rate_pct": round((eng_vw / vw) * 100.0, 1) if vw > 0 else 0.0,
+                "avg_view_duration_s": round(float(m.get("averageViewDuration") or 0.0), 1),
+                "avg_view_pct": round(float(m.get("averageViewPercentage") or 0.0), 1),
+                "est_minutes_watched": round(est_min, 1),
+                "watch_time_hours": round(est_min / 60.0, 1),
+                "likes": int(m.get("likes") or 0),
+                "comments": int(m.get("comments") or 0),
+                "shares": int(m.get("shares") or 0),
+                "subscribers_gained": sub_g,
+                "subscribers_lost": sub_l,
+                "subscribers_net": sub_g - sub_l,
+            }
+        except Exception as exc:
+            print(f"[YouTubeAnalytics] Błąd okresu {sd}: {exc}")
+            return {}
+
+    period_30d = _query_period(start_30)
+    period_365d = _query_period(start_365)
+
+    traffic_sources_30d: List[Dict[str, Any]] = []
+    try:
+        res_ts = yta.reports().query(
+            ids=f"channel=={channel_id}",
+            startDate=start_30,
+            endDate=end_date,
+            metrics="views,estimatedMinutesWatched,averageViewPercentage",
+            dimensions="insightTrafficSourceType",
+            sort="-views",
+        ).execute()
+        total_ts_views = sum(int(r[1] or 0) for r in (res_ts.get("rows") or [])) or 1
+        for r in res_ts.get("rows", []) or []:
+            vw = int(r[1] or 0)
+            traffic_sources_30d.append({
+                "source": r[0],
+                "views": vw,
+                "share_pct": round((vw / total_ts_views) * 100.0, 1),
+                "est_minutes_watched": round(float(r[2] or 0.0), 1),
+                "avg_view_pct": round(float(r[3] or 0.0), 1),
+            })
+    except Exception as exc:
+        print(f"[YouTubeAnalytics] Błąd źródeł ruchu: {exc}")
+
+    top_countries_30d: List[Dict[str, Any]] = []
+    try:
+        res_ct = yta.reports().query(
+            ids=f"channel=={channel_id}",
+            startDate=start_30,
+            endDate=end_date,
+            metrics="views,averageViewPercentage,engagedViews",
+            dimensions="country",
+            sort="-views",
+            maxResults=10,
+        ).execute()
+        base_views_30 = period_30d.get("views") or sum(int(r[1] or 0) for r in (res_ct.get("rows") or [])) or 1
+        for r in res_ct.get("rows", []) or []:
+            vw = int(r[1] or 0)
+            top_countries_30d.append({
+                "country": r[0],
+                "views": vw,
+                "share_pct": round((vw / base_views_30) * 100.0, 1),
+                "avg_view_pct": round(float(r[2] or 0.0), 1),
+                "engaged_views": int(r[3] or 0),
+            })
+    except Exception as exc:
+        print(f"[YouTubeAnalytics] Błąd geografii: {exc}")
+
+    demographics_365d: List[Dict[str, Any]] = []
+    try:
+        res_dem = yta.reports().query(
+            ids=f"channel=={channel_id}",
+            startDate=start_365,
+            endDate=end_date,
+            metrics="viewerPercentage",
+            dimensions="ageGroup,gender",
+            sort="-viewerPercentage",
+        ).execute()
+        for r in (res_dem.get("rows", []) or [])[:10]:
+            demographics_365d.append({
+                "age_group": r[0],
+                "gender": r[1],
+                "viewer_pct": round(float(r[2] or 0.0), 1),
+            })
+    except Exception as exc:
+        print(f"[YouTubeAnalytics] Błąd demografii: {exc}")
+
+    result = {
+        "status": "success",
+        "period_30d": period_30d,
+        "period_365d": period_365d,
+        "traffic_sources_30d": traffic_sources_30d,
+        "top_countries_30d": top_countries_30d,
+        "demographics_365d": demographics_365d,
+        "fetched_at": now_utc.isoformat(),
+    }
+    _CACHE_AUDIENCE_INSIGHTS["timestamp"] = now
+    _CACHE_AUDIENCE_INSIGHTS["data"] = result
     return result
 
 

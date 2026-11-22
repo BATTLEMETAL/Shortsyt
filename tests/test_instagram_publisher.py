@@ -118,7 +118,7 @@ def test_upload_instagram_success_flow(tmp_path, monkeypatch):
     container_resp.status_code = 200
     container_resp.json.return_value = {
         "id": "container_123",
-        "uri": "https://rupload.facebook.com/ig-api-upload/v19.0/container_123"
+        "uri": "https://rupload.facebook.com/ig-api-upload/v21.0/container_123"
     }
 
     # 2. Binary upload response
@@ -200,7 +200,8 @@ def test_multi_publisher_three_platforms(tmp_path):
     fake_video = tmp_path / "short_tri.mp4"
     fake_video.write_bytes(b"dummy content")
 
-    with patch("lol_agent.multi_publisher.upload_lol_short", return_value={"video_id": "yt_1", "url": "https://yt.be/1"}), \
+    with patch("lol_agent.api.youtube_uploader.upload_video", return_value={"video_id": "yt_1", "url": "https://yt.be/1"}), \
+         patch("lol_agent.multi_publisher.upload_lol_short", return_value={"video_id": "yt_1", "url": "https://yt.be/1"}), \
          patch("lol_agent.multi_publisher.upload_tiktok_short", return_value={"success": True, "publish_id": "tt_1"}), \
          patch("lol_agent.multi_publisher.upload_instagram_reel", return_value={"success": True, "media_id": "ig_1"}):
 
@@ -216,3 +217,44 @@ def test_multi_publisher_three_platforms(tmp_path):
         assert results["youtube"]["success"] is True
         assert results["tiktok"]["success"] is True
         assert results["instagram"]["success"] is True
+
+
+def test_ig_compliance_checks_and_thumb_clamp():
+    from lol_agent.instagram_publisher import (
+        GRAPH_API_VERSION,
+        _needs_ig_transcode,
+        _clamp_thumb_offset_ms,
+    )
+
+    assert GRAPH_API_VERSION == "v21.0"
+
+    bad_need, bad_reasons = _needs_ig_transcode(
+        {
+            "video_bitrate": 29_235_006,
+            "audio_bitrate": 193_375,
+            "codec_name": "h264",
+            "pix_fmt": "yuv420p",
+            "r_fps": 60.0,
+            "avg_fps": 57.89,
+        },
+        file_size=87_161_229,
+    )
+    assert bad_need is True
+    assert len(bad_reasons) == 4
+
+    ok_need, ok_reasons = _needs_ig_transcode(
+        {
+            "video_bitrate": 14_000_000,
+            "audio_bitrate": 128_000,
+            "codec_name": "h264",
+            "pix_fmt": "yuv420p",
+            "r_fps": 60.0,
+            "avg_fps": 60.0,
+        },
+        file_size=30_000_000,
+    )
+    assert ok_need is False
+    assert ok_reasons == []
+
+    assert _clamp_thumb_offset_ms(30_000, 23.7) == 23_200
+    assert _clamp_thumb_offset_ms(-500, 15.0) == 0

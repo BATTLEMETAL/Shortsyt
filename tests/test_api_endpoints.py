@@ -3,6 +3,7 @@ Integration tests for FastAPI endpoints in lol_agent/api/main.py.
 Verifies authentication, pipeline status, hardware profiling, tuning configurations,
 clips listing, outputs, thumbnails, calendar, and learning status across APIRouters.
 """
+from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 from lol_agent.api.main import app
@@ -284,4 +285,46 @@ def test_clips_folder_scan_and_auto_detect_validation(client, auth_headers, tmp_
     # Missing file auto-detect should 404
     detect_res = client.post("/clips/auto-detect", json={"source_path": "missing_video_123.mp4"}, headers=auth_headers)
     assert detect_res.status_code == 404
+
+
+def test_social_queue_and_preview_copy_endpoints(client, auth_headers):
+    """Test /social/queue and /social/preview-copy and /social/queue/flush (no 500 error)."""
+    q_res = client.get("/social/queue", headers=auth_headers)
+    assert q_res.status_code == 200
+    q_data = q_res.json()
+    assert "items" in q_data and "summary" in q_data
+
+    prev_res = client.post(
+        "/social/preview-copy",
+        json={"title": "Greedy Chase Punished 🔥 #shorts #lol", "champion_name": "Katarina", "action_type": "double"},
+        headers=auth_headers,
+    )
+    assert prev_res.status_code == 200
+    prev_data = prev_res.json()
+    assert "Greedy Chase Punished" in prev_data.get("tiktok_copy_text", "")
+    assert "#shorts" not in prev_data.get("tiktok_copy_text", "").lower()
+
+    with patch("lol_agent.scheduled_queue.check_and_flush_scheduled_posts", return_value=0), \
+         patch("lol_agent.api.youtube_uploader.flush_pending_comments", return_value={"sent": [], "still_pending": []}):
+        fl_res = client.post("/social/queue/flush", headers=auth_headers)
+        assert fl_res.status_code == 200
+        assert fl_res.json() == {"ok": True, "flushed_posts": 0, "flushed_comments": 0}
+
+
+def test_system_reliability_and_cleanup_temp(client, auth_headers):
+    with patch("lol_agent.api.youtube_uploader.get_token_status", return_value={"is_valid": True, "days_remaining": 7}), \
+         patch("lol_agent.tiktok_publisher.get_tiktok_token_status", return_value={"valid": True, "days_remaining": 300}), \
+         patch("lol_agent.instagram_publisher.get_instagram_token_status", return_value={"valid": True, "username": "dwannellenga"}), \
+         patch("lol_agent.facebook_publisher.get_facebook_token_status", return_value={"valid": True, "can_publish": True}):
+        res = client.get("/system/reliability", headers=auth_headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] in ("healthy", "degraded")
+        assert set(data["tokens"].keys()) == {"youtube", "tiktok", "instagram", "facebook"}
+        assert "disk" in data and "queue" in data and "gpu" in data
+
+    dry_res = client.post("/system/cleanup-temp?dry_run=true&max_age_days=14", headers=auth_headers)
+    assert dry_res.status_code == 200
+    assert dry_res.json().get("dry_run") is True
+
 

@@ -391,10 +391,10 @@ def generate_channel_title(
 
         if score > 0.001:
             for kw in winning_kw:
-                if kw in t_upper:
+                if re.search(rf"\b{re.escape(kw)}\b", t_clean):
                     score += 0.8  # Umiarkowany bonus, by nie faworyzować stale tych samych słów
             for akw in avoid_kw:
-                if akw in t_upper:
+                if re.search(rf"\b{re.escape(akw)}\b", t_clean):
                     score = max(0.05, score - 1.2)
 
             # Penalizuj szablony dotknięte zmęczeniem materiałowym (title fatigue)
@@ -469,53 +469,237 @@ def build_channel_description(title: str, champion: str = "Katarina", action_typ
     )
 
 
-def build_pinned_comment(champion: str = "Katarina", action_type: str = "outplay") -> str:
+_FORBIDDEN_COMMENT_TERMS = (
+    "flash", "flashed", "ignite", "exhaust", "tp", "teleport",
+    "zhonya", "baron", "dragon", "rate this play 1-10", "rate 1-10",
+    "1 to 10", "facebook.com", "part #", "road to",
+)
+
+
+def sanitize_pinned_comment(text: str, extra_context: Optional[dict] = None) -> str:
     """
-    Generuje angażujący przypięty komentarz (Pinned Comment) z pytaniem zachęcającym do dyskusji
-    oraz bezpośrednim micro-triggerem do polubienia filmu (zwiększa Like-to-View ratio 5-10x).
+    Usuwa linki zewnętrzne (facebook.com), szablony 'Rate 1-10', zmyślone spelle oraz
+    prefiksy rangowe, jeśli nie wynikają wprost ze zweryfikowanej telemetrii HUD.
+    """
+    if not text:
+        return ""
+    cleaned = str(text).strip()
+    # Usuń stopkę facebook / social promo doklejaną dawniej do komentarza
+    cleaned = re.sub(r"\n+👉\s*Catch daily.*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+    cleaned = re.sub(r"https?://\S+", "", cleaned).strip()
+
+    ctx = extra_context or {}
+    hud_spells = ctx.get("hud_spells_used") or {}
+    spells_verified = bool(hud_spells.get("verified")) and any(
+        hud_spells.get(k) for k in ("d_used", "f_used", "r_used")
+    )
+    _mz = ctx.get("map_zone")
+    z_label = (
+        (_mz.get("zone_label") or _mz.get("zone") or "")
+        if isinstance(_mz, dict)
+        else str(_mz or "")
+    ).lower()
+
+    low = cleaned.lower()
+    if any(b in low for b in ("rate 1-10", "rate this", "1 to 10", "part #", "road to")):
+        return ""
+    if not spells_verified and any(sp in low for sp in ("flash", "flashed", "ignite", "exhaust", "zhonya", "tp ", "teleport")):
+        return ""
+    if "tower dive" in low or "dived" in low:
+        return ""
+    if "baron" in low and "baron" not in z_label:
+        return ""
+    if "dragon" in low and "dragon" not in z_label:
+        return ""
+    return cleaned
+
+
+def _get_comment_history_path(explicit_path: Optional[str] = None) -> Optional[str]:
+    if explicit_path:
+        return explicit_path
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return None
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root, "accounts", "comment_history.json")
+
+
+def _load_recent_comments(history_path: Optional[str]) -> List[str]:
+    if not history_path or not os.path.isfile(history_path):
+        return []
+    try:
+        with open(history_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return [str(x) for x in data[-10:]] if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _record_comment_history(comment_text: str, history_path: Optional[str]) -> None:
+    if not history_path or not comment_text:
+        return
+    try:
+        recent = _load_recent_comments(history_path)
+        recent.append(comment_text)
+        os.makedirs(os.path.dirname(history_path), exist_ok=True)
+        with open(history_path, "w", encoding="utf-8") as f:
+            json.dump(recent[-10:], f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def build_pinned_comment(
+    champion: str = "Katarina",
+    action_type: str = "outplay",
+    extra_context: Optional[dict] = None,
+    comment_history_path: Optional[str] = None,
+) -> str:
+    """
+    Generuje wiarygodny przypięty komentarz oparty wyłącznie o zweryfikowaną telemetrię klipu
+    (bez linku facebook.com, bez szablonu 'Rate 1-10', bez zmyślonych spelli i powtórek).
     """
     champ = champion or "Katarina"
-    act = action_type.lower()
+    act = (action_type or "outplay").lower()
+    ctx = extra_context or {}
 
+    kill_span = float(ctx.get("kill_span_s") or 0.0)
+    k_count = int(ctx.get("kill_count") or 0)
+    min_hp = ctx.get("min_hp_pct")
+    low_hp = bool(ctx.get("low_hp_survival")) or (min_hp is not None and float(min_hp) <= 22.0)
+    clean_stomp = bool(ctx.get("clean_stomp")) or (min_hp is not None and float(min_hp) >= 75.0)
+    enemies = int(ctx.get("enemies_in_fight") or 0)
+
+    candidates: List[str] = []
+
+    # 1) Warianty oparte ściśle o zmierzone fakty z montażu / screenów HUD
+    if low_hp and min_hp is not None:
+        hp_int = max(1, min(22, int(round(float(min_hp)))))
+        candidates.extend([
+            f"Dropped down to ~{hp_int}% HP and still turned the fight — greedy overchase by them or clean {champ} limit test? 💀",
+            f"Honest check: when you hit ~{hp_int}% HP here, are you backing out or resetting back in? 👇",
+        ])
+    elif low_hp:
+        candidates.extend([
+            f"One hit away from dying and still got the reset — calculated {champ} damage or pure enemy panic? 💀",
+            "Would you have turned back in on that sliver of HP or backed off? 👇",
+        ])
+
+    if kill_span >= 0.4 and k_count >= 2:
+        candidates.extend([
+            f"{k_count} eliminations in {kill_span:.1f}s — did the enemy clump up for free or was that reset too fast? 👇",
+            f"Blinked for {kill_span:.1f} seconds and the fight was over. Who messed up first on the enemy team? 💀",
+        ])
+
+    if enemies >= 3 and k_count >= 1:
+        candidates.extend([
+            f"Outnumbered {enemies} targets in frame — did they tunnel vision too hard or play the spacing wrong? 👇",
+        ])
+
+    if clean_stomp:
+        candidates.extend([
+            f"Barely lost any HP in that sequence — massive spacing gap or huge item advantage? 👀",
+        ])
+
+    # 2) Bezpieczne uniwersalne dylematy gracza dopasowane do kategorii (zero spelli!)
     if "solo" in act or "bolo" in act or "1v1" in act:
-        comments = [
-            f"1 to 10: How clean was this {champ} 1v1? 👇 (Drop a LIKE if you would have died here 💀)",
-            f"Was this SOLO BOLO pure mechanics or pure luck? 😈 Comment below! 👇 (Leave a LIKE if this was clean! 🔥)",
-            f"Did the enemy misplay or was this {champ} 100% calculated? 🧠👇 (Drop a LIKE for more {champ} duels!)",
-            f"Rate this outplay 1-10! Would you ever take this 1v1? 👑👇 (Like to bless your ranked games 🍀)",
-            f"Pure reflex or cold prediction? How would you rate this duel 1-10? 👇🔥 (Hit LIKE if you love {champ}!)",
-            f"Would you have flashed or taken the fight? Rate 1-10! ⚡👇 (Leave a LIKE for Katarina luck in ranked!)",
-            f"Clean reset or greedy play that somehow worked? 👇 Let me know your score 1-10!",
-        ]
-        return random.choice(comments)
+        candidates.extend([
+            f"Did enemy mid disrespect the {champ} damage window or did they actually have an outplay angle here? 👇",
+            f"Honest question for {champ} mains: clean 1v1 spacing or did the opponent hand this over? 🧠",
+            f"Watch the spacing right before the final blow — calculated bait or coinflip ego duel? 👇",
+        ])
+    elif "penta" in act:
+        candidates.extend([
+            "At which elimination did the enemy team realize they could not stop the resets? Watch the first 3 seconds 💀",
+            f"Was this {champ} pentakill enabled by clean target priority or enemy mispositioning? 👇",
+            "Which enemy player threw this fight the hardest? Comment the moment 👇",
+        ])
+    elif "triple" in act or "quadra" in act:
+        candidates.extend([
+            f"Clean reset chain or did they group right on top of {champ} daggers? 👇",
+            "Which target needed to hold crowd control instead of walking up here? 💀",
+            f"Be honest — did you expect the last kill to connect on {champ} or did you think they walked out? 👇",
+        ])
+    else:
+        candidates.extend([
+            f"Greedy play that paid off or completely calculated {champ} angle? Drop your take below 👇",
+            "Which mistake cost the enemy team this fight the most? 💀",
+            f"What was the turning point in this sequence — engage timing or target selection? 👇",
+            "Would you have committed for that final chase or taken the safe reset? 👀",
+        ])
 
-    if "penta" in act:
-        comments = [
-            f"Rate this {champ} PENTAKILL 1-10! 🔥 (Drop a LIKE if you love {champ} teamfights 💥)",
-            f"Was this clean mechanics or was the enemy team inting? 💀 Let me know below! 👇",
-            f"1 to 10: How clean was this Penta? 👇 (Leave a LIKE to bless your next ranked game! 🍀)",
-            f"Daggers everywhere! 🗡️ Rate this Pentakill 1-10! 👇 (Leave a LIKE if you respect the reset!)",
-            f"Is {champ} broken or just played to perfection? Rate 1-10 below! 👇👑 (Drop a LIKE for daily Short clips!)",
-        ]
-        return random.choice(comments)
+    hist_path = _get_comment_history_path(comment_history_path)
+    recent = _load_recent_comments(hist_path)
+    recent_low = {r.strip().lower() for r in recent}
+    fresh = [c for c in candidates if c.strip().lower() not in recent_low]
+    pool = fresh if fresh else candidates
+    chosen = random.choice(pool)
+    _record_comment_history(chosen, hist_path)
+    return chosen
 
-    if "triple" in act or "quadra" in act:
-        comments = [
-            f"Rate this multi-kill 1-10! 🔥 Did they disrespect the {champ} damage? 👇 (Drop a LIKE if clean!)",
-            f"1 to 10: Best reset or pure chaos? 👇 Leave a LIKE if you love high-tempo {champ} plays! 💥",
-            f"Clean double reset or enemy threw? Rate this 1-10 in comments! 👇",
-        ]
-        return random.choice(comments)
 
-    comments = [
-        f"Rate this {champ} play 1-10 in the comments! 👇 (Drop a LIKE if you would have panicked 💀)",
-        f"Did the enemy team misplay or was this {champ} outplay 100% calculated? 🧠👇 (Leave a LIKE if this was clean!)",
-        f"What would you have done in this situation? 👇 Rate 1-10! 🔥 (Drop a LIKE for more {champ} clips!)",
-        f"Cleanest {champ} play today? Drop a rating 1-10 below! 👇🔥 (Drop a LIKE if you main {champ}!)",
-        f"Rate the survival instinct 1-10! 🛡️ Would you have turned around or run? 👇 (Hit LIKE if clean!)",
-        f"How tilted is the enemy team right now on a scale of 1-10? 💀👇 (Leave a LIKE to support the channel!)",
-    ]
-    return f"{random.choice(comments)}\n\n👉 Catch daily League highlights & full clips on our Facebook: https://www.facebook.com/Dwannellenga\n📸 Insta: @dwannellenga | 🎵 TikTok: @dwannellenga"
+_GENERIC_HOOKS = {
+    "INSANE OUTPLAY", "INSANE OUTPLAY!", "CLEAN OUTPLAY", "NICE PLAY",
+    "CLEAN MECHANICAL OUTPLAY", "MECHANICAL OUTPLAY", "INSANE MECHANICAL OUTPLAY",
+    "PIXEL PERFECT OUTPLAY", "CLEAN PLAY", "MECHANICAL PLAY",
+    "OUTPLAY", "OUTPLAY!", "PENTAKILL", "PENTAKILL!", "TRIPLE KILL",
+    "DOUBLE KILL", "SOLO BOLO", "CLUTCH", "QUADRAKILL",
+}
+
+
+def sanitize_hook_text(
+    raw_hook: str,
+    action_type: str = "outplay",
+    champion: str = "Katarina",
+    kill_span_s: float = 0.0,
+    low_hp_survival: bool = False,
+    min_hp_pct: Optional[float] = None,
+    objective_secured: bool = False,
+    map_zone: str = "",
+) -> str:
+    """Czyści lub generuje z telemetrii zwięzły ALL CAPS hook (<=34 zn., zero generyków typu INSANE OUTPLAY!)."""
+    cleaned = re.sub(r"[^\x00-\x7F]+", "", str(raw_hook or "")).replace("'", "").strip()
+    cleaned = re.sub(r"\s+", " ", cleaned).upper()
+    act = (action_type or "outplay").lower().strip()
+    champ_u = (champion or "KATARINA").upper().strip()
+
+    is_generic = (
+        (not cleaned)
+        or (cleaned.rstrip("!.") in _GENERIC_HOOKS)
+        or ("INSANE OUTPLAY" in cleaned)
+        or ("NICE PLAY" in cleaned)
+        or cleaned.rstrip("!.").endswith((" CLIP", " HIGHLIGHT", " VIDEO", " PLAY"))
+        or (objective_secured and ("quadra" in act or "triple" in act or "penta" in act)
+            and not any(k in cleaned for k in ("DRAGON", "DRAKE", "BARON", "STEAL", "OBJECTIVE")))
+    )
+    if is_generic or len(cleaned) < 6:
+        if objective_secured and ("quadra" in act or "triple" in act or "penta" in act):
+            cleaned = f"DRAGON STEAL + {act.replace('kill', '').upper()}".strip()
+        elif objective_secured:
+            cleaned = "OBJECTIVE STEAL OUTPLAY"
+        elif low_hp_survival or (min_hp_pct is not None and float(min_hp_pct) <= 12.0):
+            hp_n = max(1, int(round(float(min_hp_pct)))) if min_hp_pct is not None else 1
+            cleaned = f"{hp_n}% HP TURNAROUND"
+        elif "triple" in act and 0.0 < float(kill_span_s or 0.0) <= 7.0:
+            cleaned = f"3 KILLS IN {float(kill_span_s):.1f}S"
+        elif "double" in act and 0.0 < float(kill_span_s or 0.0) <= 5.0:
+            cleaned = f"2 KILLS IN {float(kill_span_s):.1f}S"
+        elif "triple" in act:
+            cleaned = "TRIPLE RESET WIPE"
+        elif "quadra" in act:
+            cleaned = "QUADRA RESET CHAIN"
+        elif "penta" in act:
+            cleaned = "UNSTOPPABLE 5V5 WIPE"
+        elif "solo" in act or "1v1" in act:
+            cleaned = "1V1 EGO CHECK"
+        elif map_zone:
+            cleaned = f"{map_zone.upper()} CLEAN RESET"
+        else:
+            cleaned = f"{champ_u} RESET WIPE"
+
+    words = cleaned.split()[:5]
+    out = " ".join(words)
+    if len(out) > 34:
+        out = out[:34].rsplit(" ", 1)[0] if " " in out[:34] else out[:34]
+    return out.strip()
 
 
 def generate_metadata(
@@ -609,11 +793,18 @@ def generate_metadata(
 
     # Przygotuj kontekst lokalizacji z minimapy (jeśli dostępny)
     _ctx = extra_context or {}
-    _zone_info = _ctx.get("map_zone", {}) or {}
-    _zone = _zone_info.get("zone", "unknown")
-    _zone_label = _zone_info.get("zone_label", "")
-    _zone_conf = float(_zone_info.get("confidence", 0.0))
-    valid_zone = _zone_label if _zone_conf >= 0.60 else ""
+    _raw_zone = _ctx.get("map_zone")
+    if isinstance(_raw_zone, dict):
+        _zone_info = _raw_zone
+        _zone = _zone_info.get("zone", "unknown")
+        _zone_label = _zone_info.get("zone_label", "")
+        _zone_conf = float(_zone_info.get("confidence", 0.0))
+        valid_zone = _zone_label if _zone_conf >= 0.60 else ""
+    else:
+        _zone = str(_raw_zone or "unknown")
+        _zone_label = str(_raw_zone or "")
+        _zone_conf = 1.0 if _zone_label else 0.0
+        valid_zone = _zone_label
 
     if valid_zone:
         map_location_block = (
@@ -634,19 +825,115 @@ def generate_metadata(
     _clip_dur = _ctx.get("clip_duration")
     _combat_style = _ctx.get("combat_style", "")
     _combat_narrative = _ctx.get("combat_narrative", "")
+    _kill_span_s = _ctx.get("kill_span_s")
+    _min_hp_pct = _ctx.get("min_hp_pct")
+    _low_hp = bool(_ctx.get("low_hp_survival"))
+    _clean_stomp = bool(_ctx.get("clean_stomp"))
+    _enemies = _ctx.get("enemies_in_fight")
+    _combo_tempo = _ctx.get("combo_tempo", "")
+    _montage_style = _ctx.get("montage_style", "")
+    _objective_secured = bool(_ctx.get("objective_secured"))
+    _objective_label = str(_ctx.get("objective_label") or "")
+    _hud_spells = _ctx.get("hud_spells_used") or {}
 
     action_context_lines = []
     if _combat_style:
         action_context_lines.append(f"- Combat Style: {_combat_style}")
     if _combat_narrative:
         action_context_lines.append(f"- Combat Narrative: {_combat_narrative}")
+    if _objective_secured:
+        action_context_lines.append(f"- Epic Objective Secured/Stolen During Fight: YES ({_objective_label or 'Drake/Baron'})")
     if _kill_count is not None and _kill_count > 0:
         action_context_lines.append(f"- Verified Kill Count: {_kill_count}")
+    if _kill_span_s is not None and float(_kill_span_s) > 0:
+        action_context_lines.append(f"- Verified Kill Window Span: {_kill_span_s}s ({_combo_tempo})")
+    if _min_hp_pct is not None:
+        action_context_lines.append(f"- Verified Player Minimum HP: ~{_min_hp_pct}% (low_hp_survival={_low_hp}, clean_stomp={_clean_stomp})")
+    if _enemies is not None and int(_enemies) > 0:
+        action_context_lines.append(f"- Enemy Healthbars Detected: {_enemies}")
+    if _montage_style:
+        action_context_lines.append(f"- Montage Style: {_montage_style}")
+    if _hud_spells.get("verified"):
+        used_list = [k.replace("_used", "").upper() for k in ("d_used", "f_used", "r_used") if _hud_spells.get(k)]
+        action_context_lines.append(f"- Verified HUD Cooldowns Triggered: {', '.join(used_list) if used_list else 'none observed'}")
+    else:
+        action_context_lines.append("- Summoner Spells (Flash/Ignite/Exhaust): NOT VERIFIED — DO NOT MENTION ANY SPELL NAMES.")
     if _clip_dur:
         action_context_lines.append(f"- Clip Length: {_clip_dur}s")
     action_context_block = ("\n" + "\n".join(action_context_lines)) if action_context_lines else ""
 
-    # Spróbuj wygenerować z Gemini AI
+    # ── PRIORYTET #1: Lokalna Synapsa (Qwen2.5-7B-4bit + LoRA, 0 tokenów API) ──
+    try:
+        try:
+            from lol_agent.synapsa_engine import generate_with_synapsa, score_and_select_best_titles
+        except ImportError:
+            from synapsa_engine import generate_with_synapsa, score_and_select_best_titles
+
+        syn_payload = {
+            "champion": champ,
+            "action_type": action_type,
+            "kill_count": _kill_count or 1,
+            "kill_span_s": round(float(_kill_span_s or 0.0), 2),
+            "min_hp_pct": _min_hp_pct,
+            "low_hp_survival": _low_hp,
+            "enemies_in_fight": _enemies or 1,
+            "map_zone": valid_zone,
+            "montage_style": _montage_style,
+            "hud_spells_verified": bool(_hud_spells.get("verified")),
+            "objective_secured": _objective_secured,
+        }
+        syn_res = generate_with_synapsa("lol_metadata", syn_payload, timeout=140)
+        if syn_res and isinstance(syn_res.get("title_candidates"), list) and syn_res["title_candidates"]:
+            best_a, best_b = score_and_select_best_titles(
+                [str(c) for c in syn_res["title_candidates"]],
+                action_type=action_type,
+                extra_context=_ctx,
+                directive=directive,
+                recent_titles=_recent_titles,
+            )
+            if best_a:
+                gen_title = _format_final_title(re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', best_a, flags=re.IGNORECASE).strip())
+                gen_title_b = _format_final_title(re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', best_b, flags=re.IGNORECASE).strip()) if best_b and best_b != best_a else generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone, variant="B", exclude_title=gen_title)
+                hashtags = _build_hashtags(champ, action_type)
+                raw_desc = (syn_res.get("description") or "").strip()
+                social_block = (
+                    "\n\n🌐 Connect with us across platforms:\n"
+                    "📘 Facebook: https://www.facebook.com/Dwannellenga\n"
+                    "📸 Instagram: https://www.instagram.com/dwannellenga\n"
+                    "🎵 TikTok: https://www.tiktok.com/@dwannellenga"
+                )
+                gen_desc = f"{re.sub(r'#\\S+', '', raw_desc).strip()}\n\n{hashtags}{social_block}" if raw_desc else build_channel_description(gen_title, champ, action_type, map_zone_label=valid_zone)
+                syn_pin = sanitize_pinned_comment(syn_res.get("pinned_comment") or "", extra_context=_ctx)
+                gen_pin = syn_pin or build_pinned_comment(champ, action_type, extra_context=_ctx)
+                rich_base = build_rich_youtube_tags(champ, action_type, rank)
+                raw_tags = [str(t).lstrip("#").strip().lower() for t in (syn_res.get("tags") or []) if str(t).strip()]
+                all_tags = list(dict.fromkeys(rich_base + raw_tags))[:20]
+                return {
+                    "title": gen_title,
+                    "title_variant_b": gen_title_b,
+                    "title_variants": [gen_title, gen_title_b],
+                    "description": gen_desc,
+                    "pinned_comment": gen_pin,
+                    "tags": all_tags,
+                    "hook_text": sanitize_hook_text(
+                        syn_res.get("hook_text") or "",
+                        action_type=action_type,
+                        champion=champ,
+                        kill_span_s=float(_kill_span_s or 0.0),
+                        low_hp_survival=_low_hp,
+                        min_hp_pct=_min_hp_pct,
+                        objective_secured=_objective_secured,
+                        map_zone=valid_zone,
+                    ),
+                    "champion": champ,
+                    "rank": rank,
+                    "action_type": action_type,
+                    "source": "synapsa_local_lora",
+                }
+    except Exception as _syn_err:
+        print(f"   [Synapsa AI] Fallback na Gemini/Szablon ({_syn_err})")
+
+    # Spróbuj wygenerować z Gemini AI (opcjonalny fallback)
     if GEMINI_API_KEY:
         try:
             import google.genai as genai
@@ -696,16 +983,16 @@ CRITICAL VIRAL RULES (DYNAMIC REINFORCEMENT FROM CHANNEL ANALYTICS):
 5. FORMATTING: Hook phrase first (max 45 visible chars before hashtags), then MUST end with viral hashtags: #shorts #leagueoflegends #lol. 1-2 emojis max.
 6. TITLE ARCHETYPE ROTATION — choose ONE archetype that fits this clip best, DO NOT default to questions:
    - DISRESPECT / EGO: "They Grouped For Free 💀", "They Thought 1v1 Was Safe 😏", "Walking Up Like That Is Crazy 💀"
-   - STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "Vanished Before They Could Even Flash 💨"
-   - STORY / TURNAROUND: "Duel Accepted. Duel Won. 💀", "They Already Typed 'GG' 🔥", "They Flashed Into Their Own Doom 💀"
+   - STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "No Escape From the Reset Chain 💨"
+   - STORY / TURNAROUND: "Duel Accepted. Duel Won. 💀", "They Already Typed 'GG' 🔥", "One Misstep Cost the Fight 💀"
    - MECHANICAL FLEX: "Pixel-Perfect Reaction 🔥", "Calculated to the Exact Millisecond 🧠", "Dodge Everything, Hit Everything 👑"
    - CLUTCH / STAKES: "Surviving on 1 HP to Win 🩸", "The Cleanest 1% HP Clutch 💀"
    - HUNT / CHASE: "No Escape 💀 Hunting Down The Squad 🔥", "Chasing Down Every Single Reset ⚡"
-   QUESTIONS ("Rate 1-10", "Clean or Luck?") are ALLOWED but MUST be used sparingly — max 15% of output. Never two in a row.
+   DO NOT USE "Rate 1-10", "Part #", "Road to", OR UNVERIFIED SPELL NAMES (Flash/Ignite/Exhaust/Zhonya).
 7. STRICTLY FORBIDDEN CLICHES & TROPE WORDS (DO NOT USE UNDER ANY CIRCUMSTANCES):
    - "Bad Idea", "Hunting Grounds", "Massacre", "Reset Machine", "Mistake", "Regret"
    - Never prepend rank or champion as prefix like "Master Katarina", "Master Reset".
-7. PINNED COMMENT: Ask one direct question to trigger comments (e.g. "Would you have survived that? Drop 💀 if not!")
+8. PINNED COMMENT: Ask one sharp debate/dilemma question strictly grounded in verified combat facts above (NO external links like facebook.com, NO 'Rate 1-10', NO invented Flash/Ignite claims).
 {_recent_titles_block}
 
 GENERATE JSON ONLY (no markdown fences, raw json):
@@ -803,13 +1090,8 @@ GENERATE JSON ONLY (no markdown fences, raw json):
                     else:
                         gen_desc = build_channel_description(gen_title, champ, action_type, map_zone_label=valid_zone)
 
-                    gen_pin = (data.get("pinned_comment") or build_pinned_comment(champ, action_type)).strip()
-                    if "facebook.com" not in gen_pin:
-                        gen_pin = (
-                            f"{gen_pin}\n\n"
-                            f"👉 Catch daily League highlights & full clips on our Facebook: https://www.facebook.com/Dwannellenga\n"
-                            f"📸 Insta: @dwannellenga | 🎵 TikTok: @dwannellenga"
-                        )
+                    raw_pin = sanitize_pinned_comment(data.get("pinned_comment") or "", extra_context=_ctx)
+                    gen_pin = raw_pin or build_pinned_comment(champ, action_type, extra_context=_ctx)
                     gen_hook = data.get("hook_text") or f"{action_type.upper()}! 💥"
                     rich_base = build_rich_youtube_tags(champ, action_type, rank)
                     raw_tags = [t.lstrip("#").strip().lower() for t in data.get("tags", []) if t.strip()]
@@ -849,7 +1131,7 @@ GENERATE JSON ONLY (no markdown fences, raw json):
     title = generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone, variant="A")
     title_b = generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone, variant="B", exclude_title=title)
     description = build_channel_description(title, champ, action_type, map_zone_label=valid_zone)
-    pinned_comment = build_pinned_comment(champ, action_type)
+    pinned_comment = build_pinned_comment(champ, action_type, extra_context=_ctx)
     
     all_tags = build_rich_youtube_tags(champ, action_type, rank)
 
@@ -860,7 +1142,16 @@ GENERATE JSON ONLY (no markdown fences, raw json):
         "description": description,
         "pinned_comment": pinned_comment,
         "tags": all_tags,
-        "hook_text": f"{action_type.upper()}! 💥",
+        "hook_text": sanitize_hook_text(
+            "",
+            action_type=action_type,
+            champion=champ,
+            kill_span_s=float(_kill_span_s or 0.0),
+            low_hp_survival=_low_hp,
+            min_hp_pct=_min_hp_pct,
+            objective_secured=_objective_secured,
+            map_zone=valid_zone,
+        ),
         "champion": champ,
         "rank": rank,
         "action_type": action_type,
@@ -890,27 +1181,42 @@ def generate_metadata_universal(
     extra_context: dict = None
 ) -> dict:
     """
-    Universal metadata generator — routes to appropriate profile based on game_type.
-    Backward compatible: game_type='lol' → existing generate_metadata() behavior.
-    extra_context: optional dict with additional data, e.g. {"map_zone": {...}}
+    Universal metadata generator — uwzględnia tryb i wytyczne kontentu aktywnego konta.
+    Konto GAMING_HIGHLIGHTS (lub domyślny profil LoL) korzysta z generate_metadata().
+    Konta reklamowe / salon / marka osobista kierowane są do account_manager.generate_account_aware_metadata().
     """
+    try:
+        try:
+            from lol_agent.account_manager import get_active_account, generate_account_aware_metadata
+        except ImportError:
+            from account_manager import get_active_account, generate_account_aware_metadata
+        active_acc = get_active_account()
+        if active_acc and active_acc.get("content_mode") != "GAMING_HIGHLIGHTS":
+            return generate_account_aware_metadata(
+                action_type=action_type,
+                subject_name=subject_name or active_acc.get("display_name") or "Produkt",
+                extra_context=extra_context,
+                account=active_acc,
+            )
+    except Exception:
+        active_acc = None
+
     if not game_type or game_type == "lol":
         return generate_metadata(action_type, subject_name or "Katarina", rank,
                                  extra_context=extra_context)
     try:
-        from lol_agent.metadata_profiles import generate_metadata_for_game
-    except ImportError:
         try:
-            from metadata_profiles import generate_metadata_for_game
+            from lol_agent.account_manager import generate_account_aware_metadata
         except ImportError:
-            return generate_metadata(action_type, subject_name or "Katarina", rank)
-    return generate_metadata_for_game(
-        game_type=game_type,
-        action_type=action_type,
-        subject_name=subject_name,
-        rank=rank,
-        extra_context=extra_context
-    )
+            from account_manager import generate_account_aware_metadata
+        return generate_account_aware_metadata(
+            action_type=action_type,
+            subject_name=subject_name or "Produkt",
+            extra_context=extra_context,
+            account=active_acc,
+        )
+    except Exception:
+        return generate_metadata(action_type, subject_name or "Katarina", rank)
 
 
 if __name__ == "__main__":

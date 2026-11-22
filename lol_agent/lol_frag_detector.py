@@ -13,8 +13,12 @@ import sys
 import re
 import cv2
 import numpy as np
+import threading
 from typing import Dict, Any, List, Tuple, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+
+_FRAG_CACHE: Dict[Tuple[str, int, int, float], "FragAnalysisResult"] = {}
+_FRAG_CACHE_LOCK = threading.Lock()
 
 try:
     import pytesseract
@@ -33,8 +37,8 @@ except ImportError:
 
 
 # LoL HUD Coordinates for 1920x1080 / 16:9
-# Dolny pasek zdrowia bohatera (HUD dolny środek):
-HP_BAR_ROI = (0.860, 0.905, 0.420, 0.580)  # y_start, y_end, x_start, x_end
+# Dolny pasek zdrowia bohatera (szerokie pasmo wspierające różne skale HUD w LoL):
+HP_BAR_ROI = (0.860, 0.988, 0.400, 0.620)  # y_start, y_end, x_start, x_end
 # Czerwony vignette / ostrzeżenie o krytycznym zdrowiu (krawędzie ekranu):
 VIGNETTE_ROI_TOP = (0.01, 0.10, 0.20, 0.80)
 # Baner zabójstw na środku góry ekranu:
@@ -58,39 +62,59 @@ class FragAnalysisResult:
     suggested_badge_color: str     # Kolor badge'a (hex)
     combat_segments: Optional[List[Tuple[float, float]]] = None
     has_jump_cut: bool = False
+    objective_secured: bool = False
+    objective_label: str = ""
+    ally_banner_blocked: bool = False
 
 
 def _measure_player_hp(frame: np.ndarray) -> Optional[float]:
     """
     Mierzy procent napełnienia paska zdrowia bohatera w dolnym HUD (0.0 - 100.0%).
-    Analizuje nasycenie zieleni/cyjanu w obszarze HP_BAR_ROI.
+    Dynamicznie lokalizuje poziomy pasek zieleni/tarczy w paśmie HP_BAR_ROI (działa przy każdej skali HUD
+    i odrzuca 1-pikselowe linie obramowania HUD lub śnieg na zimowej mapie).
     """
     h, w = frame.shape[:2]
     ys, ye = int(h * HP_BAR_ROI[0]), int(h * HP_BAR_ROI[1])
     xs, xe = int(w * HP_BAR_ROI[2]), int(w * HP_BAR_ROI[3])
-    
+
     roi = frame[ys:ye, xs:xe]
     if roi.size == 0:
         return None
 
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    
-    # Maska zielonego/cyjanowego paska zdrowia w LoL:
-    # H: 35-95 (zielenie i seledyny/turkusy), S: 70-255, V: 60-255
     mask_green = cv2.inRange(hsv, (35, 70, 60), (95, 255, 255))
-    # Maska tarczy (biały/szary pasek na wierzchu HP):
     mask_shield = cv2.inRange(hsv, (0, 0, 180), (180, 40, 255))
-    mask_hp = cv2.bitwise_or(mask_green, mask_shield)
 
-    # Oblicz poziom napełnienia paska wzdłuż osi X (poziomej)
-    col_has_hp = np.any(mask_hp > 0, axis=0)
+    row_green_ratio = (mask_green > 0).mean(axis=1)
+    idxs = np.where(row_green_ratio >= 0.03)[0]
+    clusters: List[List[int]] = []
+    cur: List[int] = []
+    for r in idxs:
+        r_i = int(r)
+        if not cur or r_i == cur[-1] + 1:
+            cur.append(r_i)
+        else:
+            clusters.append(cur)
+            cur = [r_i]
+    if cur:
+        clusters.append(cur)
+
+    bars = [c for c in clusters if len(c) >= 4]
+    if not bars:
+        return None
+
+    best = max(bars, key=lambda c: float(row_green_ratio[c].sum()))
+    strip_g = mask_green[best[0]:best[-1] + 1]
+    strip_s = mask_shield[best[0]:best[-1] + 1]
+    if float((strip_g > 0).mean()) < 0.03:
+        return None
+
+    col_has_hp = np.any((strip_g > 0) | (strip_s > 0), axis=0)
     total_cols = len(col_has_hp)
     if total_cols == 0:
         return None
 
-    filled_cols = np.sum(col_has_hp)
-    # Sprawdź czy to w ogóle jest HUD (jeśli < 5% zieleni, może to być poza grą)
-    ratio = (filled_cols / float(total_cols)) * 100.0
+    ratio = (float(np.sum(col_has_hp)) / float(total_cols)) * 100.0
     return max(0.0, min(100.0, ratio))
 
 
@@ -126,6 +150,7 @@ def _scan_ocr_for_kills(frame: np.ndarray) -> Tuple[int, str, bool]:
         return 0, "", False
 
     h, w = frame.shape[:2]
+    fallback_non_player_label = ""
     for roi_coords in (KILL_BANNER_ROI, KILL_FEED_ROI):
         ys, ye = int(h * roi_coords[0]), int(h * roi_coords[1])
         xs, xe = int(w * roi_coords[2]), int(w * roi_coords[3])
@@ -146,24 +171,35 @@ def _scan_ocr_for_kills(frame: np.ndarray) -> Tuple[int, str, bool]:
         red_cnt = cv2.countNonZero(mask_red)
         blue_cnt = cv2.countNonZero(mask_blue)
 
-        # Pre-filter: Sprawdź czy są jakiekolwiek piksele tekstu (złote lub białe napisy banera)
-        # Oszczędza 75% czasu OCR przez pomijanie pustych klatek
+        # Pre-filter: pomijaj puste klatki oraz biały śnieg w prawym górnym kill-feedzie
+        if roi_coords == KILL_FEED_ROI and gold_cnt < 220 and red_cnt < 380:
+            continue
         if (gold_cnt + white_cnt) < 40:
             continue
 
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, 175, 255, cv2.THRESH_BINARY)
+        _, thresh = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY)
         thresh_up = cv2.resize(thresh, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
 
-        text = ""
-        for psm in (6, 7):
+        texts_to_check = []
+        try:
+            t_ocr = pytesseract.image_to_string(thresh_up, config="--psm 6 --oem 1").strip().lower()
+            if t_ocr:
+                texts_to_check.append(t_ocr)
+        except Exception:
+            t_ocr = ""
+
+        # Zapasowe wywołanie na surowym ROI tylko przy wyraźnym złotym błysku bez słów kluczowych
+        has_kw = bool(re.search(r'(?:kill|doub|trip|quad|pent|slain|dwan|ally|enem|legend|ramp|god|unstop|shut|blood)', t_ocr))
+        if gold_cnt >= 300 and not has_kw:
             try:
-                text = pytesseract.image_to_string(thresh_up, config=f"--psm {psm} --oem 1").strip().lower()
-                if text:
-                    break
+                t_raw = pytesseract.image_to_string(roi, config="--psm 6 --oem 1").strip().lower()
+                if t_raw:
+                    texts_to_check.append(t_raw)
             except Exception:
                 pass
 
+        text = " | ".join(texts_to_check)
         if not text:
             continue
 
@@ -177,34 +213,38 @@ def _scan_ocr_for_kills(frame: np.ndarray) -> Tuple[int, str, bool]:
         if re.search(r'(?:enemy\s*(?:penta|quadra|triple|double|kill)|an\s*ally\s*has\s*been\s*slain)', text):
             return 0, "ENEMY_KILL", False
 
-        # ── 3. FILTR FRAGÓW SOJUSZNIKÓW (TEAMMATE KILLS) ──
-        # Komunikat 'an ally has scored' lub 'an enemy has been slain' oznacza, że to sojusznik zdobył frag
-        is_dwann = bool(re.search(r'dwan|enga|you\s*have\s*slain|\+(?:400|300|150|1000|[0-9]{3})', text))
-        if re.search(r'an\s*ally\s*has\s*scored', text):
-            return 0, "ALLY_MULTIKILL", False
-        if re.search(r'an\s*enemy\s*has\s*been\s*slain', text) and not is_dwann:
-            return 0, "ALLY_KILL", False
-        if blue_cnt > 5000 and not is_dwann:
-            return 0, "ALLY_BANNER", False
+        # ── 3. DETEKCJA EPICKICH OBIEKTÓW (Smok / Baron / Herald) ──
+        if re.search(r'(?:your\s*team\s*has\s*slain\s*the|slain\s*the\s*(?:infernal|mountain|ocean|cloud|hextech|chemtech|elder)?\s*(?:drake|dragon|baron|herald)|stolen\s*the\s*(?:drake|dragon|baron))', text):
+            return 0, "OBJECTIVE_SLAIN", False
 
-        # ── 4. POTWIERDZONE WŁASNE FRAGI GRACZA (PLAYER KILLS) ──
+        # ── 4. FILTR FRAGÓW SOJUSZNIKÓW I WIEŻ (TEAMMATE / TURRET BANNERS) ──
+        # Zimowa mapa (Winter Rift) daje >20k niebieskich pikseli w tle, więc filtrujemy po tekście OCR zamiast po blue_cnt.
+        is_dwann = bool(re.search(r'dwan|enga|wann|nnel|you\s*have\s*slain|\+(?:400|300|150|1000|[0-9]{3})', text))
+        if re.search(r'an\s*ally\s*has\s*scored', text):
+            fallback_non_player_label = fallback_non_player_label or "ALLY_MULTIKILL"
+            continue
+        if re.search(r'(?:an\s*enemy\s*has\s*been\s*slain|ally\s*slain|ally\s*turret\s*destroyed|turret\s*destroyed|inhibitor\s*destroyed)', text) and not is_dwann:
+            fallback_non_player_label = fallback_non_player_label or "ALLY_KILL"
+            continue
+
+        # ── 5. POTWIERDZONE WŁASNE FRAGI GRACZA (PLAYER KILLS) ──
         # Złoty baner lub wyraźny komunikat PENTAKILL / QUADRA / TRIPLE / DOUBLE / RAMPAGE / YOU HAVE SLAIN
         if re.search(r'penta(?:kill|kut|kit|kil|\s*kill)?', text):
             return 5, "PENTAKILL", True
         if re.search(r'quadra(?:kill|kut|kit|kil|\s*kill)?', text):
             return 4, "QUADRAKILL", True
-        if re.search(r'tri[pbl][rl]e?(?:kill|kut|kit|kil|\s*kill)?|trie[re]\s*ki|[sr]riper?\s*ki|[st]e?ipre\s*ki|reiprek|[sr]riprr', text):
+        if re.search(r'tri[pbl][ilf1u][eif]?(?:kill|kut|kit|kil|kin|ktl|\s*ki[a-z]*)?|tri[pbl][rl]e?(?:kill|kut|kit|kil|\s*kill)?|treple\s*ki[a-z]*|tripue[a-z]*|trie[re]\s*ki|[sr]riper?\s*ki|[st]e?ipre\s*ki|reiprek|[sr]riprr', text):
             return 3, "TRIPLE KILL", True
-        if re.search(r'dou[brv][bl]e?(?:kill|kut|kit|kil|\s*kill)?|doue?le\s*ki|doublekinlt', text):
+        if re.search(r'dou[brv][bl]e?(?:kill|kut|kit|kil|\s*kill)?|doue?le\s*ki|doublekinlt|pous[ct]e\s*ki[a-z]*', text):
             return 2, "DOUBLE KILL", True
         if re.search(r'first\s*bloo[mdr]|1st\s*blood|first\s*rlood', text):
             return 1, "FIRST BLOOD", True
-        if re.search(r'ram[pn]a[gc]e|is\s*on\s*a\s*ram|kill(?:ing)?\s*s[pn]r[ea]e|is\s*on\s*a\s*kill|is\s*on\s*a\s*s[pn]r|shut\s*down|shutdown|legendary|godlike|unstoppable', text):
+        if is_dwann and re.search(r'ram[pn]a[gc]e|is\s*on\s*a\s*ram|is\s*(?:leg|f|t)[ea]?g?[eo]ndary\w*|isfeendary|itlegondary|kill(?:ing)?\s*s[pn]r[ea]e|is\s*on\s*a\s*kill|is\s*on\s*a\s*s[pn]r|shut\s*down|shutdown|legendary|godlike|unstoppable', text):
             return 1, "OUTPLAY", True
         if re.search(r'(?:you\s*have\s*slain|\+(?:400|300|150|1000))', text):
             return 1, "KILL", True
 
-    return 0, "", False
+    return 0, fallback_non_player_label, False
 
 
 def find_combat_start_before(
@@ -213,21 +253,22 @@ def find_combat_start_before(
     max_lookback: float = 8.0
 ) -> float:
     """
-    Skanuje wstecz od pierwszego killa (do max_lookback sekund),
-    aby ustalić moment rozpoczęcia realnej walki (obecność wrogich pasków HP,
-    błyski czarów, dynamiczny ruch). Zapobiega obcięciu engage/setupu/combo.
+    Skanuje WSTECZ od pierwszego killa (od `first_kill_t - 0.3s` do `max_lookback`),
+    szukając ciągłego okna walki z obecnością wrogiego championa (`e_px > 420`).
+    Przerywa natychmiast po 2 kolejnych pustych próbkach, aby nie zasysać martwego farmienia minionów.
     """
     if not video_path or not os.path.exists(video_path):
-        return max(0.0, first_kill_t - 2.0)
+        return max(0.0, first_kill_t - 2.2)
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        return max(0.0, first_kill_t - 2.0)
+        return max(0.0, first_kill_t - 2.2)
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    search_start = max(0.0, first_kill_t - max_lookback)
-    samples = np.arange(search_start, first_kill_t, 0.4)
-    earliest_combat = max(0.0, first_kill_t - 2.5)
+    search_floor = max(0.0, first_kill_t - max_lookback)
+    t_hi = max(search_floor, first_kill_t - 0.3)
+    samples = np.arange(t_hi, max(-0.01, search_floor - 0.01), -0.35)
+    earliest_combat = max(0.0, first_kill_t - 2.2)
 
     try:
         from lol_agent.lol_quality_validator import _check_combat_in_frame, _check_enemy_combat_in_frame
@@ -239,33 +280,35 @@ def find_combat_start_before(
             _check_enemy_combat_in_frame = None
 
     try:
-        prev_gray = None
+        quiet_streak = 0
+        confirmed_any = False
         for t in samples:
             cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
             ret, fr = cap.read()
             if not ret or fr is None:
                 continue
             has_combat = False
-            if _check_combat_in_frame and _check_enemy_combat_in_frame:
-                hc, c_px, _ = _check_combat_in_frame(fr)
+            if _check_enemy_combat_in_frame:
                 he, e_px, _ = _check_enemy_combat_in_frame(fr)
-                if (hc and c_px > 300) or (he and e_px > 300):
+                if he and e_px > 420:
                     has_combat = True
-            if not has_combat:
-                h, w = fr.shape[:2]
-                pa = fr[int(h * 0.15):int(h * 0.80), int(w * 0.20):int(w * 0.80)]
-                gray = cv2.cvtColor(cv2.resize(pa, (320, 180)), cv2.COLOR_BGR2GRAY)
-                if prev_gray is not None and float(np.mean(cv2.absdiff(gray, prev_gray))) >= 9.0:
+            if not has_combat and _check_combat_in_frame:
+                hc, c_px, _ = _check_combat_in_frame(fr)
+                if hc and c_px > 650:
                     has_combat = True
-                prev_gray = gray
 
             if has_combat:
-                earliest_combat = t
-                break
+                confirmed_any = True
+                earliest_combat = float(t)
+                quiet_streak = 0
+            else:
+                quiet_streak += 1
+                if quiet_streak >= 2 and (confirmed_any or (first_kill_t - float(t)) >= 2.2):
+                    break
     finally:
         cap.release()
 
-    return earliest_combat
+    return round(earliest_combat, 2)
 
 
 def find_lethal_strike_moment(
@@ -513,6 +556,8 @@ def compute_optimal_clip_window(
             except Exception:
                 pass
 
+        if getattr(frag_res, "objective_secured", False):
+            gap_has_combat = True
         allow_jump_cut = (len(clusters) >= 2) and (not gap_has_combat) and (total_span > max(26.0, max_dur + 3.0))
         if allow_jump_cut:
             segments = []
@@ -557,25 +602,39 @@ def compute_optimal_clip_window(
                 return clip_start, clip_end, peak_moment, merged_segs
 
         # Pojedynczy ciągły klaster walki
-        first_k = real_kills[0]["timestamp"]
-        max_tier = max(k.get("tier", 1) for k in real_kills)
-        peak_candidates = [k for k in real_kills if k.get("tier", 1) == max_tier]
-        last_k = peak_candidates[-1]["timestamp"] if peak_candidates else real_kills[-1]["timestamp"]
+        first_k = min(float(k["timestamp"]) for k in real_kills)
+        last_k = max(float(k["timestamp"]) for k in real_kills)
 
-        # Wykryj precyzyjny moment śmiertelnego ciosu (last-hit)
+        # Wykryj precyzyjny moment śmiertelnego ciosu (last-hit) — zaciskamy okno tak by peak nie uciekł za daleko wstecz
         has_real_video = bool(frag_res.video_path and os.path.exists(frag_res.video_path))
         if has_real_video:
-            lethal_hit_t = find_lethal_strike_moment(frag_res.video_path, last_k)
-            c_start = find_combat_start_before(frag_res.video_path, min(first_k, lethal_hit_t), max_lookback=8.0)
+            raw_lethal_t = find_lethal_strike_moment(frag_res.video_path, last_k)
+            lethal_hit_t = max(max(0.5, last_k - 0.40), min(last_k, raw_lethal_t))
+            lookback_s = 7.0 if getattr(frag_res, "ally_banner_blocked", False) else 5.0
+            c_start = find_combat_start_before(frag_res.video_path, min(first_k, lethal_hit_t), max_lookback=lookback_s)
         else:
             lethal_hit_t = last_k
             c_start = max(0.0, first_k - 2.0)
 
         final_kill_t = max(lethal_hit_t, last_k)
-        # Zgodnie z wytycznymi użytkownika: MAX 2.0s po finalnym zabójstwie (eliminacja martwego czasu i recallu)
+        if has_real_video:
+            try:
+                try:
+                    from lol_agent.outplayed_db import get_outplayed_clip_info
+                except ImportError:
+                    from outplayed_db import get_outplayed_clip_info  # type: ignore
+                op_info = get_outplayed_clip_info(frag_res.video_path)
+                if op_info and int(op_info.get("event_tier_rank") or 0) >= 2:
+                    est_last = op_info.get("est_last_kill_s")
+                    if isinstance(est_last, (int, float)) and (last_k + 0.5) <= float(est_last) <= min(total_dur, last_k + 8.0):
+                        final_kill_t = max(final_kill_t, float(est_last))
+            except Exception:
+                pass
+
+        # Dynamiczny finisz z oddechem 1.65s–2.0s po ostatnim fragu (zero ucinania końca walki)
         is_multikill_tier = (len(real_kills) >= 3) or (act in ('triple', 'quadrakill', 'quadra', 'pentakill', 'penta'))
-        default_outro = 1.8 if is_multikill_tier else 1.4
-        clean_outro = min(2.0, max(default_outro, outro))
+        default_outro = 1.75 if is_multikill_tier else 1.65
+        clean_outro = min(1.95, max(default_outro, outro))
         max_allowed_end = min(round(total_dur, 1), round(final_kill_t + 2.0, 1))
 
         # ── ADAPTACYJNY REŻYSER MONTAŻU (Podejście A vs Podejście B) ──
@@ -613,8 +672,9 @@ def compute_optimal_clip_window(
             else:
                 start = max(0.0, round(first_k - lead_in, 1))
             end = min(max_allowed_end, round(final_kill_t + clean_outro, 1))
-            if (first_k - start) > 2.5:
-                start = max(0.0, round(first_k - 2.5, 1))
+            max_continuous_span = 24.0 if is_multikill_tier else 18.0
+            if (end - start) > max_continuous_span:
+                start = max(0.0, round(end - max_continuous_span, 1))
             print(f"   ⚡ [Montage Director] Wybrano PODEJŚCIE B (Instant Chaos Skirmish): start={start:.1f}s, end={end:.1f}s (dur={end-start:.1f}s, outro={end-final_kill_t:.1f}s)")
 
         # Jeśli baner pojawił się tuż po lethal hit, pozwól mu wybrzmieć (ale nigdy powyżej max_allowed_end)
@@ -630,11 +690,55 @@ def compute_optimal_clip_window(
         # TWARDY BEZPIECZNIK OUTRO: Po ostatnim killu MAX 2.0s do końca klipu!
         end = min(end, max_allowed_end)
 
+        # Retention Lead-In Guard: szybki hook (<= 4.2s do 1. killa, lub <= 5.2s przy epicznym obiekcie), min. 10s
+        obj_sec = bool(getattr(frag_res, "objective_secured", False))
+        ally_blk = bool(getattr(frag_res, "ally_banner_blocked", False))
+        max_lead_in = 5.2 if obj_sec else 4.2
+        if real_kills and (first_k - start) > max_lead_in:
+            start = max(0.0, round(first_k - max_lead_in, 1))
+            if (end - start) < MIN_SHORT_SPAN:
+                start = max(0.0, round(end - MIN_SHORT_SPAN, 1))
+
         # Zabezpieczenie przed ucięciem pierwszego killa
         if start > first_k - 0.8:
             start = max(0.0, round(first_k - 1.0, 1))
 
         peak_moment = max(0.5, round(lethal_hit_t - start, 1))
+
+        # Dry-Run Symulator & Rollback Guard dla izolowanych pojedynczych killi (>6.0s bez walki)
+        if len(real_kills) >= 3 and not obj_sec and not ally_blk and not gap_has_combat:
+            rk_times = sorted(float(k["timestamp"]) for k in real_kills)
+            rk_gaps = [b - a for a, b in zip(rk_times, rk_times[1:])]
+            proposed_win = None
+            if rk_gaps and rk_gaps[0] > 6.0 and (len(rk_gaps) == 1 or max(rk_gaps[1:]) <= 4.5):
+                p_start = max(0.0, round(rk_times[1] - lead_in, 1))
+                p_peak = max(0.5, round(lethal_hit_t - p_start, 1))
+                proposed_win = (p_start, end, p_peak)
+            elif rk_gaps and rk_gaps[-1] > 6.0 and (len(rk_gaps) == 1 or max(rk_gaps[:-1]) <= 4.5):
+                last_k_obj = max(real_kills, key=lambda x: float(x["timestamp"]))
+                if int(last_k_obj.get("tier", 1) or 1) < 2:
+                    p_end = min(round(total_dur, 1), round(rk_times[-2] + clean_outro, 1))
+                    p_peak = max(0.5, round(rk_times[-2] - start, 1))
+                    if (p_end - start) >= 8.0:
+                        proposed_win = (start, p_end, p_peak)
+            if proposed_win is not None:
+                try:
+                    try:
+                        from lol_agent.lol_quality_gate import simulate_and_guard_director_decision
+                    except ImportError:
+                        from lol_quality_gate import simulate_and_guard_director_decision
+                    guard = simulate_and_guard_director_decision(
+                        base_window=(start, end, peak_moment),
+                        proposed_window=proposed_win,
+                        all_kills_abs=rk_times,
+                        proposed_style="PRIMARY",
+                        objective_secured=obj_sec,
+                    )
+                    if guard.get("approved"):
+                        start, end, peak_moment = guard["selected_window"]
+                except Exception:
+                    pass
+
         return start, end, peak_moment, None
     else:
         # ── BRAK WYKRYTYCH KILLI PRZEZ OCR ──
@@ -756,6 +860,86 @@ def _pick_varied_hook(action_type: str, video_path: str = "", min_hp: float = 10
     idx = sum(ord(c) for c in seed_str) % len(pool)
     return pool[idx]
 
+def _find_first_kill_gold_spike(video_path: str, t_start: float, t_end: float) -> Optional[float]:
+    """Szuka piku złota (+300g/+370g) w oknie [t_start, t_end], gdy górny baner był zatkany przez Ally slain."""
+    if not video_path or not os.path.exists(video_path) or t_end <= t_start:
+        return None
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return None
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    best_t = None
+    best_gold = 0
+    try:
+        for t in np.arange(max(0.5, t_start), t_end, 0.5):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
+            ret, fr = cap.read()
+            if not ret or fr is None:
+                continue
+            h, w = fr.shape[:2]
+            hsv = cv2.cvtColor(fr, cv2.COLOR_BGR2HSV)
+            gold_m = cv2.inRange(hsv, (18, 140, 160), (35, 255, 255))
+            gold_play = gold_m[int(h * 0.20):int(h * 0.75), int(w * 0.20):int(w * 0.80)]
+            g_px = int(cv2.countNonZero(gold_play))
+            if g_px > best_gold and g_px >= 450:
+                best_gold = g_px
+                best_t = round(float(t), 2)
+    finally:
+        cap.release()
+    return best_t
+
+
+def _reconcile_multikill_sequence(
+    kills_detected: List[Dict[str, Any]],
+    ally_banner_times: List[float],
+    objective_times: List[float],
+    video_path: str = "",
+) -> List[Dict[str, Any]]:
+    """
+    Rekonstruuje monotoniczną sekwencję multikilla (1 -> 2 -> 3 -> 4 -> 5),
+    gdy wrogi/sojuszniczy baner lub baner Smoka/Barona opóźnił bądź odwrócił kolejność banerów.
+    """
+    if not kills_detected:
+        return kills_detected
+
+    reconciled = [dict(k) for k in sorted(kills_detected, key=lambda x: float(x.get("timestamp", 0.0)))]
+
+    # 1. Wykryj inwersję na początku (np. wrogi TRIPLE KILL przed własnym DOUBLE KILL po serii Ally slain)
+    if len(reconciled) >= 2 and reconciled[0].get("tier", 1) > reconciled[1].get("tier", 1):
+        t_first_banner = float(reconciled[0]["timestamp"])
+        has_prior_block = bool(
+            [t for t in ally_banner_times if (t_first_banner - 10.0) <= t <= (t_first_banner + 0.5)]
+        )
+        search_from = max(1.0, t_first_banner - (6.0 if has_prior_block else 5.0))
+        search_to = max(search_from + 0.5, t_first_banner - 1.5)
+        gold_t = _find_first_kill_gold_spike(video_path, search_from, search_to)
+        first_kill_t = gold_t if gold_t is not None else round(max(1.0, t_first_banner - 4.0), 2)
+
+        reconciled[0] = {"timestamp": first_kill_t, "label": "KILL", "tier": 1}
+        reconciled[1] = {"timestamp": t_first_banner, "label": "DOUBLE KILL", "tier": 2}
+
+    # 2. Uzupełnij brakujący TRIPLE KILL między DOUBLE (tier=2) a QUADRA (tier=4), gdy kolejkę zablokował Smok/Baron
+    tiers_present = {k.get("tier", 1) for k in reconciled}
+    if 4 in tiers_present and 2 in tiers_present and 3 not in tiers_present:
+        double_items = [k for k in reconciled if k.get("tier") == 2]
+        quadra_items = [k for k in reconciled if k.get("tier") == 4]
+        t_double = float(double_items[-1]["timestamp"])
+        t_quadra = float(quadra_items[0]["timestamp"])
+        if t_quadra > t_double + 2.0:
+            obj_in_gap = [float(t) for t in objective_times if (t_double + 0.5) <= float(t) <= (t_quadra - 0.5)]
+            gold_mid = _find_first_kill_gold_spike(video_path, t_double + 1.5, max(t_double + 2.0, t_quadra - 1.0))
+            if gold_mid is not None:
+                triple_t = gold_mid
+            elif obj_in_gap:
+                triple_t = round(obj_in_gap[0], 2)
+            else:
+                triple_t = round((t_double + t_quadra) / 2.0, 2)
+            reconciled.append({"timestamp": triple_t, "label": "TRIPLE KILL", "tier": 3})
+
+    reconciled.sort(key=lambda x: float(x.get("timestamp", 0.0)))
+    return reconciled
+
+
 def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysisResult:
     """
     Główna funkcja auto-detektora: skanuje wideo i zwraca dokładną klasyfikację fraga.
@@ -774,6 +958,21 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
             suggested_title_hook="Insane Mechanical Outplay",
             suggested_badge_color="#3b82f6"
         )
+
+    cache_key = None
+    try:
+        st = os.stat(video_path)
+        cache_key = (os.path.abspath(video_path), int(st.st_size), int(st.st_mtime_ns), round(float(sample_fps), 2))
+        with _FRAG_CACHE_LOCK:
+            cached = _FRAG_CACHE.get(cache_key)
+        if cached is not None:
+            return replace(
+                cached,
+                kills=[dict(k) for k in cached.kills],
+                combat_segments=list(cached.combat_segments) if cached.combat_segments else None,
+            )
+    except Exception:
+        cache_key = None
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -795,12 +994,14 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     duration = total_frames / fps if fps > 0 else 0.0
 
-    effective_sample_fps = max(sample_fps, 2.0) if (sample_fps <= 1.0 and 0.0 < duration <= 50.0) else sample_fps
+    effective_sample_fps = max(sample_fps, 2.0) if (sample_fps <= 1.0 and 0.0 < duration <= 90.0) else sample_fps
     interval = 1.0 / max(1.0, effective_sample_fps)
     timestamps = np.arange(0.0, max(0.1, duration), interval)
 
     hp_readings = []
     kills_detected = []
+    ally_banner_times = []
+    objective_times = []
     max_kill_tier = 0
     highest_label = ""
     last_kill_t = -10.0
@@ -838,8 +1039,10 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
             # Debounce: Baner killa w LoL wisi na ekranie przez 2.5-3.0s.
             # 1. Nowy kill o tym samym/niższym tierze wymaga odstępu min. 3.0s
             # 2. Wyższy tier multikilla (np. DOUBLE KILL po zwykłym killu) to KOLEJNY frag (wymaga min. 0.8s)
+            # 3. Zmiana tieru w dół (np. własny DOUBLE KILL po zaległym wrogim TRIPLE) też musi zostać zapisana do rekonstrukcji
             is_multikill_step = (k_tier >= 2 and k_tier > max_kill_tier and (t - last_kill_t) >= 0.8)
-            is_new_kill = ((t - last_kill_t) > 3.0) or is_multikill_step
+            is_tier_inversion = (k_tier >= 2 and bool(kills_detected) and k_tier < kills_detected[-1]["tier"] and (t - last_kill_t) >= 1.5)
+            is_new_kill = ((t - last_kill_t) > 3.0) or is_multikill_step or is_tier_inversion
 
             if is_new_kill:
                 kills_detected.append({
@@ -863,8 +1066,23 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
         elif k_label == "PLAYER_DEATH":
             # Zarejestruj śmierć gracza — nie może być oznaczona jako udany clutch
             hp_readings.append(0.0)
+        elif k_label == "OBJECTIVE_SLAIN":
+            objective_times.append(round(float(t), 2))
+        elif k_label in ("ALLY_BANNER", "ALLY_KILL", "ALLY_MULTIKILL", "ENEMY_KILL"):
+            ally_banner_times.append(round(float(t), 2))
 
     cap.release()
+
+    kills_detected = _reconcile_multikill_sequence(
+        kills_detected=kills_detected,
+        ally_banner_times=ally_banner_times,
+        objective_times=objective_times,
+        video_path=video_path,
+    )
+    if kills_detected:
+        top_k = max(kills_detected, key=lambda x: int(x.get("tier", 0)))
+        max_kill_tier = int(top_k.get("tier", 0))
+        highest_label = str(top_k.get("label", ""))
 
     # Wylicz minimalne HP
     min_hp = min(hp_readings) if hp_readings else 100.0
@@ -888,13 +1106,7 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
         color = "#f97316"  # Pomarańczowy
         hook = _pick_varied_hook("quadrakill", video_path, min_hp)
         conf = 0.92
-    elif is_clutch:
-        detected_type = "clutch"
-        badge = "1% HP CLUTCH"
-        color = "#ef4444"  # Czerwony neon
-        hook = _pick_varied_hook("clutch", video_path, min_hp)
-        conf = 0.90
-    elif max_kill_tier == 3 or len(kills_detected) >= 3:
+    elif max_kill_tier == 3 or (len(kills_detected) >= 3 and max_kill_tier != 2):
         detected_type = "triple"
         badge = "TRIPLE KILL" if max_kill_tier == 3 else f"MULTI-KILL ({len(kills_detected)} FRAGI)"
         color = "#a855f7"  # Fioletowy
@@ -907,6 +1119,12 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
         color = "#06b6d4"  # Turkusowy
         hook = _pick_varied_hook("double", video_path, min_hp)
         conf = 0.85
+    elif is_clutch:
+        detected_type = "clutch"
+        badge = "1% HP CLUTCH"
+        color = "#ef4444"  # Czerwony neon
+        hook = _pick_varied_hook("clutch", video_path, min_hp)
+        conf = 0.90
     elif len(kills_detected) == 1:
         # Dokładnie 1 kill: rozróżniamy Solo Bolo (czyste 1v1 / First Blood) od Outplay (1v2, shutdown, teamfight)
         is_first_blood = (highest_label == "FIRST BLOOD")
@@ -960,9 +1178,54 @@ def analyze_clip_frags(video_path: str, sample_fps: float = 1.0) -> FragAnalysis
         badge_label=badge,
         suggested_title_hook=hook,
         suggested_badge_color=color,
+        objective_secured=bool(objective_times),
+        objective_label="DRAGON_OR_OBJECTIVE_SLAIN" if objective_times else "",
+        ally_banner_blocked=bool(ally_banner_times),
     )
-    _, _, _, segments = compute_optimal_clip_window(temp_res, duration)
+    opt_s, opt_e, _, segments = compute_optimal_clip_window(temp_res, duration)
     temp_res.combat_segments = segments
     temp_res.has_jump_cut = bool(segments and len(segments) > 1)
+
+    is_meaningful_hard_case = (
+        len(kills_detected) >= 2
+        or (bool(getattr(temp_res, "objective_secured", None)) and len(kills_detected) >= 1)
+    )
+    if (temp_res.objective_secured or temp_res.ally_banner_blocked) and is_meaningful_hard_case:
+        try:
+            try:
+                from lol_agent.hard_case_learner import record_hard_case
+            except ImportError:
+                from hard_case_learner import record_hard_case
+            reasons = []
+            if temp_res.ally_banner_blocked:
+                reasons.append("ally_banner_blocked")
+            if temp_res.objective_secured:
+                reasons.append("objective_steal_or_slain")
+            record_hard_case(
+                video_path=video_path,
+                detected_frag_type=detected_type,
+                kills=kills_detected,
+                clip_start=opt_s,
+                clip_end=opt_e,
+                reason=", ".join(reasons),
+                objective_secured=temp_res.objective_secured,
+                objective_label=temp_res.objective_label,
+                ally_banner_blocked=temp_res.ally_banner_blocked,
+                min_hp_pct=float(min_hp),
+            )
+        except Exception:
+            pass
+
+    if cache_key is not None:
+        with _FRAG_CACHE_LOCK:
+            if len(_FRAG_CACHE) >= 16:
+                oldest = next(iter(_FRAG_CACHE))
+                _FRAG_CACHE.pop(oldest, None)
+            _FRAG_CACHE[cache_key] = replace(
+                temp_res,
+                kills=[dict(k) for k in temp_res.kills],
+                combat_segments=list(temp_res.combat_segments) if temp_res.combat_segments else None,
+            )
+
     return temp_res
 

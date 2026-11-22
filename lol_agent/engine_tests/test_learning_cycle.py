@@ -30,10 +30,30 @@ def _run(tmp, tuning=None, feedback=None):
         "channel_avg_view_pct": 200.0, "videos": [{"video_id": "v001", "views": 2000, "swiped_away_pct": 18.0, "avg_view_pct": 98.0},
                                                   {"video_id": "v002", "views": 1800, "swiped_away_pct": 0.0, "avg_view_pct": 101.0},
                                                   {"video_id": "v003", "views": 1500, "swiped_away_pct": 16.0, "avg_view_pct": 400.0}]}
-    sys.modules.update({"api": api, "api.youtube_uploader": up, "api.youtube_analytics": an,
-                        "lol_agent.api": api, "lol_agent.api.youtube_uploader": up, "lol_agent.api.youtube_analytics": an})
-    for k in ("lol_agent", "lol_performance_tracker"): sys.modules.pop(k, None)
-    return LE.run_channel_learning_cycle(force_refresh=True)
+    la_pkg = types.ModuleType("lol_agent")
+    la_api = types.ModuleType("lol_agent.api")
+    la_pkg.api = la_api
+    la_api.youtube_uploader = up
+    la_api.youtube_analytics = an
+    tracked = ("api", "api.youtube_uploader", "api.youtube_analytics",
+               "lol_agent", "lol_agent.api", "lol_agent.api.youtube_uploader", "lol_agent.api.youtube_analytics",
+               "lol_performance_tracker", "lol_agent.lol_performance_tracker")
+    saved = {k: sys.modules.get(k) for k in tracked}
+    sys.modules.update({
+        "api": api, "api.youtube_uploader": up, "api.youtube_analytics": an,
+        "lol_agent": la_pkg, "lol_agent.api": la_api,
+        "lol_agent.api.youtube_uploader": up, "lol_agent.api.youtube_analytics": an,
+    })
+    sys.modules.pop("lol_performance_tracker", None)
+    sys.modules.pop("lol_agent.lol_performance_tracker", None)
+    try:
+        return LE.run_channel_learning_cycle(force_refresh=True)
+    finally:
+        for k, prev in saved.items():
+            if prev is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = prev
 
 def test_full_cycle_runs_and_weights_follow_data():
     tmp = tempfile.mkdtemp(prefix="flikcut_learn_")

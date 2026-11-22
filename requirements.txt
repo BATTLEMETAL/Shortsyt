@@ -4,7 +4,9 @@
 # ========================================================
 
 # Computer Vision & OCR
-opencv-python>=4.8.0
+# Pinned <5.0.0 because OpenCV 5.x alters 3-channel mask / findNonZero expectations
+opencv-python>=4.8.0,<5.0.0
+Pillow>=10.0.0
 pytesseract>=0.3.10
 numpy>=1.26.0
 
@@ -15,6 +17,7 @@ pydantic>=2.7.0
 python-multipart>=0.0.9
 PyJWT>=2.8.0
 httpx>=0.27.0
+requests>=2.31.0
 
 # AI & Multimodal Analysis
 google-genai>=0.1.0

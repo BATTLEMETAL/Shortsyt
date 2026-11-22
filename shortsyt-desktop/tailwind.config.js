@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -7,33 +7,36 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        fk: {
+          k0: '#050505',
+          k1: '#0E0F11',
+          k2: '#17191C',
+          k3: '#272A2F',
+          volt: '#C8FF3A',
+          voltD: '#AEE820',
+          white: '#FFFFFF',
+          bone: '#FFFFFF',
+          pl: '#EEF0EB',
+          mut: '#A0A7B1',
+          dim: '#686E78',
+          ink: '#050505',
+        },
         lol: {
-          bg: '#0A0E1A',
-          bgDark: '#070A12',
-          bgCard: '#121624',
-          bgElevated: '#1A1E30',
-          bgInput: '#1E2338',
-          gold: '#C89B3C',
-          goldLight: '#E5C269',
-          goldDim: '#7A6026',
-          text: '#E4D6B5',
-          textMuted: '#8B8FA8',
-          textDark: '#50546A',
-          blue: '#2A7FD4',
-          blueLight: '#4FA3F7',
-          blueDim: '#1B4D82',
-          red: '#E84040',
-          redLight: '#FF6060',
-          green: '#2ECC71',
-          greenLight: '#55E88D',
-          border: '#1E2438',
-          borderLight: '#2D3550',
-        }
+          bg: '#050505',
+          card: '#0E0F11',
+          elevated: '#17191C',
+          gold: '#C8FF3A',
+          goldHover: '#AEE820',
+          blue: '#5CAEFF',
+          text: '#FFFFFF',
+          textSecondary: '#A0A7B1',
+          border: '#272A2F',
+        },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-        impact: ['Impact', 'sans-serif'],
-      }
+        sans: ['"Manrope"', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+      },
     },
   },
   plugins: [],

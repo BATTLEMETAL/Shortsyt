@@ -12,6 +12,12 @@ import os
 import sys
 import pickle
 import datetime
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent
+os.chdir(ROOT_DIR)
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 # Wymuś UTF-8 na Windows
 if sys.stdout.encoding != "utf-8":
@@ -21,17 +27,31 @@ if sys.stderr.encoding != "utf-8":
 
 from google.auth.transport.requests import Request
 
-ACCOUNTS_DIR = "accounts"
-LOG_FILE = os.path.join("logs", "token_refresh.log")
+ACCOUNTS_DIR = str(ROOT_DIR / "accounts")
+LOG_FILE = str(ROOT_DIR / "logs" / "token_refresh.log")
 
 
 def log(msg: str):
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {msg}"
     print(line)
-    os.makedirs("logs", exist_ok=True)
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+def _load_active_yt_token_name() -> str:
+    reg_path = os.path.join(ACCOUNTS_DIR, "profiles_registry.json")
+    try:
+        if os.path.exists(reg_path):
+            import json
+            data = json.loads(Path(reg_path).read_text(encoding="utf-8"))
+            active_id = data.get("active_account_id")
+            acc = (data.get("accounts") or {}).get(active_id or "") or {}
+            return acc.get("yt_token_file") or "lol_token.pickle"
+    except Exception:
+        pass
+    return "lol_token.pickle"
 
 
 def refresh_all_tokens():
@@ -43,6 +63,7 @@ def refresh_all_tokens():
         log(f"BLAD: Brak katalogu '{ACCOUNTS_DIR}'")
         return 1
 
+    active_yt_file = _load_active_yt_token_name()
     token_files = [f for f in os.listdir(ACCOUNTS_DIR) if f.endswith("_token.pickle")]
 
     if not token_files:
@@ -51,18 +72,24 @@ def refresh_all_tokens():
 
     success = 0
     failed = 0
+    warned = 0
 
     for fname in token_files:
         profile = fname.replace("_token.pickle", "")
         fpath = os.path.join(ACCOUNTS_DIR, fname)
+        is_active = (fname == active_yt_file)
 
         try:
             with open(fpath, "rb") as f:
                 creds = pickle.load(f)
 
             if not creds or not creds.refresh_token:
-                log(f"[{profile}] SKIP — brak refresh_token (wymaga recznej autoryzacji)")
-                failed += 1
+                if is_active:
+                    log(f"[{profile}] BLAD — brak refresh_token dla aktywnego profilu")
+                    failed += 1
+                else:
+                    log(f"[{profile}] SKIP — brak refresh_token (nieaktywny profil)")
+                    warned += 1
                 continue
 
             if creds.expired or not creds.valid:
@@ -82,8 +109,12 @@ def refresh_all_tokens():
             success += 1
 
         except Exception as e:
-            log(f"[{profile}] BLAD: {e}")
-            failed += 1
+            if is_active:
+                log(f"[{profile}] BLAD (aktywny profil): {e}")
+                failed += 1
+            else:
+                log(f"[{profile}] WARN (nieaktywny profil pominięty): {e}")
+                warned += 1
 
     # --- TIKTOK AUTO-REFRESH ---
     tiktok_token_path = os.path.join(ACCOUNTS_DIR, "tiktok_token.json")

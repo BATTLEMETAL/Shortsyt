@@ -1,6 +1,6 @@
 """
 Shortsyt — Moduł publikacji na Facebook Page (Reels / Video).
-Obsługuje publikację wideo na fanpage za pomocą Meta Graph API v19.0 (Video Reels & Resumable Upload),
+Obsługuje publikację wideo na fanpage za pomocą Meta Graph API v21.0 (Video Reels & Resumable Upload),
 weryfikację uprawnień pages_manage_posts oraz pełną izolację błędów.
 """
 
@@ -27,7 +27,20 @@ load_dotenv(ROOT_DIR / ".env")
 ACCOUNTS_DIR = ROOT_DIR / "accounts"
 FACEBOOK_TOKEN_PATH = ACCOUNTS_DIR / "facebook_token.json"
 
-GRAPH_API_VERSION = "v19.0"
+
+def _token_path():
+    """Aktywna ścieżka tokenu facebook wg konta z account_manager (fallback: stała domyślna)."""
+    try:
+        try:
+            from lol_agent.account_manager import get_active_platform_token_path
+        except ImportError:
+            from account_manager import get_active_platform_token_path
+        return get_active_platform_token_path("facebook")
+    except Exception:
+        return FACEBOOK_TOKEN_PATH
+
+
+GRAPH_API_VERSION = "v21.0"
 GRAPH_API_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 GRAPH_VIDEO_BASE = f"https://graph-video.facebook.com/{GRAPH_API_VERSION}"
 
@@ -35,11 +48,11 @@ GRAPH_VIDEO_BASE = f"https://graph-video.facebook.com/{GRAPH_API_VERSION}"
 def load_facebook_token() -> Optional[Dict[str, Any]]:
     """Wczytuje token i dane strony Facebook z accounts/facebook_token.json lub .env."""
     data: Dict[str, Any] = {}
-    if FACEBOOK_TOKEN_PATH.exists():
+    if _token_path().exists():
         try:
-            data = json.loads(FACEBOOK_TOKEN_PATH.read_text(encoding="utf-8"))
+            data = json.loads(_token_path().read_text(encoding="utf-8"))
         except Exception as e:
-            print(f"⚠️ Błąd odczytu {FACEBOOK_TOKEN_PATH}: {e}")
+            print(f"⚠️ Błąd odczytu {_token_path()}: {e}")
 
     access_token = data.get("access_token") or os.getenv("FACEBOOK_ACCESS_TOKEN", "").strip()
     page_id = data.get("page_id") or os.getenv("FACEBOOK_PAGE_ID", "").strip()

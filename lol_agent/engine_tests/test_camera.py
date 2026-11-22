@@ -36,6 +36,18 @@ def test_frame_stays_inside_the_source():
     out = run([20] * 10 + [1900] * 10)
     assert min(out) >= 0 and max(out) <= 1920 - 608
 
+def test_reacquire_after_long_loss_snaps_to_player():
+    """Pasek znika na ~8 s (smok/VFX), gracz odchodzi daleko; po powrocie kadr ma dogonić go od razu, nie pełznąć 80 px/próbkę."""
+    out = run([300] * 10 + [None] * 12 + [1500] * 10)
+    assert abs(out[22 + 2] - (1500 - 304)) <= 60
+
+def test_combat_centroid_fallback_follows_enemies_when_bar_hidden():
+    """Gdy pasek gracza zniknie w chaosie walki (>4 próbki), ale wrogowie są stabilnie w prawej części rzeki, kadr płynie za walką."""
+    frames = [([bar(600)], None) for _ in range(8)] + [([], 1300.0) for _ in range(14)]
+    pts = SC.simulate_player_trajectory(frames, duration=len(frames) / 5.0)
+    xs = [p[1] for p in pts]
+    assert xs[-1] > xs[7] + 300
+
 def test_bar_mode_prescan():
     assert SC.detect_player_bar_mode(5000, 800) == "standard"      # złote efekty nie przejmą kamery
     assert SC.detect_player_bar_mode(100, 4000) == "colorblind"
@@ -57,3 +69,27 @@ def test_path_finder_runs_on_drawn_frames():
     xs = [p[1] for p in pts]
     assert len(pts) == 40 and xs[30] > xs[2] + 250                 # kadr poszedł w prawo za graczem
     assert all(abs(x - (600 + i * 15 - 304)) < 140 for i, x in enumerate(xs[:34]))   # i trzyma gracza w kadrze (przed zamrożeniem końca)
+
+
+def test_katarina_shunpo_to_dagger_or_enemy_snaps_and_centers():
+    """Doskok E (Shunpo) na sztylet/wroga w klatce poprzedniej przeskakuje od razu i centruje na Katarinie."""
+    frames = []
+    for _ in range(10):
+        frames.append(([bar(500)], 1050.0, [1050.0]))
+    for _ in range(10):
+        frames.append(([bar(1050)], 1050.0, [1050.0]))
+    pts = SC.simulate_player_trajectory(frames, duration=len(frames) / 5.0)
+    xs = [p[1] for p in pts]
+    assert abs(xs[12] - (1050 - 304)) <= 30
+
+
+def test_single_frame_outlier_without_shunpo_target_is_ignored():
+    """Jednoklatkowy artefakt 500px dalej bez celu Shunpo i bez potwierdzenia nie może zerwać kamery."""
+    frames = [([bar(600)], None, []) for _ in range(8)]
+    frames.append(([bar(1150)], None, []))
+    frames.extend([([bar(600)], None, []) for _ in range(12)])
+    pts = SC.simulate_player_trajectory(frames, duration=len(frames) / 5.0)
+    xs = [p[1] for p in pts]
+    steps = [abs(b - a) for a, b in zip(xs, xs[1:])]
+    assert max(steps) <= SC.CAMERA["max_pan_px"]
+    assert all(abs(x - (600 - 304)) <= 40 for x in xs)

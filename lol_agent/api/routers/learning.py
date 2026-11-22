@@ -49,6 +49,42 @@ def get_analytics(range: str = "30d", refresh: bool = False, payload: dict = Dep
     count = len(filtered)
     avg_views = int(total_views / max(count, 1))
 
+    audience_insights = {}
+    bulk_yta = {}
+    try:
+        from ..youtube_analytics import fetch_bulk_video_analytics, fetch_channel_audience_insights
+        bulk_yta = fetch_bulk_video_analytics(force_refresh=refresh)
+        audience_insights = fetch_channel_audience_insights(force_refresh=refresh)
+    except Exception:
+        pass
+
+    yta_matched = []
+    for v in filtered:
+        vid = v.get("video_id")
+        ya = bulk_yta.get(vid) if vid else None
+        if ya:
+            yta_matched.append(ya)
+
+    period_30d = audience_insights.get("period_30d") or {} if isinstance(audience_insights, dict) else {}
+    if range == "30d" and period_30d.get("watch_time_hours") is not None:
+        watch_time_hours = period_30d["watch_time_hours"]
+        subscribers_gained = int(period_30d.get("subscribers_gained") or 0)
+        engaged_view_rate_pct = period_30d.get("engaged_view_rate_pct")
+        avg_view_pct = period_30d.get("avg_view_pct")
+    elif yta_matched:
+        watch_time_hours = round(sum(float(y.get("watch_time_hours") or 0.0) for y in yta_matched), 1)
+        subscribers_gained = sum(int(y.get("subscribers_gained") or 0) for y in yta_matched)
+        sum_vw = sum(int(y.get("views") or 0) for y in yta_matched)
+        sum_eng = sum(int(y.get("engaged_views") or 0) for y in yta_matched)
+        engaged_view_rate_pct = round((sum_eng / sum_vw) * 100.0, 1) if sum_vw > 0 else None
+        avd_vals = [float(y["avg_view_pct"]) for y in yta_matched if y.get("avg_view_pct") is not None]
+        avg_view_pct = round(sum(avd_vals) / len(avd_vals), 1) if avd_vals else None
+    else:
+        watch_time_hours = round(total_views * 0.0055, 1)
+        subscribers_gained = max(1, int(total_views * 0.00045))
+        engaged_view_rate_pct = None
+        avg_view_pct = None
+
     top_videos = sorted(filtered, key=lambda x: x.get("views", 0), reverse=True)[:5]
 
     return {
@@ -58,8 +94,11 @@ def get_analytics(range: str = "30d", refresh: bool = False, payload: dict = Dep
         "total_likes": total_likes,
         "total_comments": total_comments,
         "avg_views": avg_views,
-        "watch_time_hours": round(total_views * 0.0055, 1),
-        "subscribers_gained": max(1, int(total_views * 0.00045)),
+        "watch_time_hours": watch_time_hours,
+        "subscribers_gained": subscribers_gained,
+        "engaged_view_rate_pct": engaged_view_rate_pct,
+        "avg_view_pct": avg_view_pct,
+        "audience_insights": audience_insights,
         "channel": ch_info,
         "top_videos": top_videos,
         "synced_at": sync_data.get("synced_at"),
@@ -272,6 +311,22 @@ def dark_calibration(payload: dict = Depends(verify_token_flexible)):
              "real_views": r.get("real_views"), "prediction_ok": r.get("prediction_ok")}
             for r in bottom3
         ],
+    }
+
+
+@router.get("/dark/directive", tags=["Dark Psychology"])
+def dark_directive(payload: dict = Depends(verify_token_flexible)):
+    """Zwraca dyrektywę adaptacyjną dla modułu Dark Psychology (lub status archiwalny)."""
+    directive = _dark_load_json("adaptation_directive.json")
+    if directive:
+        return directive
+    return {
+        "ok": True,
+        "status": "archived",
+        "directive": "",
+        "generated_at": None,
+        "rules": [],
+        "message": "Moduł Dark Psychology jest zarchiwizowany. Aktywny agent: Flikcut Studio.",
     }
 
 

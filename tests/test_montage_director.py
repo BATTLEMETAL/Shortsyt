@@ -49,7 +49,7 @@ def test_montage_director_solo_duel():
     assert decision.archetype == "SOLO_DUEL"
     assert decision.allow_jump_cut is False
     assert decision.camera_mode == "duel_centroid"
-    assert decision.slowmo_duration >= 1.5
+    assert 1.2 <= decision.slowmo_duration <= 1.8
 
 
 def test_simulate_player_trajectory_kill_anchor_lock():

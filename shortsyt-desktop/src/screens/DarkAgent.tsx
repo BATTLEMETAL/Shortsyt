@@ -50,11 +50,11 @@ const DWANNELLENGA_RULES: InsightRule[] = [
   },
   {
     id: "peak_timing",
-    title: "Złote Okna Publikacji (08:30 & 18:30 CET)",
+    title: "Złote Okna Publikacji (11:00 & 21:30 CET)",
     category: "Timing",
-    impact: "2.3x Szybszy Start",
-    description: "Publikacja o 08:30 CET (poranny ruch przed szkołą/pracą) oraz 18:30 CET (główny wieczorny peak graczy) maksymalizuje velocity wyświetleń w pierwszych 120 minutach.",
-    metric: "Initial Spike: 450 wyśw./2h",
+    impact: "+35% Wyśw. / 51.9% Eng.",
+    description: "Publikacja o 11:00 CET (19:00 KST/JST — główny peak Azji Wschodniej + południe EU) oraz 21:30 CET (wieczór EU + popołudnie USA/BR z najwyższym AVD) maksymalizuje retencję i wyświetlenia.",
+    metric: "Mediana: 2,553 wyśw.",
   },
 ];
 
@@ -87,18 +87,18 @@ export default function DarkAgent() {
   const topVideoViews = analyticsData?.top_videos?.[0]?.views ? `${analyticsData.top_videos[0].views.toLocaleString()} views` : '9.4% CTR • 74.2% Retencja';
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#0A0E1A] p-6 lg:p-8 space-y-6 text-[#E4D6B5]">
+    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#050505] p-6 lg:p-8 space-y-6 text-[#FFFFFF]">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#1E2438]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#272A2F]">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-[#E4D6B5] flex items-center gap-2.5">
-            <Brain className="w-6 h-6 text-[#C89B3C]" />
+          <h1 className="text-2xl font-black tracking-tight text-[#FFFFFF] flex items-center gap-2.5">
+            <Brain className="w-6 h-6 text-[#C8FF3A]" />
             <span>Strategia & Wnioski Retencji — Dwannellenga</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C89B3C]/20 border border-[#C89B3C]/40 text-[#C89B3C] font-bold">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C8FF3A]/20 border border-[#C8FF3A]/40 text-[#C8FF3A] font-bold">
               KANAŁ DWANNELLENGA
             </span>
           </h1>
-          <p className="text-xs text-[#8B8FA8] mt-1 font-medium">
+          <p className="text-xs text-[#A0A7B1] mt-1 font-medium">
             Praktyczne wnioski z {totalAnalyzed} opublikowanych filmów, reguły algorytmu YouTube Shorts oraz optymalizacja wskaźnika utrzymania uwagi widza (Audience Retention)
           </p>
         </div>
@@ -106,90 +106,90 @@ export default function DarkAgent() {
         <button
           onClick={() => fetchAnalytics(true)}
           disabled={loading}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#121624] hover:bg-[#1E2438] border border-[#1E2438] text-xs font-bold text-[#E4D6B5] transition-colors self-start sm:self-auto"
+          className="flex items-center gap-1.5 px-3.5 py-2 fk-cut-sm bg-[#0E0F11] hover:bg-[#272A2F] border border-[#272A2F] text-xs font-bold text-[#FFFFFF] transition-colors self-start sm:self-auto"
         >
-          <RefreshCw className={`w-3.5 h-3.5 text-[#C89B3C] ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-3.5 h-3.5 text-[#C8FF3A] ${loading ? "animate-spin" : ""}`} />
           <span>{loading ? "Aktualizowanie..." : "Odśwież z YouTube"}</span>
         </button>
       </div>
 
       {/* Top 4 Performance Pillars */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-[#121624] border border-[#1E2438] rounded-2xl p-5 flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between text-[#8B8FA8] text-xs font-bold uppercase tracking-wider">
+        <div className="bg-[#0E0F11] border border-[#272A2F] fk-cut p-5 flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between text-[#A0A7B1] text-xs font-bold uppercase tracking-wider">
             <span>👑 Top Format</span>
-            <Award className="w-4 h-4 text-[#C89B3C]" />
+            <Award className="w-4 h-4 text-[#C8FF3A]" />
           </div>
           <div>
-            <div className="text-xl font-black text-[#E4D6B5] truncate">Katarina Multikill</div>
+            <div className="text-xl font-black text-[#FFFFFF] truncate">Katarina Multikill</div>
             <div className="text-xs text-[#2ECC71] font-semibold mt-1 truncate">{topVideoViews}</div>
           </div>
-          <div className="text-[11px] text-[#50546A]">
+          <div className="text-[11px] text-[#686E78]">
             Najwyższy engagement i shareability wśród widzów
           </div>
         </div>
 
-        <div className="bg-[#121624] border border-[#1E2438] rounded-2xl p-5 flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between text-[#8B8FA8] text-xs font-bold uppercase tracking-wider">
+        <div className="bg-[#0E0F11] border border-[#272A2F] fk-cut p-5 flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between text-[#A0A7B1] text-xs font-bold uppercase tracking-wider">
             <span>⏱️ Hook Window</span>
             <Zap className="w-4 h-4 text-[#2ECC71]" />
           </div>
           <div>
-            <div className="text-xl font-black text-[#E4D6B5]">0 - 1.8 sekundy</div>
+            <div className="text-xl font-black text-[#FFFFFF]">0 - 1.8 sekundy</div>
             <div className="text-xs text-[#55E88D] font-semibold mt-1">-38% odrzuceń na starcie</div>
           </div>
-          <div className="text-[11px] text-[#50546A]">
+          <div className="text-[11px] text-[#686E78]">
             Wejście wprost w walkę zatrzymuje kciuk na feedzie
           </div>
         </div>
 
-        <div className="bg-[#121624] border border-[#1E2438] rounded-2xl p-5 flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between text-[#8B8FA8] text-xs font-bold uppercase tracking-wider">
+        <div className="bg-[#0E0F11] border border-[#272A2F] fk-cut p-5 flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between text-[#A0A7B1] text-xs font-bold uppercase tracking-wider">
             <span>💬 Pinned CTA</span>
-            <MessageSquare className="w-4 h-4 text-[#4FA3F7]" />
+            <MessageSquare className="w-4 h-4 text-[#5CAEFF]" />
           </div>
           <div>
-            <div className="text-xl font-black text-[#E4D6B5]">Otwarte Pytanie</div>
-            <div className="text-xs text-[#4FA3F7] font-semibold mt-1">+240% komentarzy</div>
+            <div className="text-xl font-black text-[#FFFFFF]">Otwarte Pytanie</div>
+            <div className="text-xs text-[#5CAEFF] font-semibold mt-1">+240% komentarzy</div>
           </div>
-          <div className="text-[11px] text-[#50546A]">
+          <div className="text-[11px] text-[#686E78]">
             Pytanie 'Oceń 1-10' nakręca dyskusję pod Shortem
           </div>
         </div>
 
-        <div className="bg-[#121624] border border-[#1E2438] rounded-2xl p-5 flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between text-[#8B8FA8] text-xs font-bold uppercase tracking-wider">
+        <div className="bg-[#0E0F11] border border-[#272A2F] fk-cut p-5 flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between text-[#A0A7B1] text-xs font-bold uppercase tracking-wider">
             <span>⏰ Złote Godziny</span>
-            <Clock className="w-4 h-4 text-[#E5C269]" />
+            <Clock className="w-4 h-4 text-[#C8FF3A]" />
           </div>
           <div>
-            <div className="text-xl font-black text-[#E4D6B5]">08:30 & 18:30 CET</div>
-            <div className="text-xs text-[#C89B3C] font-semibold mt-1">2.3x szybszy initial spike</div>
+            <div className="text-xl font-black text-[#FFFFFF]">11:00 &amp; 21:30 CET</div>
+            <div className="text-xs text-[#C8FF3A] font-semibold mt-1">Peak Azja / EU / US</div>
           </div>
-          <div className="text-[11px] text-[#50546A]">
+          <div className="text-[11px] text-[#686E78]">
             Najwyższa aktywność graczy League of Legends
           </div>
         </div>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-[#1E2438] pb-2">
+      <div className="flex items-center gap-2 border-b border-[#272A2F] pb-2">
         <button
           onClick={() => setActiveTab("insights")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+          className={`px-4 py-2 fk-cut-sm text-xs font-bold transition-colors ${
             activeTab === "insights"
-              ? "bg-[#C89B3C] text-[#0A0E1A]"
-              : "bg-[#121624] text-[#8B8FA8] hover:text-[#E4D6B5]"
+              ? "bg-[#C8FF3A] text-[#050505]"
+              : "bg-[#0E0F11] text-[#A0A7B1] hover:text-[#FFFFFF]"
           }`}
         >
           💡 Wnioski z Publikacji Kanału
         </button>
         <button
           onClick={() => setActiveTab("rules")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+          className={`px-4 py-2 fk-cut-sm text-xs font-bold transition-colors ${
             activeTab === "rules"
-              ? "bg-[#C89B3C] text-[#0A0E1A]"
-              : "bg-[#121624] text-[#8B8FA8] hover:text-[#E4D6B5]"
+              ? "bg-[#C8FF3A] text-[#050505]"
+              : "bg-[#0E0F11] text-[#A0A7B1] hover:text-[#FFFFFF]"
           }`}
         >
           ⚙️ Aktywny Zestaw Reguł (v25)
@@ -203,11 +203,11 @@ export default function DarkAgent() {
             {DWANNELLENGA_RULES.map((rule) => (
               <div
                 key={rule.id}
-                className="p-5 rounded-2xl bg-[#121624] border border-[#1E2438] hover:border-[#C89B3C]/30 transition-all space-y-3"
+                className="p-5 fk-cut bg-[#0E0F11] border border-[#272A2F] hover:border-[#C8FF3A]/30 transition-all space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#E4D6B5] flex items-center gap-2">
-                    <Sparkles className="w-3.5 h-3.5 text-[#C89B3C]" />
+                  <span className="text-xs font-bold text-[#FFFFFF] flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-[#C8FF3A]" />
                     {rule.title}
                   </span>
                   <span className="text-[10px] bg-[#2ECC71]/20 text-[#2ECC71] border border-[#2ECC71]/40 px-2 py-0.5 rounded font-bold">
@@ -215,41 +215,41 @@ export default function DarkAgent() {
                   </span>
                 </div>
 
-                <p className="text-xs text-[#8B8FA8] leading-relaxed">
+                <p className="text-xs text-[#A0A7B1] leading-relaxed">
                   {rule.description}
                 </p>
 
-                <div className="pt-2 border-t border-[#1E2438] flex items-center justify-between text-[11px]">
-                  <span className="text-[#50546A] uppercase font-semibold">Kategoria: {rule.category}</span>
-                  <span className="font-mono text-[#C89B3C] font-bold">{rule.metric}</span>
+                <div className="pt-2 border-t border-[#272A2F] flex items-center justify-between text-[11px]">
+                  <span className="text-[#686E78] uppercase font-semibold">Kategoria: {rule.category}</span>
+                  <span className="font-mono text-[#C8FF3A] font-bold">{rule.metric}</span>
                 </div>
               </div>
             ))}
           </div>
 
           {/* Retention Masterclass Box */}
-          <div className="p-6 rounded-2xl bg-gradient-to-br from-[#121624] to-[#181D2E] border border-[#C89B3C]/30 space-y-4 shadow-2xl">
-            <div className="flex items-center gap-2 text-sm font-bold text-[#E4D6B5]">
-              <Compass className="w-5 h-5 text-[#C89B3C]" />
+          <div className="p-6 fk-cut fk-cut bg-[#0E0F11] border border-[#C8FF3A]/30 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#FFFFFF]">
+              <Compass className="w-5 h-5 text-[#C8FF3A]" />
               <span>Złota Formuła Viralowego Shorta (Standard Dwannellenga)</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
-              <div className="p-3.5 rounded-xl bg-[#0A0E1A] border border-[#1E2438] space-y-1.5">
-                <div className="font-bold text-[#C89B3C]">1. Hook (0.0s - 1.8s)</div>
-                <div className="text-[#8B8FA8] text-[11px]">Błyskawiczny start akcji, widoczny złoty HP bar gracza, nagły wjazd w walkę.</div>
+              <div className="p-3.5 fk-cut-sm bg-[#050505] border border-[#272A2F] space-y-1.5">
+                <div className="font-bold text-[#C8FF3A]">1. Hook (0.0s - 1.8s)</div>
+                <div className="text-[#A0A7B1] text-[11px]">Błyskawiczny start akcji, widoczny złoty HP bar gracza, nagły wjazd w walkę.</div>
               </div>
-              <div className="p-3.5 rounded-xl bg-[#0A0E1A] border border-[#1E2438] space-y-1.5">
+              <div className="p-3.5 fk-cut-sm bg-[#050505] border border-[#272A2F] space-y-1.5">
                 <div className="font-bold text-[#2ECC71]">2. Climax (2.0s - 12s)</div>
-                <div className="text-[#8B8FA8] text-[11px]">Szybkie cięcia między zabójstwami, dynamiczny zoom-punch 1.20x przy każdym killu.</div>
+                <div className="text-[#A0A7B1] text-[11px]">Szybkie cięcia między zabójstwami, dynamiczny zoom-punch 1.20x przy każdym killu.</div>
               </div>
-              <div className="p-3.5 rounded-xl bg-[#0A0E1A] border border-[#1E2438] space-y-1.5">
-                <div className="font-bold text-[#4FA3F7]">3. Slow-Mo & Bass (12s - 16s)</div>
-                <div className="text-[#8B8FA8] text-[11px]">Zwolnienie tempa na decydujący 5. cios + natychmiastowy bass drop i okrzyk Announcera.</div>
+              <div className="p-3.5 fk-cut-sm bg-[#050505] border border-[#272A2F] space-y-1.5">
+                <div className="font-bold text-[#5CAEFF]">3. Slow-Mo & Bass (12s - 16s)</div>
+                <div className="text-[#A0A7B1] text-[11px]">Zwolnienie tempa na decydujący 5. cios + natychmiastowy bass drop i okrzyk Announcera.</div>
               </div>
-              <div className="p-3.5 rounded-xl bg-[#0A0E1A] border border-[#1E2438] space-y-1.5">
-                <div className="font-bold text-[#E5C269]">4. Loop Cut & CTA (16s - 18s)</div>
-                <div className="text-[#8B8FA8] text-[11px]">Płynne cięcie końcowe pod natychmiastowe zapętlenie + przypięty komentarz dyskusyjny.</div>
+              <div className="p-3.5 fk-cut-sm bg-[#050505] border border-[#272A2F] space-y-1.5">
+                <div className="font-bold text-[#C8FF3A]">4. Loop Cut & CTA (16s - 18s)</div>
+                <div className="text-[#A0A7B1] text-[11px]">Płynne cięcie końcowe pod natychmiastowe zapętlenie + przypięty komentarz dyskusyjny.</div>
               </div>
             </div>
           </div>
@@ -258,10 +258,10 @@ export default function DarkAgent() {
 
       {/* Tab 2: Aktywne Reguły Montażu */}
       {activeTab === "rules" && (
-        <div className="p-6 rounded-2xl bg-[#121624] border border-[#1E2438] space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-[#1E2438]">
-            <div className="flex items-center gap-2 text-sm font-bold text-[#E4D6B5]">
-              <Target className="w-4 h-4 text-[#C89B3C]" />
+        <div className="p-6 fk-cut bg-[#0E0F11] border border-[#272A2F] space-y-5">
+          <div className="flex items-center justify-between pb-3 border-b border-[#272A2F]">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#FFFFFF]">
+              <Target className="w-4 h-4 text-[#C8FF3A]" />
               <span>Status Modułów Pipeline&apos;u (Zero-Touch v25)</span>
             </div>
             <span className="text-xs text-[#2ECC71] font-bold">100% OPERATIONAL ✅</span>
@@ -272,16 +272,16 @@ export default function DarkAgent() {
               { name: "Smart Camera v25 (Universal Player Tracker + Flash Snap)", desc: "Śledzenie złotego paska HP gracza + natychmiastowy przeskok kamery przy Flashu/Shunpo.", status: "AKTYWNY" },
               { name: "AI Auto-Trim (OCR Kill Detection & Action Window)", desc: "Automatyczne wyznaczanie punktu startu 1.5s przed walką i cięcia końcowego.", status: "AKTYWNY" },
               { name: "Hero-Frame 9:16 Thumbnail Generator", desc: "Tworzenie pionowej miniatury w momencie kulminacji i automatyczny upload na YouTube.", status: "AKTYWNY" },
-              { name: "YouTube Peak-Hour Scheduler", desc: "Planowanie publikacji na sloty 08:30 i 18:30 CET z wykorzystaniem YouTube Data API.", status: "AKTYWNY" },
+              { name: "YouTube Peak-Hour Scheduler", desc: "Planowanie publikacji na sloty 11:00 i 21:30 CET (Peak Azja/EU/US) z wykorzystaniem YouTube Data API.", status: "AKTYWNY" },
               { name: "Dwannellenga Viral Title & Description Engine", desc: "Generowanie angażujących tytułów pod algorytm oraz automatyczne przypinanie komentarza.", status: "AKTYWNY" },
             ].map((mod, idx) => (
-              <div key={idx} className="p-4 rounded-xl bg-[#0A0E1A] border border-[#1E2438] flex items-center justify-between gap-4">
+              <div key={idx} className="p-4 fk-cut-sm bg-[#050505] border border-[#272A2F] flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-xs font-bold text-[#E4D6B5] flex items-center gap-2">
+                  <div className="text-xs font-bold text-[#FFFFFF] flex items-center gap-2">
                     <CheckCircle2 className="w-3.5 h-3.5 text-[#2ECC71]" />
                     <span>{mod.name}</span>
                   </div>
-                  <div className="text-[11px] text-[#8B8FA8] mt-1">{mod.desc}</div>
+                  <div className="text-[11px] text-[#A0A7B1] mt-1">{mod.desc}</div>
                 </div>
                 <span className="text-[10px] font-bold bg-[#2ECC71]/20 text-[#2ECC71] px-2.5 py-1 rounded-md border border-[#2ECC71]/40 shrink-0">
                   {mod.status}

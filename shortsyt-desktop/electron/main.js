@@ -25,7 +25,7 @@ const Store = require('electron-store');
 // Initialize electron store
 const store = new Store({
   defaults: {
-    api_url: 'http://localhost:8765',
+    api_url: 'http://127.0.0.1:8765',
     jwt_token: null,
   },
 });
@@ -70,6 +70,8 @@ async function ensureBackendRunning() {
 
   // Find python in venv across common dev and packaged locations
   const candidateVenvs = [
+    // Absolute path — highest priority, always works on this machine
+    'C:\\Users\\mz100\\OneDrive\\Michal\\Shortsyt\\venv313\\Scripts\\python.exe',
     path.join(process.cwd(), 'venv313', 'Scripts', 'python.exe'),
     path.resolve(__dirname, '../../venv313/Scripts/python.exe'),
     path.resolve(__dirname, '../../../venv313/Scripts/python.exe'),
@@ -87,14 +89,20 @@ async function ensureBackendRunning() {
     }
   }
 
+  logDebug('Using pythonCmd: ' + pythonCmd);
+  logDebug('Using projectRoot: ' + projectRoot);
+
   console.log('🚀 Starting Shortsyt Backend API via:', pythonCmd, 'in cwd:', projectRoot);
   try {
-    backendProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'lol_agent.api.main:app', '--host', '127.0.0.1', '--port', '8765'], {
+    backendProcess = spawn(pythonCmd, ['-m', 'uvicorn', 'lol_agent.api.main:app', '--host', '0.0.0.0', '--port', '8765'], {
       cwd: projectRoot,
       stdio: 'ignore',
-      detached: false,
+      detached: true,
       windowsHide: true,
     });
+    if (typeof backendProcess.unref === 'function') {
+      backendProcess.unref();
+    }
 
     backendProcess.on('error', (err) => {
       console.warn('Backend process spawn error:', err);
@@ -118,13 +126,18 @@ async function createWindow() {
   await ensureBackendRunning();
   logDebug('ensureBackendRunning finished');
 
+  const windowIcon = fs.existsSync(path.join(__dirname, '../dist/icon-512.png'))
+    ? path.join(__dirname, '../dist/icon-512.png')
+    : path.join(__dirname, '../public/icon-512.png');
+
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
     minWidth: 1080,
     minHeight: 720,
-    title: 'Shortsyt Desktop — LoL Shorts Studio',
-    backgroundColor: '#0A0E1A',
+    title: 'Flikcut Studio — 9:16 Highlight Engine',
+    backgroundColor: '#050505',
+    icon: windowIcon,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -248,7 +261,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  if (backendProcess && backendProcess.pid) {
+  // Backend 24/7: zostawiamy uvicorn w tle (kolejka TikTok/IG i przypięte komentarze YT),
+  // zabijamy go tylko gdy jawnie ustawiono FLIKCUT_KILL_BACKEND_ON_QUIT=1.
+  if (process.env.FLIKCUT_KILL_BACKEND_ON_QUIT === '1' && backendProcess && backendProcess.pid) {
     try {
       if (process.platform === 'win32') {
         const { execSync } = require('child_process');

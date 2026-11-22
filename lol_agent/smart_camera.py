@@ -14,11 +14,68 @@ import sys, os, math
 sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+import json
 import subprocess
 import tempfile
 import numpy as np
 import cv2
 from PIL import Image
+
+_DEFAULT_GAME_PROFILE = {
+    "game": "lol",
+    "display_name": "League of Legends",
+    "hud_exclusion_zones": {
+        "top_y_ratio": 0.10,
+        "bottom_y_ratio": 0.78,
+        "minimap_y_ratio": 0.62,
+        "minimap_x_ratio": 0.76,
+        "left_panel_y_ratio": 0.50,
+        "left_panel_x_ratio": 0.23,
+        "side_margin_px": 8,
+    },
+    "health_bar_colors": {
+        "yellow_self_bar": {"r_min": 160, "g_min": 130, "b_max": 110, "rb_diff_min": 80, "gb_diff_min": 50},
+        "green_ally_bar": {"g_min": 150, "r_max": 120, "b_max": 120, "gr_diff_min": 50},
+        "red_enemy_bar": {"r_min": 150, "g_max": 95, "b_max": 85, "rg_diff_min": 60, "rb_diff_min": 70},
+    },
+    "kill_labels": ["PENTAKILL", "QUADRA KILL", "TRIPLE KILL", "DOUBLE KILL", "FIRST BLOOD", "ACE", "SHUTDOWN", "OUTPLAY", "KILL"],
+}
+_GAME_PROFILE_CACHE = {}
+
+
+def load_game_profile(game: str = "lol") -> dict:
+    """Loads HUD masks and color rules from game_profiles/<game>.json with safe defaults."""
+    prof_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "game_profiles", f"{game}.json")
+    try:
+        mtime = os.path.getmtime(prof_path)
+    except OSError:
+        mtime = None
+    cached = _GAME_PROFILE_CACHE.get(game)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    profile = json.loads(json.dumps(_DEFAULT_GAME_PROFILE))
+    if mtime is not None:
+        try:
+            with open(prof_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                for section in ("hud_exclusion_zones", "health_bar_colors"):
+                    if isinstance(data.get(section), dict):
+                        if section == "health_bar_colors":
+                            for k, v in data[section].items():
+                                if isinstance(v, dict):
+                                    profile[section][k] = {**profile[section].get(k, {}), **v}
+                        else:
+                            profile[section].update(data[section])
+                if isinstance(data.get("kill_labels"), list):
+                    profile["kill_labels"] = list(data["kill_labels"])
+                for k in ("game", "display_name"):
+                    if k in data:
+                        profile[k] = data[k]
+        except Exception:
+            pass
+    _GAME_PROFILE_CACHE[game] = (mtime, profile)
+    return profile
 
 
 # ─── Ekstrakcja klatek ────────────────────────────────────────────────────────
@@ -95,32 +152,42 @@ def _detect_fight_center_x(frame_rgb: np.ndarray,
     r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
     h, w = r.shape
 
+    _prof = load_game_profile("lol")
+    _hud = _prof.get("hud_exclusion_zones", {})
+    _bars = _prof.get("health_bar_colors", {})
+    _yb = _bars.get("yellow_self_bar", {})
+    _gb = _bars.get("green_ally_bar", {})
+    _rb = _bars.get("red_enemy_bar", {})
+
     # Outplayed stats panel (lewy-gorny naroznik)
     outplayed_x = int(w * 0.22)
     outplayed_y = int(h * 0.35)
 
+    _side = int(_hud.get("side_margin_px", 8))
+
     def make_exclusion_mask():
         mask = np.ones((h, w), dtype=bool)
-        mask[:int(h * 0.10), :] = False       # górny scoreboard/HUD
-        mask[int(h * 0.78):, :] = False       # dolny pas umiejętności/HUD
+        mask[:int(h * float(_hud.get("top_y_ratio", 0.10))), :] = False       # górny scoreboard/HUD
+        mask[int(h * float(_hud.get("bottom_y_ratio", 0.78))):, :] = False    # dolny pas umiejętności/HUD
         # Dolna prawa ćwiartka — minimapa i panel przedmiotów w LoL
-        mask[int(h * 0.62):, int(w * 0.76):] = False
+        mask[int(h * float(_hud.get("minimap_y_ratio", 0.62))):, int(w * float(_hud.get("minimap_x_ratio", 0.76))):] = False
         # Dolna lewa ćwiartka — portret i chat
-        mask[int(h * 0.50):, :int(w * 0.23)] = False
-        mask[:, :8] = False                   # lewy margines
-        mask[:, -8:] = False                  # prawy margines
+        mask[int(h * float(_hud.get("left_panel_y_ratio", 0.50))):, :int(w * float(_hud.get("left_panel_x_ratio", 0.23)))] = False
+        if _side > 0:
+            mask[:, :_side] = False                   # lewy margines
+            mask[:, -_side:] = False                  # prawy margines
         return mask
 
     excl = make_exclusion_mask()
 
     # --- Żółty & Zielony HP bar (Gracz) ---
     yellow = (
-        (r > 160) & (g > 130) & (b < 110) &
-        ((r - b) > 80) & ((g - b) > 50)
+        (r > int(_yb.get("r_min", 160))) & (g > int(_yb.get("g_min", 130))) & (b < int(_yb.get("b_max", 110))) &
+        ((r - b) > int(_yb.get("rb_diff_min", 80))) & ((g - b) > int(_yb.get("gb_diff_min", 50)))
     ) & excl
     green = (
-        (g > 150) & (r < 120) & (b < 120) &
-        ((g - r) > 50)
+        (g > int(_gb.get("g_min", 150))) & (r < int(_gb.get("r_max", 120))) & (b < int(_gb.get("b_max", 120))) &
+        ((g - r) > int(_gb.get("gr_diff_min", 50)))
     ) & excl
     player_mask = (yellow | green)
 
@@ -140,8 +207,8 @@ def _detect_fight_center_x(frame_rgb: np.ndarray,
 
     # --- Czerwony HP bar (Wrogowie) ---
     red = (
-        (r > 150) & (g < 95) & (b < 85) &
-        ((r - g) > 60) & ((r - b) > 70)
+        (r > int(_rb.get("r_min", 150))) & (g < int(_rb.get("g_max", 95))) & (b < int(_rb.get("b_max", 85))) &
+        ((r - g) > int(_rb.get("rg_diff_min", 60))) & ((r - b) > int(_rb.get("rb_diff_min", 70)))
     ) & excl
 
     enemy_xs = []
@@ -848,6 +915,8 @@ def find_action_crop_x(video_path: str, clip_start: float, clip_end: float,
 
 # ── Parametry kamery: JEDNO miejsce. Te same liczby stoją w engine_rules.json ("camera") i pilnuje ich
 #    tests/test_rules.py: zmiana tutaj bez zmiany w regułach (i odwrotnie) wywala test, więc poprawka nie zniknie po cichu.
+RIGHT_MARGIN_X = 1720   # px (1080p): blokuje prawy panel Porofessor/Overwolf (np. zielony widget przy x=1711, y=592 nad minimapą)
+
 CAMERA = {
     "lerp_alpha": 0.45,          # doganianie gracza na próbkę
     "max_pan_px": 80.0,          # maks. przesuw kadru na próbkę (w 1080p)
@@ -869,7 +938,7 @@ def detect_player_bar_mode(green_hits: int, gold_hits: int) -> str:
     W trybie standard złoty jest WYŁĄCZONY z detekcji — inaczej kamera ucieka na złote efekty
     (ult Swaina, tarcze, złote wieże): AWARIA 2 z dokumentacji. Remis = standard (domyślny tryb gry).
     """
-    return "standard" if green_hits >= gold_hits else "colorblind"
+    return "standard" if (green_hits >= gold_hits or (green_hits >= 3 and green_hits * 3 >= gold_hits)) else "colorblind"
 
 
 def simulate_player_trajectory(
@@ -914,8 +983,9 @@ def simulate_player_trajectory(
     if has_tuples:
         hp_bars_only = [item[0] for item in frames_data]
         enemy_cxs = [item[1] for item in frames_data]
+        shunpo_lists = [(list(item[2]) if len(item) > 2 and item[2] else []) for item in frames_data]
         hp_bars_only = filter_temporal_vfx_particles(hp_bars_only)
-        frames_data = list(zip(hp_bars_only, enemy_cxs))
+        frames_data = list(zip(hp_bars_only, enemy_cxs, shunpo_lists))
     else:
         frames_data = filter_temporal_vfx_particles(frames_data)
 
@@ -951,16 +1021,33 @@ def simulate_player_trajectory(
     crop_xs = []
     champ_detected = 0
     invisible_streak = 0
+    lost_far = False        # True po >=3 próbkach bez paska gracza; kasowane po re-akwizycji
     last_velocity = 0.0
+    last_enemy_cx = None
+    prev_shunpo_targets: list[float] = []
+    post_shunpo_lock = 0
 
     for f_idx, item in enumerate(frames_data):
         t_curr = float(t_points[f_idx])
         is_kill_window = any(abs(t_curr - kt) <= CAMERA["kill_window_sec"] for kt in kill_timestamps)
 
         if isinstance(item, tuple):
-            hp_b, enemy_cx = item
+            hp_b = item[0]
+            enemy_cx = item[1] if len(item) > 1 else None
+            curr_shunpo_targets = list(item[2]) if len(item) > 2 and item[2] else []
         else:
-            hp_b, enemy_cx = item, None
+            hp_b, enemy_cx, curr_shunpo_targets = item, None, []
+
+        if enemy_cx is not None and float(enemy_cx) not in curr_shunpo_targets:
+            curr_shunpo_targets.append(float(enemy_cx))
+        candidate_targets = prev_shunpo_targets + curr_shunpo_targets
+
+        enemy_consistent = (
+            enemy_cx is not None
+            and last_enemy_cx is not None
+            and abs(float(enemy_cx) - last_enemy_cx) <= (360.0 / analysis_scale)
+        )
+        last_enemy_cx = float(enemy_cx) if enemy_cx is not None else None
 
         if hp_b:
             champ_detected += 1
@@ -970,46 +1057,93 @@ def simulate_player_trajectory(
             player_target_x = float(hp_b[0][5])
             player_target_y = float(hp_b[0][6])
 
-            # Combat Target Framing: jeśli w kadrze są wrogowie w bliskiej walce, uwzględnij ich w kadrowaniu
-            # W oknie zabójstwa (is_kill_window) centrujemy na środku ciężkości walki (Combat Centroid),
-            # aby obaj walczący (gracz i ofiara) byli w 100% widoczni w kadrze 9:16
-            if is_kill_window:
+            # Combat Target Framing + centrowanie na Katarinie tuż po doskoku E (Shunpo)
+            shunpo_snap_tol = 140.0 / analysis_scale
+            landed_on_shunpo_target = any(abs(player_target_x - float(tx)) <= shunpo_snap_tol for tx in candidate_targets)
+            if post_shunpo_lock > 0:
+                target_x = player_target_x
+                post_shunpo_lock -= 1
+            elif is_kill_window:
                 if enemy_cx is not None and abs(enemy_cx - player_target_x) < (450.0 / analysis_scale):
                     target_x = 0.65 * player_target_x + 0.35 * float(enemy_cx)
                 else:
                     target_x = player_target_x
             elif enemy_cx is not None and abs(enemy_cx - player_target_x) < (450.0 / analysis_scale):
                 target_x = 0.70 * player_target_x + 0.30 * float(enemy_cx)
+            elif curr_shunpo_targets:
+                shunpo_bias_range = 420.0 / analysis_scale
+                nearest_t = min(curr_shunpo_targets, key=lambda tx: abs(float(tx) - player_target_x))
+                if abs(float(nearest_t) - player_target_x) <= shunpo_bias_range:
+                    target_x = 0.75 * player_target_x + 0.25 * float(nearest_t)
+                else:
+                    target_x = player_target_x
             else:
                 target_x = player_target_x
             target_y = player_target_y
+            # Nigdy nie wypychaj Katariny poza bezpieczny margines kadru 9:16 przez offset enemy/shunpo
+            half_crop = crop_w_a * 0.5
+            max_offset = max(0.0, half_crop - (145.0 / analysis_scale))
+            target_x = max(player_target_x - max_offset, min(player_target_x + max_offset, target_x))
 
             dist = math.hypot(target_x - track_x, target_y - track_y)
             delta = abs(target_x - track_x)
-            if dist > MAX_TELEPORT_DELTA and not is_kill_window:
+            player_jump_delta = abs(player_target_x - track_x)
+
+            # Re-akwizycja lub natychmiastowy skok przy E (Shunpo) Katariny na sztylet/wroga;
+            # po doskoku natychmiast centrujemy kadr dokładnie na Katarinie (`post_shunpo_lock = 2`).
+            BIG_SNAP_DELTA = max(SNAP_DELTA, 240.0 / analysis_scale)
+            SHUNPO_RANGE_MAX = (600.0 if landed_on_shunpo_target else 560.0) / analysis_scale
+            CONF2_THRESH = 380.0 / analysis_scale
+            tol_px = 60.0 / analysis_scale
+            shunpo_confirm_tol = (180.0 / analysis_scale) if landed_on_shunpo_target else tol_px
+            nxt = [(nf[0] if isinstance(nf, tuple) else nf) for nf in frames_data[f_idx + 1: f_idx + 3]]
+            nxt3 = [(nf[0] if isinstance(nf, tuple) else nf) for nf in frames_data[f_idx + 1: f_idx + 4]]
+            confirmed_3 = (
+                len(nxt3) >= 3
+                and all(bool(nb) and any(abs(float(c[5]) - player_target_x) <= tol_px for c in nb) for nb in nxt3)
+            )
+            confirmed_2 = (
+                len(nxt) >= 2
+                and all(bool(nb) and any(abs(float(c[5]) - player_target_x) <= shunpo_confirm_tol for c in nb) for nb in nxt)
+            )
+            confirmed_1 = any(bool(nb) and any(abs(float(c[5]) - player_target_x) <= shunpo_confirm_tol for c in nb) for nb in nxt)
+            shunpo_confirmed = confirmed_2 if player_jump_delta > CONF2_THRESH else confirmed_1
+
+            is_shunpo_snap = (
+                player_jump_delta > SNAP_DELTA
+                and player_jump_delta <= SHUNPO_RANGE_MAX
+                and dist <= MAX_TELEPORT_DELTA
+                and ((landed_on_shunpo_target and shunpo_confirmed) or (player_jump_delta > BIG_SNAP_DELTA and confirmed_3))
+            )
+            reacq_snap = (
+                (lost_far and delta > BIG_SNAP_DELTA and ((landed_on_shunpo_target and confirmed_2) or confirmed_3))
+                or (dist > BIG_SNAP_DELTA and confirmed_3)
+            )
+
+            if is_shunpo_snap or reacq_snap:
+                track_x = player_target_x
+                track_y = player_target_y
+                last_velocity = 0.0
+                lost_far = False
+                post_shunpo_lock = 2
+            elif dist > MAX_TELEPORT_DELTA and not is_kill_window:
                 # Zbyt daleko — fałszywy wynik (Outplayed HUD leak, wieża poza ekranem)
                 if abs(last_velocity) > 2.0:
                     momentum = last_velocity * MOMENTUM_DECAY
                     track_x = float(np.clip(track_x + momentum, 0, analysis_w - crop_w_a))
                     last_velocity = momentum
             elif is_kill_window:
-                # Kill Anchor Lock: szybkie, bezwzględne wyśrodkowanie eliminacji w kadrze
-                if delta > (60.0 / analysis_scale):
-                    track_x = 0.85 * target_x + 0.15 * track_x
-                else:
-                    track_x = target_x
-                track_y = target_y
-                last_velocity = 0.0
-            elif delta > SNAP_DELTA or dist > (SNAP_DELTA * 1.2):
-                # Gwałtowny doskok / Flash / Shunpo: natychmiastowy snap
-                track_x = target_x
-                track_y = target_y
-                last_velocity = 0.0
+                # Kill Anchor Lock: szybkie wyśrodkowanie z bezpiecznym limitem prędkości MAX_PAN_PX
+                desired = 0.85 * target_x + 0.15 * track_x if delta > (60.0 / analysis_scale) else target_x
+                move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
+                track_x = track_x + move
+                track_y = LERP_ALPHA * target_y + (1.0 - LERP_ALPHA) * track_y
+                last_velocity = move
             elif delta < DEADBAND_PX:
                 # Strefa martwa — zero drgań, tłumienie prędkości
                 last_velocity *= 0.5
             else:
-                # Płynne doganianie: lerp + limit prędkości
+                # Płynne doganianie: lerp + limit prędkości MAX_PAN_PX (<= 80px/próbkę)
                 desired = LERP_ALPHA * target_x + (1.0 - LERP_ALPHA) * track_x
                 move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
                 track_x = track_x + move
@@ -1017,7 +1151,15 @@ def simulate_player_trajectory(
                 last_velocity = move   # zapamiętaj prędkość do momentum
         else:
             invisible_streak += 1
-            if invisible_streak <= MOMENTUM_FRAMES and abs(last_velocity) > 2.0 and not is_kill_window:
+            if invisible_streak >= 3:
+                lost_far = True
+            if invisible_streak >= 3 and enemy_cx is not None and enemy_consistent:
+                # Combat Target Fallback: gdy pasek gracza zniknął w chaosie walki (>=3 próbki), podążaj płynnie za aktywną walką wrogów
+                desired = 0.60 * float(enemy_cx) + 0.40 * track_x
+                move = max(-MAX_PAN_PX, min(MAX_PAN_PX, desired - track_x))
+                track_x = float(np.clip(track_x + move, 0, analysis_w - crop_w_a))
+                last_velocity = move
+            elif invisible_streak <= MOMENTUM_FRAMES and abs(last_velocity) > 2.0 and not is_kill_window:
                 # Krótka niewidoczność (VFX Death Lotus itp.) — kontynuuj momentum z zanikaniem
                 momentum = last_velocity * (MOMENTUM_DECAY ** invisible_streak)
                 track_x = float(np.clip(track_x + momentum, 0, analysis_w - crop_w_a))
@@ -1029,6 +1171,7 @@ def simulate_player_trajectory(
         crop_x = int(round(crop_x_a * analysis_scale))
         crop_x = int(max(0, min(crop_x, source_w - crop_w)))
         crop_xs.append(crop_x)
+        prev_shunpo_targets = list(curr_shunpo_targets)
 
     print(f"   🎥 Universal Player Tracker: {champ_detected}/{len(frames_data)} klatek z graczem w kadrze")
 
@@ -1108,8 +1251,9 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
         excl[int(626*sh):, int(1459*sw):] = False               # Minimapa i panel przedmiotów
         excl[:int(550*sh), :int(85*sw)] = False                 # Blokuj Outplayed event overlay i lewy HUD (0-550px, 0-85px)
         excl[:, :int(85*sw)] = False                            # Lewy margines (eliminuje portrety i ikony sojuszników x<85)
-        excl[:, int(1720*sw):] = False                          # Prawy margines / Outplayed watermark
+        excl[:, int(RIGHT_MARGIN_X*sw):] = False                # Prawy margines / Outplayed watermark / panel Porofessor
         excl[:int(550*sh), int(1450*sw):] = False               # Portrety sojuszników HUD + Outplayed leak (1503, 207)
+        excl[int(540*sh):, int(1620*sw):] = False               # Pasek statystyk/Porofessor bezpośrednio nad minimapą (x>=1620, y=540..626)
 
         # KROK 1: Wykrycie paska gracza (zielony - standardowy LoL, złoty - colorblind LoL) + centroid wrogów
         # W LoL tylko gracz ma pasek zielony (standard) lub złoty (colorblind). Sojusznicy są NIEBIESCY, wrogowie CZERWONI.
@@ -1133,7 +1277,7 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
             f = frames[i].astype(np.int16)
             r, g, b = f[:, :, 0], f[:, :, 1], f[:, :, 2]
             _gold_hits += int(_has_bar(((r > 165) & (g > 130) & (b < 115) & ((r - b) > 50) & ((g - b) > 25)) & excl))
-            _green_hits += int(_has_bar(((g > 115) & (r < 110) & (b < 100) & ((g - r) > 35) & ((g - b) > 35)) & excl))
+            _green_hits += int(_has_bar(((g > 155) & (r < 115) & (b < 105) & ((g - r) > 55) & ((g - b) > 65)) & excl))
         bar_mode = detect_player_bar_mode(_green_hits, _gold_hits)
         print(f"   Pasek gracza: tryb {bar_mode} (klatki z zielonym paskiem: {_green_hits}, ze złotym: {_gold_hits})")
 
@@ -1149,8 +1293,8 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
 
             # 1. Złoty pasek gracza (Colorblind mode)
             gold_mask = ((r > 165) & (g > 130) & (b < 115) & ((r - b) > 50) & ((g - b) > 25)) & frame_excl
-            # 2. Zielony pasek gracza (Standardowy tryb LoL - najczęstszy)
-            green_mask = ((g > 115) & (r < 110) & (b < 100) & ((g - r) > 35) & ((g - b) > 35)) & frame_excl
+            # 2. Zielony pasek gracza (Standardowy tryb LoL - odrzuca ciemną trawę dżungli)
+            green_mask = ((g > 155) & (r < 115) & (b < 105) & ((g - r) > 55) & ((g - b) > 65)) & frame_excl
             player_mask = (green_mask if bar_mode == "standard" else (gold_mask | green_mask)).astype(np.uint8)
 
             # Bridging czarnych kresek 100 HP (notches): kernel 25px scala segmenty paska poziomu w jednolity pasek championa
@@ -1172,7 +1316,8 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
             for comp_i in range(1, num_p):
                 cx, cy, cw, ch, area = stats_p[comp_i]
                 asp = cw / max(ch, 1)
-                if w_min <= cw <= w_max and h_min <= ch <= h_max and 2.0 <= asp <= 18.0 and area >= area_min:
+                fill = area / max(1, cw * ch)
+                if w_min <= cw <= w_max and h_min <= ch <= h_max and 2.0 <= asp <= 18.0 and area >= area_min and fill >= 0.35:
                     cen_x = float(centroids_p[comp_i][0])
                     cen_y = float(centroids_p[comp_i][1])
                     # Kara za anomalnie wielkie obiekty (np. banery/rozbłyski > 600px area)
@@ -1181,12 +1326,12 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
                         score -= 400.0
                     hp_bars.append((cx, cy, cw, ch, score, cen_x, cen_y))
 
-            # 3. Centroid wrogów (czerwone HP bary) dla Combat Target Framing przed doskokiem E (Shunpo)
+            # 3. Cele doskoku E (Shunpo) Katariny: wrogowie (czerwone HP bary) + leżące sztylety pasywne
             red_mask = ((r > 150) & (g < 95) & (b < 85) & ((r - g) > 55) & ((r - b) > 65)) & frame_excl
             enemy_cx = None
+            enemy_xs = []
             if red_mask.astype(np.uint8).sum() > (10 * sw):
                 num_r, _, stats_r, centroids_r = cv2.connectedComponentsWithStats(red_mask.astype(np.uint8))
-                enemy_xs = []
                 r_w_min = max(3, int(8 * sw))
                 r_h_min = max(2, int(2 * sh))
                 r_h_max = max(6, int(14 * sh))
@@ -1208,7 +1353,27 @@ def find_action_path(video_path: str, clip_start: float, clip_end: float,
                     else:
                         enemy_cx = float(np.mean(enemy_xs))
 
-            frames_data.append((hp_bars, enemy_cx))
+            # Wykrywanie leżących sztyletów Katariny (Voracity: okrągłe kręgi karmazynowo-czerwone/purpurowe lub cyjanowe)
+            dagger_xs = []
+            dagger_crimson = ((r > 155) & (g < 85) & (b < 110) & ((r - g) > 70)) & frame_excl
+            dagger_cyan = ((b > 165) & (g > 155) & (r < 95) & ((b - r) > 75)) & frame_excl
+            dagger_mask = (dagger_crimson | dagger_cyan).astype(np.uint8)
+            if dagger_mask.sum() > (60 * sw * sh):
+                d_w_min, d_w_max = max(10, int(14 * sw)), max(60, int(110 * sw))
+                d_h_min, d_h_max = max(8, int(10 * sh)), max(55, int(95 * sh))
+                d_area_min = max(40, int(60 * sw * sh))
+                num_d, _, stats_d, centroids_d = cv2.connectedComponentsWithStats(dagger_mask)
+                p_ref_x = float(hp_bars[0][5]) if hp_bars else None
+                for comp_i in range(1, num_d):
+                    _, _, cw, ch, area = stats_d[comp_i]
+                    asp = cw / max(ch, 1)
+                    if d_w_min <= cw <= d_w_max and d_h_min <= ch <= d_h_max and asp < 1.8 and area >= d_area_min:
+                        dx_val = float(centroids_d[comp_i][0])
+                        if p_ref_x is None or abs(dx_val - p_ref_x) <= (520.0 * sw):
+                            dagger_xs.append(dx_val)
+
+            shunpo_targets = enemy_xs + dagger_xs
+            frames_data.append((hp_bars, enemy_cx, shunpo_targets))
 
 
         final_points = simulate_player_trajectory(

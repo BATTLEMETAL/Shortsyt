@@ -98,7 +98,8 @@ def _check_enemy_combat_in_frame(frame: np.ndarray) -> Tuple[bool, int, Optional
 
 def _check_player_in_frame(frame: np.ndarray) -> Tuple[bool, int, Optional[Tuple[int, int]]]:
     """
-    Wykrywa obecność paska HP gracza (złoty / zielony).
+    Wykrywa obecność paska HP gracza (złoty / zielony) z walidacją geometrii prostokąta
+    i wykluczeniem nakładek tekstowych w pionowych kadrach 9:16 (hook, kill baner, złoty CTA).
     Zwraca: (is_player_present, player_pixel_count, centroid_pos)
     """
     if frame is None or frame.size == 0:
@@ -106,33 +107,52 @@ def _check_player_in_frame(frame: np.ndarray) -> Tuple[bool, int, Optional[Tuple
     h, w = frame.shape[:2]
     f = frame.astype(np.int16)
     b, g, r = f[:, :, 0], f[:, :, 1], f[:, :, 2]
-    
-    excl = np.ones((h, w), dtype=bool)
-    excl[:int(h * 0.12), :] = False
-    excl[int(h * 0.82):, :] = False
-    excl[int(h * 0.75):, int(w * 0.72):] = False
-    excl[int(h * 0.75):, :int(w * 0.25)] = False
 
-    # Złoty pasek (gracz)
+    excl = np.ones((h, w), dtype=bool)
+    if h > w:
+        # Pionowy short 9:16: odetnij strefę hooka/kill banerów u góry i strefę CTA/HUD u dołu
+        excl[:int(h * 0.30), :] = False
+        excl[int(h * 0.70):, :] = False
+    else:
+        excl[:int(h * 0.12), :] = False
+        excl[int(h * 0.82):, :] = False
+        excl[int(h * 0.75):, int(w * 0.72):] = False
+        excl[int(h * 0.75):, :int(w * 0.25)] = False
+
+    # Złoty pasek (gracz - Colorblind mode)
     yellow = (
         (r > 155) & (g > 125) & (b < 115) &
         ((r - b) > 65) & ((g - b) > 35)
     ) & excl
-    # Zielony pasek (sojusznik / wariant paska)
+    # Zielony pasek (gracz - Standard mode, odrzuca ciemną trawę dżungli)
     green = (
-        (g > 140) & (r < 130) & (b < 130) &
-        ((g - r) > 40)
+        (g > 155) & (r < 115) & (b < 105) &
+        ((g - r) > 55) & ((g - b) > 65)
     ) & excl
 
     player_mask = ((yellow | green).astype(np.uint8)) * 255
-    player_pixels = int(cv2.countNonZero(player_mask))
-    if player_pixels > 40:
-        pts = cv2.findNonZero(player_mask)
-        mean_pt = None
-        if pts is not None and len(pts) > 0:
-            mean_pt = tuple(np.mean(pts, axis=0)[0].astype(int))
-        return True, player_pixels, mean_pt
-    return False, player_pixels, None
+    # Poziome scalenie segmentów paska HP (100 HP notches)
+    notch_k = cv2.getStructuringElement(cv2.MORPH_RECT, (19, 1))
+    player_mask = cv2.morphologyEx(player_mask, cv2.MORPH_CLOSE, notch_k)
+
+    num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(player_mask)
+    best_score = -1.0
+    best_area = 0
+    best_pt: Optional[Tuple[int, int]] = None
+    for comp_i in range(1, num_labels):
+        _, _, cw, ch, area = stats[comp_i]
+        asp = cw / max(ch, 1)
+        fill = area / max(1, cw * ch)
+        if cw >= 30 and 3 <= ch <= 28 and 2.0 <= asp <= 20.0 and area >= 45 and fill >= 0.35:
+            score = float(area) * min(asp, 10.0)
+            if score > best_score:
+                best_score = score
+                best_area = int(area)
+                best_pt = (int(centroids[comp_i][0]), int(centroids[comp_i][1]))
+
+    if best_pt is not None:
+        return True, best_area, best_pt
+    return False, 0, None
 
 
 def _check_combat_in_frame(frame: np.ndarray) -> Tuple[bool, int, Optional[Tuple[int, int]]]:
@@ -449,10 +469,22 @@ def validate_pre_flight(
                 diag.append(f"Action Hook Guard: przesunięto start z {adj_start:.1f}s na {new_start:.1f}s (eliminacja martwego biegu przed walką)")
                 adj_start = new_start
 
-    # ── 1b. Action Outro Guard — eliminacja martwego biegu po ostatnim killu ────
+    # ── 1b. Action Outro Guard — eliminacja martwego biegu po ostatnim killu (z marginesem 2.0s + Outplayed) ──
     if abs_peaks:
         last_k_t = abs_peaks[-1][0]
-        max_outro_end = round(last_k_t + 1.8, 1)
+        max_outro_end = round(min(dur, last_k_t + 2.0), 1)
+        try:
+            try:
+                from lol_agent.outplayed_db import get_outplayed_clip_info
+            except ImportError:
+                from outplayed_db import get_outplayed_clip_info  # type: ignore
+            op_info = get_outplayed_clip_info(video_path)
+            if op_info and int(op_info.get("event_tier_rank") or 0) >= 2:
+                est_last = op_info.get("est_last_kill_s")
+                if isinstance(est_last, (int, float)) and last_k_t < float(est_last) <= min(dur, last_k_t + 8.0):
+                    max_outro_end = max(max_outro_end, round(min(dur, float(est_last) + 1.85), 1))
+        except Exception:
+            pass
         if adj_end > max_outro_end + 0.5:
             cap_o = cv2.VideoCapture(video_path)
             post_combat = False
@@ -786,3 +818,66 @@ def validate_rendered_short(
         is_seamless_loop=True,
         montage_execution_index=float(qa_score),
     )
+
+
+# ══ BRAMKA 0: czy surowy klip w ogóle nadaje się do montażu (OPUS_QUALITY_GATES_DIRECTIVE.md, punkt 2) ══════════════
+# Liczy tylko to, co system naprawdę mierzy: kille (czas, etykieta), okno klipu, rozdzielczość, fps, pewność śledzenia.
+# Nie ma dziś czujnika procentu HP, uniku skillshota ani kradzieży celu: "pasywny kill" i "clutch <15 % HP"
+# z dyrektywy nie są tu oceniane (patrz engine_rules.json → quality_gate.not_measured).
+RAW_MIN_HEIGHT = 720             # px
+RAW_MIN_FPS = 30.0
+RAW_MIN_TRACKING = 0.65          # pewność śledzenia gracza
+RAW_MIN_COMBAT_SHARE = 0.30      # walka musi zajmować >= 30 % klipu (inaczej >70 % to chodzenie)
+RAW_COMBAT_BEFORE_KILL = 3.0     # s przed killem liczone jako walka
+RAW_COMBAT_AFTER_KILL = 1.0      # s po killu liczone jako walka
+RAW_INSTANT_DEATH_SEC = 1.2      # śmierć gracza w tym czasie po jedynym killu = antyklimaks
+_DEATH_WORDS = ("DEATH", "DIED", "SLAIN", "EXECUTED", "YOU HAVE BEEN")
+
+
+def is_raw_material_viable(
+    peaks: Optional[List[Tuple[float, str]]],
+    clip_start: float,
+    clip_end: float,
+    source_size: Optional[Tuple[int, int]] = None,
+    source_fps: Optional[float] = None,
+    tracking_confidence: Optional[float] = None,
+    death_times: Optional[List[float]] = None,
+) -> Tuple[bool, Optional[str], str]:
+    """
+    Zwraca (nadaje_się, kod_odrzucenia, opis). Odrzucony klip NIE jest renderowany.
+    Czasy killi w czasie źródła albo względem klipu (jak w edytorze: czas < clip_start = względny).
+    Wartości nieznane (None) nie odrzucają: bramka nie zgaduje.
+    """
+    dur = max(0.0, float(clip_end) - float(clip_start))
+    if dur <= 0.0:
+        return False, "TRASH_EMPTY_WINDOW", "okno klipu ma zerową długość"
+    if source_size and min(source_size) > 0 and min(source_size) < RAW_MIN_HEIGHT:
+        return False, "TRASH_LOW_FIDELITY", f"źródło {source_size[0]}x{source_size[1]} poniżej {RAW_MIN_HEIGHT}p"
+    if source_fps is not None and 0 < float(source_fps) < RAW_MIN_FPS - 0.5:
+        return False, "TRASH_LOW_FIDELITY", f"źródło {float(source_fps):.0f} fps poniżej {RAW_MIN_FPS:.0f}"
+    if tracking_confidence is not None and float(tracking_confidence) < RAW_MIN_TRACKING:
+        return False, "TRASH_UNFRAMEABLE", f"pewność śledzenia {float(tracking_confidence):.0%} poniżej {RAW_MIN_TRACKING:.0%}"
+
+    rel, deaths = [], [float(d) for d in (death_times or [])]
+    for (tk, lbl) in (peaks or []):
+        t_rel = float(tk) - float(clip_start) if (float(clip_start) > 0.0 and float(tk) >= float(clip_start)) else float(tk)
+        if any(w in str(lbl).upper() for w in _DEATH_WORDS):
+            deaths.append(t_rel)
+        elif -0.5 <= t_rel <= dur + 0.5:
+            rel.append(max(0.0, min(dur, t_rel)))
+    rel.sort()
+    if not rel:
+        return False, "TRASH_NO_KILL", "w oknie klipu nie ma żadnego killa"
+
+    spans, covered, last_end = sorted((max(0.0, k - RAW_COMBAT_BEFORE_KILL), min(dur, k + RAW_COMBAT_AFTER_KILL)) for k in rel), 0.0, 0.0
+    for a, b in spans:
+        a = max(a, last_end)
+        if b > a:
+            covered += b - a
+            last_end = b
+    share = covered / dur
+    if share < RAW_MIN_COMBAT_SHARE:
+        return False, "TRASH_DEAD_AIR", f"walka to {share:.0%} klipu (minimum {RAW_MIN_COMBAT_SHARE:.0%}); reszta to chodzenie"
+    if len(rel) == 1 and any(0.0 <= d - rel[0] <= RAW_INSTANT_DEATH_SEC for d in deaths):
+        return False, "TRASH_INSTANT_DEATH", f"jedyny kill i śmierć gracza w ciągu {RAW_INSTANT_DEATH_SEC} s"
+    return True, None, f"{len(rel)} kill(e), walka {share:.0%} klipu"

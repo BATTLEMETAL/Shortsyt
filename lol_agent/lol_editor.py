@@ -4,14 +4,16 @@ Styl: czysty gameplay, tekst hook na peak, muzyka dobrana do energii akcji,
       efekt zoom-punch na peak moment + dynamiczne śledzenie kamery.
 """
 import os
+import re
 import time
 import random
 import subprocess
+import sys
 import glob
 import shutil
 import threading
 import numpy as np
-from typing import Optional
+from typing import Any, Optional
 
 _music_lock = threading.Lock()
 try:
@@ -34,8 +36,20 @@ try:
 except ImportError:
     import lol_timeline as TL
 
-# Dropy sprawdzone uchem. Tylko te wygrywają z automatyczną detekcją; reszta mapy to przybliżenia.
-MUSIC_DROP_VERIFIED = {"ncs_cartoon_on_and_on.mp3", "ncs_elektronomia_sky_high.mp3"}
+# Dropy sprawdzone spektralnie (35-160 Hz sub-bass + RMS).
+MUSIC_DROP_VERIFIED = {
+    "ncs_alan_walker_fade.mp3",
+    "ncs_alex_skrindo_euphoria.mp3",
+    "ncs_cartoon_on_and_on.mp3",
+    "ncs_different_heaven_my_heart.mp3",
+    "ncs_egzod_royalty.mp3",
+    "ncs_elektronomia_memory.mp3",
+    "ncs_elektronomia_sky_high.mp3",
+    "ncs_jim_yosef_link.mp3",
+    "ncs_lost_sky_dreams_pt2.mp3",
+    "ncs_robin_hustin_light_it_up.mp3",
+    "ncs_unknown_brain_superhero.mp3",
+}
 # Ostatnia synchronizacja muzyki (do przepisu shorta): wypełnia merge_music
 LAST_MUSIC_SYNC = {}
 # Dźwięk gry rozciągany razem z obrazem (False = stare zachowanie: dźwięk gry bez zwolnień)
@@ -133,23 +147,19 @@ MUSIC_ENERGY_MAP = {
     "ncs_distrion_atlas_rubicon.mp3":          "low",
 }
 
-# Beat drop timestamps in seconds — where the song's main drop hits
-# Used for beat-sync: drop aligns with the kill peak in the video
+# Dokładne znaczniki wejścia głównego dropu (STFT 35-160 Hz + RMS, beat_drop_cache v2)
 MUSIC_DROP_MAP = {
-    "ncs_cartoon_on_and_on.mp3":               38.0,
-    "ncs_elektronomia_sky_high.mp3":           30.0,
-
-    # Fill these in after listening to each track:
-    "ncs_egzod_royalty.mp3":                   45.0,   # approximate — adjust after listening
-    "ncs_lost_sky_dreams_pt2.mp3":             40.0,
-    "ncs_robin_hustin_light_it_up.mp3":        35.0,
-    "ncs_elektronomia_memory.mp3":             32.0,
-    "ncs_unknown_brain_superhero.mp3":         38.0,
-    "ncs_different_heaven_my_heart.mp3":       28.0,
-    "ncs_alan_walker_fade.mp3":                42.0,
-    "ncs_alex_skrindo_euphoria.mp3":           36.0,
-    "ncs_jim_yosef_link.mp3":                  30.0,
-    "ncs_distrion_atlas_rubicon.mp3":          44.0,
+    "ncs_alan_walker_fade.mp3":                75.69,
+    "ncs_alex_skrindo_euphoria.mp3":           46.44,
+    "ncs_cartoon_on_and_on.mp3":               46.85,
+    "ncs_different_heaven_my_heart.mp3":       31.93,
+    "ncs_egzod_royalty.mp3":                   72.09,
+    "ncs_elektronomia_memory.mp3":             74.80,
+    "ncs_elektronomia_sky_high.mp3":           55.44,
+    "ncs_jim_yosef_link.mp3":                  60.06,
+    "ncs_lost_sky_dreams_pt2.mp3":             65.48,
+    "ncs_robin_hustin_light_it_up.mp3":        52.21,
+    "ncs_unknown_brain_superhero.mp3":         78.54,
 }
 
 
@@ -171,9 +181,13 @@ def ensure_temp_dir():
         pass
 
 
-def pick_music_for_action(action_type: str = "outplay", preferred_track: Optional[str] = None) -> str:
+def pick_music_for_action(
+    action_type: str = "outplay",
+    preferred_track: Optional[str] = None,
+    min_drop_time: float = 0.0,
+) -> str:
     """
-    Wybiera plik muzyczny dopasowany do energii akcji.
+    Wybiera plik muzyczny dopasowany do energii akcji oraz minimalnego czasu dropu (brak obcięcia wstępu).
     """
     if preferred_track:
         cand = os.path.join(LOL_MUSIC_DIR, preferred_track)
@@ -196,6 +210,25 @@ def pick_music_for_action(action_type: str = "outplay", preferred_track: Optiona
                 matched.append(f)
         if matched:
             music_files = matched
+
+    # Filtruj utwory z wystarczająco późnym dropem (drop >= min_drop_time => drop_early == 0)
+    if min_drop_time > 0.0 and len(music_files) > 1:
+        drop_cache = {}
+        try:
+            cache_p = os.path.join(os.path.dirname(__file__), "beat_drop_cache.json")
+            if os.path.exists(cache_p):
+                with open(cache_p, encoding="utf-8") as cf:
+                    raw_c = json.load(cf)
+                if isinstance(raw_c, dict) and isinstance(raw_c.get("drops"), dict):
+                    drop_cache = raw_c["drops"]
+        except Exception:
+            drop_cache = {}
+        late_enough = [
+            f for f in music_files
+            if float(MUSIC_DROP_MAP.get(os.path.basename(f)) or drop_cache.get(os.path.basename(f)) or 999.0) >= float(min_drop_time)
+        ]
+        if late_enough:
+            music_files = late_enough
 
     # Dedup: wykluczaj ostatnio używane utwory (historia ostatnich utworów) chronione lockiem wątkowym
     last_track_file = os.path.join(LOL_MUSIC_DIR, ".last_track")
@@ -370,7 +403,8 @@ def apply_editor_effects(input_path: str, output_path: str,
                          slowmo_duration: float = 1.5,
                          intermediate_peaks: list = None,
                          use_easing: bool = True,
-                         timeline_out: Optional[dict] = None) -> float:
+                         timeline_out: Optional[dict] = None,
+                         fast_forward_kills: list = None) -> float:
     """
     Stosuje pionowe kadrowanie, zoom-punch i spowolnienie (speed ramp)
     w jednym przebiegu za pomocą filter_complex w FFmpeg.
@@ -420,6 +454,8 @@ def apply_editor_effects(input_path: str, output_path: str,
     )
     if not time_segments:
         time_segments = [{"start": 0.0, "end": float(clip_duration), "speed": 1.0, "zoom": False}]
+    if fast_forward_kills:   # styl SPEED_RAMP_FLOW: martwy czas między killami szybciej, bez cięć
+        time_segments = TL.apply_fast_forward(time_segments, fast_forward_kills)
     segs = [dict(ts, crop=(zoom_crop if ts["zoom"] else normal_crop)) for ts in time_segments]
     if timeline_out is not None:
         timeline_out["segments"] = time_segments
@@ -434,9 +470,14 @@ def apply_editor_effects(input_path: str, output_path: str,
         lbl = f"v{i}"
         trim = f"trim=start={seg['start']:.3f}:end={seg['end']:.3f}"
         setpts1 = "setpts=PTS-STARTPTS"
+        eq_filter = (
+            "eq=contrast=1.14:saturation=1.42:brightness=0.045"
+            if seg.get("zoom")
+            else "eq=contrast=1.08:saturation=1.35:brightness=0.03"
+        )
         crop_scale = (
             f"{seg['crop']},scale={out_w}:{out_h}:flags=lanczos,fps=60,setsar=1,"
-            f"eq=contrast=1.08:saturation=1.35:brightness=0.03"
+            f"{eq_filter}"
         )
 
         seg_dur = seg['end'] - seg['start']
@@ -573,14 +614,68 @@ def _get_font_path() -> str:
     return ""
 
 
+def _layout_overlay_text(
+    text: str,
+    max_width_px: int = 880,
+    max_size: int = 84,
+    min_size: int = 44,
+    max_lines: int = 2,
+) -> tuple[list[str], int]:
+    """Dobiera czytelny rozmiar czcionki i (w razie potrzeby) dzieli długi napis na max 2 wyważone linie."""
+    clean = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not clean:
+        return [], max_size
+
+    char_ratio = 0.58
+    if int(len(clean) * max_size * char_ratio) <= max_width_px:
+        return [clean], int(max_size)
+
+    single_fit = int(max_width_px / max(1.0, len(clean) * char_ratio))
+    if max_lines <= 1 or (len(clean) <= 18 and single_fit >= min_size + 14):
+        return [clean], max(min_size, min(max_size, single_fit))
+
+    lines: list[str]
+    if " - " in clean:
+        left, right = clean.split(" - ", 1)
+        lines = [left.strip(), right.strip()]
+    elif " " in clean:
+        mid = len(clean) // 2
+        spaces = [i for i, ch in enumerate(clean) if ch == " "]
+        best_sp = min(spaces, key=lambda idx: abs(idx - mid))
+        lines = [clean[:best_sp].strip(), clean[best_sp + 1 :].strip()]
+    else:
+        lines = [clean]
+
+    lines = [ln for ln in lines if ln] or [clean]
+    longest = max(len(ln) for ln in lines)
+    fitted = int(max_width_px / max(1.0, longest * char_ratio))
+    return lines, max(min_size, min(max_size, fitted))
+
+
+def _alpha_fade_expr(t_start: float, t_end: float, fade_s: float = 0.14, fade_in: bool = True) -> str:
+    """Zwraca wyrażenie FFmpeg `alpha` z płynnym wejściem/wyjściem (dla t=0s fade_in=False zachowuje pełną czytelność od 1. klatki)."""
+    dur = float(t_end) - float(t_start)
+    if dur <= fade_s * 2.2:
+        return "1"
+    fade_out_t = max(float(t_start), float(t_end) - fade_s)
+    if not fade_in:
+        return f"if(gt(t\\,{fade_out_t:.2f})\\,max(0\\,({t_end:.2f}-t)/{fade_s:.2f})\\,1)"
+    return (
+        f"if(lt(t-{t_start:.2f}\\,{fade_s:.2f})\\,"
+        f"(t-{t_start:.2f})/{fade_s:.2f}\\,"
+        f"if(gt(t\\,{fade_out_t:.2f})\\,"
+        f"max(0\\,({t_end:.2f}-t)/{fade_s:.2f})\\,1))"
+    )
+
+
 def build_text_overlay_filters(
     hook_text: str,
     peak_moment: float,
     video_duration: float,
-    show_duration: float = 2.5
+    show_duration: float = 2.0
 ) -> list[str]:
     """
-    Buduje filtry FFmpeg drawbox i drawtext dla tekstu hook (np. 'DOUBLE KILL - CLEAN OR LUCKY?').
+    Buduje filtry FFmpeg drawbox i drawtext dla responsywnego tekstu hooka (max 2 linie w bezpiecznej strefie).
     """
     if not hook_text:
         return []
@@ -599,37 +694,54 @@ def build_text_overlay_filters(
     if not clean_text:
         return []
 
-    # Hook zawsze zaczyna się od klatki 0.0s — to kluczowe dla retencji w pierwszych 2 sekundach
-    # oraz gwarantuje, że klatka 0.0 (miniatura na TikTok) ma czytelny napis i okładkę.
-    t_start = 0.0
-    t_end = min(video_duration, max(1.5, show_duration))
+    lines, fsize = _layout_overlay_text(
+        clean_text, max_width_px=860, max_size=74, min_size=44, max_lines=2
+    )
+    if not lines:
+        return []
 
-    hook_color = "0xFFD700" if any(w in clean_text.upper() for w in ("SOLO", "PENTA", "CLUTCH", "1V1", "1%")) else "white"
-    approx_w = min(max(int(len(clean_text) * 58) + 80, 480), 1020)
+    # Hook zaczyna się w pełni widoczny od klatki 0.0s (bez półprzezroczystego fade-in na miniaturze startowej)
+    t_start = 0.0
+    t_end = min(video_duration, max(1.2, show_duration))
+    alpha_expr = _alpha_fade_expr(t_start, t_end, fade_s=0.14, fade_in=False)
+
+    hook_color = "0xFFD700" if any(w in clean_text.upper() for w in ("SOLO", "PENTA", "CLUTCH", "1V1", "1%", "DRAGON", "STEAL")) else "white"
+    line_h = int(fsize * 1.18)
+    pad_y = 20
+    box_h = len(lines) * line_h + pad_y * 2
+    max_chars = max(len(ln) for ln in lines)
+    box_w = min(980, max(460, int(max_chars * fsize * 0.60) + 96))
+    box_y_px = 150
+
     drawbox = (
         f"drawbox="
-        f"x=trunc((iw-{approx_w})/2)"
-        f":y=trunc(ih*0.075)"
-        f":w={approx_w}"
-        f":h=120"
-        f":color=black@0.65"
+        f"x=trunc((iw-{box_w})/2)"
+        f":y={box_y_px}"
+        f":w={box_w}"
+        f":h={box_h}"
+        f":color=black@0.52"
         f":t=fill"
         f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
-    drawtext = (
-        f"drawtext="
-        f"fontfile='{font.replace(chr(92), '/').replace(':', '\\:')}'"
-        f":text='{clean_text}'"
-        f":x=(w-text_w)/2"
-        f":y=h*0.09"
-        f":fontsize=95"
-        f":fontcolor={hook_color}"
-        f":borderw=6"
-        f":bordercolor=black"
-        f":shadowx=4:shadowy=4:shadowcolor=black@0.8"
-        f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
-    )
-    return [drawbox, drawtext]
+    font_safe = font.replace(chr(92), '/').replace(':', '\\:')
+    filters = [drawbox]
+    for i, line_txt in enumerate(lines):
+        y_px = box_y_px + pad_y + i * line_h
+        filters.append(
+            f"drawtext="
+            f"fontfile='{font_safe}'"
+            f":text='{line_txt}'"
+            f":x=(w-text_w)/2"
+            f":y={y_px}"
+            f":fontsize={fsize}"
+            f":fontcolor={hook_color}"
+            f":borderw=5"
+            f":bordercolor=black"
+            f":shadowx=3:shadowy=3:shadowcolor=black@0.85"
+            f":alpha='{alpha_expr}'"
+            f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
+        )
+    return filters
 
 
 def add_text_overlay(
@@ -842,7 +954,11 @@ def build_dynamic_captions_filters(
 
             style = KILL_STYLES.get(clean_lbl, {"size": 90, "color": "white", "duration": 2.0})
             t_start = max(0.0, t_in_clip + 0.15)
-            t_end   = min(video_duration, t_start + style["duration"])
+            dur_cap = min(float(style["duration"]), 1.35)
+            t_end = min(video_duration, t_start + dur_cap)
+            cta_cut = max(0.0, video_duration - 1.55)
+            if t_start < (cta_cut - 0.55):
+                t_end = min(t_end, cta_cut)
 
             clean_label = re.sub(r"[^\x00-\x7F]+", "", clean_lbl).strip()
             clean_label = clean_label.replace("'", "\\'")
@@ -887,6 +1003,16 @@ def build_dynamic_captions_filters(
 
     drawtext_filters = []
     total_kills = len(caption_items)
+    TIER_NUM = {
+        "KILL": 1, "OUTPLAY": 1, "ONESHOT": 1, "SHUTDOWN": 1,
+        "CLUTCH": 1, "1% HP CLUTCH": 1, "SOLO BOLO": 1,
+        "DOUBLE KILL": 2, "TRIPLE KILL": 3, "QUADRAKILL": 4, "PENTAKILL": 5,
+    }
+    ACT_MIN_KILLS = {"double": 2, "triple": 3, "quadra": 4, "quadrakill": 4, "penta": 5, "pentakill": 5}
+    NUM_TO_LABEL = {1: "KILL", 2: "DOUBLE KILL", 3: "TRIPLE KILL", 4: "QUADRAKILL", 5: "PENTAKILL"}
+    max_item_num = max((TIER_NUM.get(item["label"].upper(), 1) for item in caption_items), default=total_kills)
+    expected_total = max(total_kills, max_item_num, ACT_MIN_KILLS.get(act_lower, 1))
+    prev_emitted_tier = 0
 
     for idx, item in enumerate(caption_items):
         t_start = item["start"]
@@ -895,70 +1021,56 @@ def build_dynamic_captions_filters(
         style = item["style"]
 
         is_multikill = bool(action_type and action_type.lower() in ("double", "triple", "quadrakill", "quadra", "pentakill", "penta"))
+        alpha_expr = _alpha_fade_expr(t_start, t_end, fade_s=0.12)
         if is_multikill and total_kills >= 2 and not is_solo:
             is_final_kill = (idx == total_kills - 1)
-            hud_text = f"KILL {idx + 1}/{total_kills}" if not is_final_kill else f"FINAL KILL {idx + 1}/{total_kills}"
+            item_num = TIER_NUM.get(clean_label.upper(), idx + 1)
+            kill_num = expected_total if is_final_kill else min(expected_total, max(idx + 1, item_num))
+            # Wymuszenie monotonicznosci: na 3/4 po DOUBLE KILL musi być TRIPLE KILL, a nie powtórzone DOUBLE KILL
+            if item_num <= prev_emitted_tier or (kill_num >= 2 and item_num < kill_num):
+                clean_label = NUM_TO_LABEL.get(kill_num, clean_label)
+                style = KILL_STYLES.get(clean_label, style)
+            prev_emitted_tier = max(prev_emitted_tier, TIER_NUM.get(clean_label.upper(), kill_num))
+            hud_text = f"KILL {kill_num}/{expected_total}" if not is_final_kill else f"FINAL KILL {kill_num}/{expected_total}"
             hud_color = "0xFFD700" if is_final_kill else ("0xFFA500" if idx > 0 else "white")
-            hud_box_w = 340 if is_final_kill else 260
-            hud_box_h = 44
-            hud_y_pos = "trunc(ih*0.13)"
 
-            hud_dbox = (
-                f"drawbox="
-                f"x=trunc((iw-{hud_box_w})/2)"
-                f":y={hud_y_pos}"
-                f":w={hud_box_w}"
-                f":h={hud_box_h}"
-                f":color=black@0.65"
-                f":t=fill"
-                f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
-            )
             hud_dt = (
                 f"drawtext="
                 f"fontfile='{font_safe}'"
                 f":text='{hud_text}'"
                 f":x=(w-text_w)/2"
-                f":y=h*0.135"
-                f":fontsize=32"
+                f":y=h*0.175"
+                f":fontsize=30"
                 f":fontcolor={hud_color}"
+                f":box=1:boxcolor=black@0.48:boxborderw=10"
                 f":borderw=3"
                 f":bordercolor=black"
                 f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
+                f":alpha='{alpha_expr}'"
                 f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
             )
-            drawtext_filters.append(hud_dbox)
             drawtext_filters.append(hud_dt)
 
-        box_h = style['size'] + 20
-        approx_box_w = min(max(int(style['size'] * max(len(clean_label), 6) * 0.72), 400), 1020)
-        box_x_expr = f"trunc((iw-{approx_box_w})/2)"
-        box_y_expr = f"trunc(ih*0.55)-{box_h // 2}"
-        dbox = (
-            f"drawbox="
-            f"x={box_x_expr}"
-            f":y={box_y_expr}"
-            f":w={approx_box_w}"
-            f":h={box_h}"
-            f":color=black@0.55"
-            f":t=fill"
-            f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
+        _, k_fsize = _layout_overlay_text(
+            clean_label, max_width_px=840, max_size=min(style["size"], 76), min_size=48, max_lines=1
         )
         dt = (
             f"drawtext="
             f"fontfile='{font_safe}'"
             f":text='{clean_label}'"
             f":x=(w-text_w)/2"
-            f":y=h*0.55"
-            f":fontsize={style['size']}"
+            f":y=h*0.235"
+            f":fontsize={k_fsize}"
             f":fontcolor={style['color']}"
+            f":box=1:boxcolor=black@0.44:boxborderw=14"
             f":borderw=5"
             f":bordercolor=black"
             f":shadowx=4:shadowy=4:shadowcolor=black@0.8"
+            f":alpha='{alpha_expr}'"
             f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
         )
-        drawtext_filters.append(dbox)
         drawtext_filters.append(dt)
-        print(f"   🗨️  {clean_label} (kill {idx+1}/{total_kills}) @ {item.get('t_in_clip', t_start):.1f}s (start {t_start:.1f}s) — {style['size']}px")
+        print(f"   🗨️  {clean_label} (kill {idx+1}/{total_kills}) @ {item.get('t_in_clip', t_start):.1f}s (start {t_start:.1f}s) — {k_fsize}px")
 
     progress_bar = (
         f"drawbox="
@@ -1091,57 +1203,93 @@ def merge_music(video_path: str, music_path: Optional[str],
     ], timeout=15.0, desc="ffprobe audio stream check")
     has_game_audio = probe.stdout.decode("utf-8", errors="replace").strip() == "audio"
 
+    # Zmierz dokładny czas trwania strumienia wideo, żeby audio nigdy nie wystawało o +64ms (czarna końcówka)
+    target_dur = float(video_duration)
+    try:
+        v_probe = _run_ffmpeg([
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            video_path,
+        ], timeout=10.0, desc="ffprobe video duration check")
+        v_str = v_probe.stdout.decode("utf-8", errors="replace").strip()
+        if v_str:
+            parsed_v = float(v_str.splitlines()[0].strip())
+            if parsed_v > 0.5:
+                target_dur = min(target_dur, parsed_v)
+    except Exception:
+        pass
+
     # Seamless Loop: mikro-fade 40ms wyłącznie na styku zapętlenia (brak wyciszania 1.5s przed końcem)
     fade_dur = 0.04
-    fade_start = max(0.0, video_duration - fade_dur)
+    fade_start = max(0.0, target_dur - fade_dur)
 
     if has_game_audio and GAME_AUDIO_VOLUME > 0.0:
         # ── Miksuj dźwięk gry + muzykę przez amix ──────────────────────────────────
         game_vol  = game_volume if game_volume is not None else GAME_AUDIO_VOLUME
         music_vol = music_volume if music_volume is not None else MUSIC_VOLUME
 
-        # Generuj dynamiczny boost audio gry przy killach (krzyk, announcer, uderzenie czaru)
+        # Generuj płynny boost audio gry przy killach (rampa 0.15s zamiast twardego skoku i bez przesteru po loudnorm)
         def _game_boost_expr(base, peaks):
+            capped_base = min(0.90, float(base))
             if not peaks:
-                return f"{base:.2f}"
+                return f"{capped_base:.2f}"
             parts = []
             for t, label in (peaks or []):
                 dur = 1.6 if "PENTA" in label else (1.4 if "QUADRA" in label else 1.1)
-                boost = 3.2 if "PENTA" in label else 2.4
-                parts.append(f"between(t,{t:.2f},{t+dur:.2f})*{boost-1:.1f}")
+                extra = 0.45 if "PENTA" in label else 0.35
+                t0 = max(0.0, float(t))
+                t1 = t0 + dur
+                ramp = f"min(1,max(0,(t-{t0:.2f})/0.15))*min(1,max(0,({t1:.2f}-t)/0.15))"
+                parts.append(f"{ramp}*{extra:.2f}")
             if not parts:
-                return f"{base:.2f}"
-            return f"min(3.5,{base:.2f}*(1+{'+'.join(parts)}))"
+                return f"{capped_base:.2f}"
+            return f"min(1.30,{capped_base:.2f}*(1+{'+'.join(parts)}))"
 
-        # Dynamiczne wyciszanie muzyki (sidechain ducking) na KAŻDYM killu
-        def _music_duck_expr(base, peaks):
-            if not peaks:
+        # Dynamiczna krzywa głośności muzyki: duck przed kulminacją (vacuum 0.38s), wyraźne uderzenie dropu (+0.32)
+        # oraz impuls na ewentualnych kolejnych killach po wejściu bitu (drop_anchor=first_kill_engage)
+        def _music_duck_expr(base, peaks, climax_peak_t=0.0):
+            climax_t = float(climax_peak_t or 0.0)
+            terms = []
+            for t, _label in (peaks or []):
+                tf = float(t)
+                if climax_t > 0.5 and abs(tf - climax_t) <= 0.8:
+                    continue
+                if climax_t > 0.5 and tf > climax_t + 0.8:
+                    terms.append(f"+between(t,{tf:.2f},{tf+1.10:.2f})*0.16")
+                else:
+                    terms.append(f"-between(t,{tf:.2f},{tf+1.0:.2f})*0.25")
+            if climax_t > 0.5:
+                pre_s = max(0.0, climax_t - 0.38)
+                pre_e = max(0.0, climax_t - 0.03)
+                if pre_e > pre_s + 0.05:
+                    terms.append(f"-between(t,{pre_s:.2f},{pre_e:.2f})*0.42")
+                terms.append(f"+between(t,{climax_t:.2f},{climax_t+1.8:.2f})*0.32")
+            elif peaks:
+                tf = float(peaks[-1][0])
+                terms.append(f"+between(t,{tf:.2f},{tf+1.8:.2f})*0.32")
+            if not terms:
                 return f"{base:.2f}"
-            duck_parts = []
-            for t, label in (peaks or []):
-                dur = 1.6 if "PENTA" in label else 1.2
-                duck_factor = 0.65 if "PENTA" in label else 0.45
-                duck_parts.append(f"between(t,{t:.2f},{t+dur:.2f})*{duck_factor:.2f}")
-            if not duck_parts:
-                return f"{base:.2f}"
-            combined = "+".join(duck_parts)
-            return f"max(0.10,{base:.2f}*(1-min(0.70,{combined})))"
+            return f"max(0.10,min(1.65,{base:.2f}*(1{''.join(terms)})))"
 
         game_boost = _game_boost_expr(game_vol, kill_peaks)
-        music_duck  = _music_duck_expr(music_vol, kill_peaks)
+        music_duck  = _music_duck_expr(music_vol, kill_peaks, climax_peak_t=video_peak_time)
 
-        # Dźwięk gry na tej samej osi czasu co obraz (inaczej po pierwszym zwolnieniu uderzenia słychać przed obrazem)
+        # Dźwięk gry na tej samej osi czasu co obraz + highpass=130 Hz (zwalnia sub-bas 35-130 Hz wyłącznie dla dropu muzyki!)
         warp_on = bool(WARP_GAME_AUDIO and time_segments and any(abs(sg["speed"] - 1.0) > 1e-6 for sg in time_segments))
         game_in = "[gwarp]" if warp_on else "[2:a]"
-        warp_prefix = (TL.audio_warp_filter(time_segments, "2:a", "gwarp") + ";") if warp_on else ""
+        warp_prefix = (TL.audio_warp_filter(time_segments, "2:a", "gwarp", mode="clean") + ";") if warp_on else ""
         filter_complex = (
-            f"{warp_prefix}{game_in}loudnorm=I=-14:TP=-1.5:LRA=11,"
+            f"{warp_prefix}{game_in}loudnorm=I=-16:TP=-2.0:LRA=11,highpass=f=130,"
             f"volume=eval=frame:volume='{game_boost}',"
+            f"alimiter=limit=0.68:level=disabled:attack=3:release=50,"
             f"afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}[ga];"
-            f"[1:a]loudnorm=I=-17:TP=-1.5:LRA=11,"
-            f"volume=eval=frame:volume='{music_duck}',"
+            f"[1:a]volume=0.82,volume=eval=frame:volume='{music_duck}',"
             f"afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}[ma];"
-            f"[ga][ma]amix=inputs=2:duration=longest:dropout_transition=2:normalize=0[aout]"
+            f"[ga][ma]amix=inputs=2:duration=longest:dropout_transition=2:normalize=0,"
+            f"alimiter=limit=0.62:level=disabled:attack=3:release=50,"
+            f"atrim=0:{target_dur:.3f},asetpts=PTS-STARTPTS[aout]"
         )
         cmd = [
             "ffmpeg", "-y",
@@ -1153,8 +1301,9 @@ def merge_music(video_path: str, music_path: Optional[str],
             "-filter_complex", filter_complex,
             "-map", "[aout]",
             "-c:v", "copy",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-            "-t", f"{video_duration:.3f}",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+            "-t", f"{target_dur:.3f}",
+            "-shortest",
             output_path
         ]
         src_label = os.path.basename(audio_source)
@@ -1168,9 +1317,9 @@ def merge_music(video_path: str, music_path: Optional[str],
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-c:v", "copy",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-            "-af", f"volume={MUSIC_VOLUME},loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}",
-            "-t", f"{video_duration:.3f}",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+            "-af", f"volume={MUSIC_VOLUME},loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f},atrim=0:{target_dur:.3f},asetpts=PTS-STARTPTS",
+            "-t", f"{target_dur:.3f}",
             "-shortest",
             output_path
         ]
@@ -1194,7 +1343,7 @@ def merge_music(video_path: str, music_path: Optional[str],
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-c:v", "copy",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
             "-af", f"volume={music_volume or MUSIC_VOLUME},afade=t=out:st={fade_start:.2f}:d={fade_dur:.2f}",
             "-t", f"{video_duration:.3f}",
             "-shortest",
@@ -1349,84 +1498,78 @@ def prepend_freeze_hook(
     return output_path
 
 
+OUTRO_CTA_VARIANTS = [
+    {"id": "debate_greedy",    "kind": "debate", "text": "CLEAN OR GREEDY? COMMENT"},
+    {"id": "debate_choke",     "kind": "debate", "text": "WHO CHOKED HERE? COMMENT"},
+    {"id": "debate_elo",       "kind": "debate", "text": "GUESS THE ELO IN COMMENTS"},
+    {"id": "debate_panicked",  "kind": "debate", "text": "CALCULATED OR PURE PANIC?"},
+    {"id": "debate_turn",      "kind": "debate", "text": "WOULD YOU TURN BACK IN?"},
+    {"id": "debate_mistake",   "kind": "debate", "text": "SPOT THE MISTAKE BELOW"},
+    {"id": "debate_threw",     "kind": "debate", "text": "WHO THREW THIS FIGHT?"},
+    {"id": "debate_survive",   "kind": "debate", "text": "COULD YOU SURVIVE THAT?"},
+    {"id": "debate_dodge",     "kind": "debate", "text": "WAS THAT DODGEABLE? COMMENT"},
+    {"id": "debate_lucky",     "kind": "debate", "text": "CLEAN RESET OR LUCKY?"},
+    {"id": "debate_track",     "kind": "debate", "text": "TOO FAST TO TRACK? COMMENT"},
+    {"id": "debate_shunpo",    "kind": "debate", "text": "WAIT FOR THAT SHUNPO RESET"},
+]
+
+
+def _default_caption_history_path() -> Optional[str]:
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return None
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root, "accounts", "caption_history.json")
+
+
+def select_non_repeating_outro_cta(
+    history_path: Optional[str] = None,
+    action_type: str = "",
+    champion_name: str = "",
+) -> dict:
+    """
+    Wybiera 1 z 12 mikro-triggerów CTA na ostatnie 1.5s klipu z bezwzględną
+    blokadą powtórek przez co najmniej 6 kolejnych filmów (accounts/caption_history.json).
+    Wyklucza warianty specyficzne dla Katariny, jeśli bohater klipu jest inny.
+    """
+    h_path = history_path if history_path is not None else _default_caption_history_path()
+    recent_ids: List[str] = []
+    if h_path and os.path.isfile(h_path):
+        try:
+            with open(h_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, list):
+                recent_ids = [str(x) for x in loaded[-6:]]
+        except Exception:
+            recent_ids = []
+
+    excluded = set(recent_ids[-6:])
+    champ_low = (champion_name or "").strip().lower()
+    champ_banned = {"debate_shunpo", "debate_lucky"} if (champ_low and champ_low != "katarina") else set()
+    pool = [v for v in OUTRO_CTA_VARIANTS if v["id"] not in excluded and v["id"] not in champ_banned]
+    if not pool:
+        pool = [v for v in OUTRO_CTA_VARIANTS if v["id"] not in champ_banned] or list(OUTRO_CTA_VARIANTS)
+
+    # W testach bez podanej ścieżki lub przy produkcji losuj bezpiecznie z dostępnej puli
+    import random as _rnd
+    chosen = dict(_rnd.choice(pool))
+
+    if h_path:
+        try:
+            new_hist = (recent_ids + [chosen["id"]])[-12:]
+            os.makedirs(os.path.dirname(h_path), exist_ok=True)
+            with open(h_path, "w", encoding="utf-8") as f:
+                json.dump(new_hist, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+    return chosen
+
+
 def get_engagement_cta(action_type: str = "", champion: str = "", hook_text: str = "") -> str:
     """
-    Zwraca wysoce konwertujące wezwanie do zaangażowania (Like Rate & Comment Rate)
-    dopasowane do typu akcji i postaci.
-    Zastępuje konfundujące 'AND THIS IS WHY IT WAS A...' bezpośrednim sygnałem
-    zwiększającym Like Rate (z 0.2% do 3%+), co podbija algorytm Shorts do wyższych tierów.
+    Zwraca rotowane wezwanie końcowe (bez zmyślonych spelli i powtórek co 2 filmy)
+    korzystając z bufora 12 wariantów outro.
     """
-    act = (action_type or "").lower().strip()
-    champ = (champion or "").upper().strip()
-
-    cta_map = {
-        "solo_bolo": [
-            "LIKE IF THAT WAS CLEAN!",
-            "WOULD YOU WIN THIS 1v1?",
-            "CLEAN OR DISRESPECTFUL?",
-            "DROP A LIKE FOR THE DUEL!",
-            "1 TO 10: RATE THIS 1v1",
-        ],
-        "pentakill": [
-            "LIKE FOR THE PENTA RESET!",
-            "CAN YOUR MAIN DO THIS?",
-            "1 TO 10: RATE THIS PENTA",
-            "WOULD YOU SURVIVE THIS? COMMENT 👇",
-            "DROP A LIKE FOR THE ACE!",
-        ],
-        "quadrakill": [
-            "LIKE IF HE DESERVED PENTA!",
-            "DROP A LIKE FOR THE CHASE!",
-            "CLEAN QUADRA OR ENEMY THROW?",
-            "CLEAN OR ENEMY INT? DROP A LIKE! 🔥",
-        ],
-        "triple": [
-            "LIKE IF THAT RESET WAS CLEAN!",
-            "CLEAN OR ENEMY DIFF? COMMENT BELOW",
-            "WOULD YOU SURVIVE THIS?",
-            f"DROP A LIKE FOR {champ}!" if champ else "DROP A LIKE FOR THE TRIPLE!",
-            "DROP A SUB IF YOU WOULD FLASH! 💀",
-        ],
-        "double": [
-            "LIKE IF THAT 2v1 WAS CLEAN!",
-            "CLEAN OUTPLAY OR LUCKY?",
-            "DROP A LIKE IF YOU WOULD FLASH!",
-            f"DROP A LIKE FOR {champ}!" if champ else "DROP A LIKE FOR THE PLAY!",
-        ],
-        "clutch": [
-            "HOW DID HE SURVIVE THIS?",
-            "LIKE IF YOU WOULD PANIC HERE!",
-            "DROP A LIKE FOR THE 1% HP!",
-            "CLEAN OR PURE LUCK? COMMENT BELOW",
-        ],
-        "outplay": [
-            "CLEAN OR LUCKY? COMMENT BELOW",
-            "LIKE IF YOU WOULD PANIC HERE!",
-            "RATE THIS OUTPLAY: 1 TO 10?",
-            f"DROP A LIKE FOR {champ}!" if champ else "DROP A LIKE FOR THE OUTPLAY!",
-            "RATE THIS OUTPLAY: 1 TO 10? 👇",
-        ],
-    }
-
-    candidates = cta_map.get(act)
-    if not candidates:
-        if "solo" in act or "1v1" in act:
-            candidates = cta_map["solo_bolo"]
-        elif "penta" in act:
-            candidates = cta_map["pentakill"]
-        elif "quadra" in act:
-            candidates = cta_map["quadrakill"]
-        elif "triple" in act:
-            candidates = cta_map["triple"]
-        elif "double" in act:
-            candidates = cta_map["double"]
-        elif "clutch" in act or "1hp" in act:
-            candidates = cta_map["clutch"]
-        else:
-            candidates = cta_map["outplay"]
-
-    seed_val = sum(ord(c) for c in (hook_text or act or "lol"))
-    return candidates[seed_val % len(candidates)]
+    return select_non_repeating_outro_cta(action_type=action_type)["text"]
 
 
 def get_seamless_loop_cta(hook_text: str, action_type: str = "") -> str:
@@ -1482,7 +1625,7 @@ def build_cta_overlay_filters(
     import re
     font_safe = font.replace(chr(92), '/').replace(':', '\\:')
     clean_cta = re.sub(r'[^\x00-\x7F]+', '', cta_text).strip()
-    clean_cta = clean_cta.replace("'", "\\\\'")
+    clean_cta = clean_cta.replace("'", "")
     clean_cta = clean_cta.replace(":", "\\:")
     clean_cta = clean_cta.replace("%", "%%")
 
@@ -1491,38 +1634,49 @@ def build_cta_overlay_filters(
 
     t_start = max(0.0, video_duration - show_duration)
     t_end   = video_duration
+    alpha_expr = _alpha_fade_expr(t_start, t_end, fade_s=0.14)
 
-    # Dynamiczne dopasowanie rozmiaru czcionki do szerokości 1080px
-    cta_len = len(clean_cta)
-    fsize = 55
-    if cta_len > 28:
-        fsize = max(36, int(55 * 28 / cta_len))
+    cta_lines, fsize = _layout_overlay_text(
+        clean_cta, max_width_px=860, max_size=50, min_size=36, max_lines=2
+    )
+    if not cta_lines:
+        return []
 
-    # Dolna bezpieczna strefa (y=ih*0.74) — nad HUDem gracza, nie zasłania banerów killi u góry
+    line_h = int(fsize * 1.20)
+    pad_y = 18
+    box_h = len(cta_lines) * line_h + pad_y * 2
+    max_chars = max(len(ln) for ln in cta_lines)
+    box_w = min(940, max(420, int(max_chars * fsize * 0.60) + 64))
+    box_y_px = 1380  # bezpieczna strefa nad opisem YT Shorts/Reels z dala od górnych napisów
+
     cta_box = (
         f"drawbox="
-        f"x=0"
-        f":y=ih*0.68"
-        f":w=iw"
-        f":h=ih*0.08"
-        f":color=black@0.50"
+        f"x=trunc((iw-{box_w})/2)"
+        f":y={box_y_px}"
+        f":w={box_w}"
+        f":h={box_h}"
+        f":color=black@0.48"
         f":t=fill"
         f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
-    drawtext = (
-        f"drawtext="
-        f"fontfile='{font_safe}'"
-        f":text='{clean_cta}'"
-        f":x=(w-text_w)/2"
-        f":y=h*0.70"
-        f":fontsize={fsize}"
-        f":fontcolor=0xFFD700"
-        f":borderw=4"
-        f":bordercolor=black"
-        f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
-        f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
-    )
-    return [cta_box, drawtext]
+    filters = [cta_box]
+    for i, line_txt in enumerate(cta_lines):
+        y_px = box_y_px + pad_y + i * line_h
+        filters.append(
+            f"drawtext="
+            f"fontfile='{font_safe}'"
+            f":text='{line_txt}'"
+            f":x=(w-text_w)/2"
+            f":y={y_px}"
+            f":fontsize={fsize}"
+            f":fontcolor=0xFFD700"
+            f":borderw=4"
+            f":bordercolor=black"
+            f":shadowx=2:shadowy=2:shadowcolor=black@0.8"
+            f":alpha='{alpha_expr}'"
+            f":enable='between(t,{t_start:.2f},{t_end:.2f})'"
+        )
+    return filters
 
 
 def add_cta_overlay(
@@ -1609,13 +1763,23 @@ def apply_overlays_unified(
         )
         filters.extend(cap_filters)
 
-    # 2. Hook overlay (0.0s - 2.5s)
+    # 2. Hook overlay (0.0s - 2.0s, skrócony jeśli 1. kill wchodzi bardzo wcześnie)
     if hook_text and hook_text.strip():
+        hook_show = 2.0
+        if peaks:
+            early_raw = min(
+                (float(p[0]) if (float(p[0]) < trim_start or trim_start == 0.0) else (float(p[0]) - trim_start))
+                for p in peaks
+            )
+            if time_segments:
+                early_raw = TL.warp_time(time_segments, early_raw)
+            if 0.0 <= (early_raw + 0.15) < 2.15:
+                hook_show = min(2.0, max(1.1, (early_raw + 0.15) - 0.15))
         hook_filters = build_text_overlay_filters(
             hook_text=hook_text.strip(),
             peak_moment=0.0,
             video_duration=video_duration,
-            show_duration=2.5,
+            show_duration=hook_show,
         )
         filters.extend(hook_filters)
 
@@ -1639,6 +1803,7 @@ def apply_overlays_unified(
         "-i", video_path,
         "-vf", vf_chain,
         *get_optimal_encoder_args("high"),
+        "-fps_mode", "cfr", "-r", "60",
         "-movflags", "+faststart",
         "-c:a", "copy",
         output_path
@@ -1653,6 +1818,7 @@ def apply_overlays_unified(
             "-i", video_path,
             "-vf", vf_chain,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-fps_mode", "cfr", "-r", "60",
             "-movflags", "+faststart",
             "-c:a", "copy",
             output_path
@@ -1682,6 +1848,11 @@ def render_short(
     output_filename: str = "lol_short_final.mp4",
     combat_segments: list = None,
     custom_temp_dir: Optional[str] = None,
+    montage_style: Optional[str] = None,
+    director_decision: Optional[Any] = None,
+    objective_secured: bool = False,
+    ally_banner_blocked: bool = False,
+    drop_anchor: Optional[str] = None,
 ) -> str:
     """
     Pipeline montażu v6 — Combat-Segment-Aware editing:
@@ -1715,23 +1886,56 @@ def render_short(
     print("\n[1/4] Wycinanie fragmentu...")
 
     # ── ADAPTIVE MONTAGE DIRECTOR (AI Decyzja scenariuszowa) ───────────────────
-    director_decision = None
-    try:
+    _external_director = director_decision is not None
+    if not _external_director:
         try:
-            from lol_agent.lol_montage_director import direct_clip_montage
-        except ImportError:
-            from lol_montage_director import direct_clip_montage
-        director_decision = direct_clip_montage(
-            action_type=action_type,
-            champion_name=champion_name,
-            duration=clip_duration,
-            peaks=peaks or []
-        )
-        if director_decision:
-            print(f"🎬  Reżyser AI [{director_decision.archetype}]: Jump-Cut={director_decision.allow_jump_cut}, Zoom={director_decision.zoom_aggression:.2f}x, Slowmo={director_decision.slowmo_duration:.1f}s")
-            print(f"    Uzasadnienie: {director_decision.rationale}")
-    except Exception as _dir_err:
-        print(f"    [editor] Montage director fallback: {_dir_err}")
+            try:
+                from lol_agent.lol_montage_director import direct_clip_montage
+            except ImportError:
+                from lol_montage_director import direct_clip_montage
+            director_decision = direct_clip_montage(
+                action_type=action_type,
+                champion_name=champion_name,
+                duration=clip_duration,
+                peaks=peaks or [],
+                force_style=montage_style,
+                objective_secured=objective_secured,
+                ally_banner_blocked=ally_banner_blocked,
+            )
+        except Exception as _dir_err:
+            print(f"    [editor] Montage director fallback: {_dir_err}")
+
+    if director_decision:
+        print(f"🎬  Reżyser AI [{director_decision.archetype}]: Jump-Cut={director_decision.allow_jump_cut}, Zoom={director_decision.zoom_aggression:.2f}x, Slowmo={director_decision.slowmo_duration:.1f}s")
+        print(f"    Uzasadnienie: {director_decision.rationale}")
+
+    _pref_style = (
+        (director_decision.tuning_profile or {}).get("preferred_montage_style")
+        if _external_director and director_decision and getattr(director_decision, "tuning_profile", None)
+        else None
+    )
+    _style = (montage_style or _pref_style or "PRIMARY").upper().strip()
+    # Styl IN_MEDIA_RES: klip zaczyna się tuż przed walką. Przesuwamy początek tak, by pierwszy kill wypadł
+    # w IN_MEDIA_RES_FIRST_KILL_AT s. Kille są w czasie źródła, więc reszta montażu liczy się sama.
+    if _style == "IN_MEDIA_RES" and peaks:
+        try:
+            _first_abs = min(float(tk) if (float(tk) >= clip_start and clip_start > 0.0) else clip_start + float(tk) for (tk, _) in peaks)
+            _lead = 2.5
+            try:
+                from lol_agent.lol_montage_director import IN_MEDIA_RES_FIRST_KILL_AT as _lead
+            except ImportError:
+                from lol_montage_director import IN_MEDIA_RES_FIRST_KILL_AT as _lead
+            _shift = (_first_abs - clip_start) - _lead
+            if _shift > 0.3 and (clip_duration - _shift) >= 8.0:
+                if not (clip_start > 0.0 and peak_moment >= clip_start):
+                    peak_moment = max(0.0, peak_moment - _shift)      # cios podany względem klipu
+                # kille podane względem klipu przesuwają się razem z początkiem; podane w czasie źródła zostają
+                peaks = [((float(tk) if float(tk) >= clip_start > 0.0 else max(0.0, float(tk) - _shift)), lbl) for (tk, lbl) in peaks]
+                clip_start += _shift
+                clip_duration = clip_end - clip_start
+                print(f"   ✂️  IN_MEDIA_RES: początek klipu +{_shift:.1f}s, pierwszy kill w {_lead:.1f}s")
+        except Exception as _imr:
+            print(f"   [editor] IN_MEDIA_RES pominięty: {_imr}")
 
     # Dla SOLO BOLO wykluczamy jakiekolwiek cięcia jump-cut — cała walka ma być płynna od wejścia do finału
     if action_type.lower() in ("solo_bolo", "solo", "1v1"):
@@ -1862,8 +2066,18 @@ def render_short(
     # KROK 2: Smart Camera Crop do 9:16 (znajdź ścieżkę na wyciętym pliku step1)
     print("\n[2/4] Smart Camera crop...")
     crop_x_expr = "-1"   # default: centrum geometryczne
+    _cam_step_px = None
     if use_smart_camera and SMART_CAMERA_AVAILABLE:
+        _cam_mod = sys.modules.get(getattr(find_action_path, "__module__", ""), None)
+        _cam_saved = {}
         try:
+            if (_style == "CINEMATIC_DUEL" or (director_decision and getattr(director_decision, "camera_mode", "") == "duel_centroid")) and _cam_mod is not None and hasattr(_cam_mod, "CAMERA"):
+                try:
+                    from lol_agent.lol_montage_director import DUEL_CAMERA as _duel
+                except ImportError:
+                    from lol_montage_director import DUEL_CAMERA as _duel
+                _cam_saved = {k: _cam_mod.CAMERA[k] for k in _duel}
+                _cam_mod.CAMERA.update(_duel)       # spokojna kamera tylko na ten render
             path_points = find_action_path(
                 step1,
                 0.0, clip_duration,
@@ -1874,6 +2088,11 @@ def render_short(
             # Champion centering: BANNER_SHIFT is fixed at 0 to guarantee the player
             # is always 100% centered in 9:16 frame without artificial horizontal offset.
             crop_x_expr = generate_ffmpeg_pan_expression(path_points)
+            try:
+                _xs = [float(p[1]) for p in path_points]
+                _cam_step_px = round(max([abs(b - a) for a, b in zip(_xs, _xs[1:])] or [0.0]), 1)
+            except Exception:
+                _cam_step_px = None
         except Exception as e:
             print(f"   Blad sledzenia sciezki: {e} — fallback do centrum")
             crop_x = find_action_crop_x(
@@ -1883,6 +2102,9 @@ def render_short(
                 crop_w=TL.vertical_crop_width(1080)
             )
             crop_x_expr = f"{crop_x}"
+        finally:
+            if _cam_saved and _cam_mod is not None:
+                _cam_mod.CAMERA.update(_cam_saved)
 
     # KROK 3: Zastosuj efekty wizualne — parametry dopasowane do wagi akcji
     print("\n[3/4] Nakładanie efektów (crop, zoom, speed ramp)...")
@@ -1901,10 +2123,10 @@ def render_short(
 
     if is_solo_fight:
         # SOLO BOLO: Walka 1v1 ma być dynamiczna i płynna (60 FPS) od 1-ego tradu do zabójstwa.
-        # Bezpieczny zoom 1.10x gwarantuje pełną widoczność obu postaci w kadrze.
-        _zoom_level   = 1.10
+        # Bezpieczny zoom gwarantuje pełną widoczność obu postaci w kadrze.
+        _zoom_level   = min(1.22, float(director_decision.zoom_aggression)) if director_decision else 1.10
         _zoom_dur     = 0.40
-        _slowmo_dur   = 0.55
+        _slowmo_dur   = float(director_decision.slowmo_duration) if director_decision else 0.55
         _slowmo_speed = 0.70
     elif director_decision:
         _zoom_level   = director_decision.zoom_aggression
@@ -1944,9 +2166,41 @@ def render_short(
         peaks = [(round(clip_start + default_t, 2), fallback_label)]
         print(f"   🎯 [Editor Guard] Brak detekcji zabójstw w CV — ustawiam punkt kulminacji: {default_t:.1f}s ({fallback_label})")
 
-    # Intermediate peaks: wszystkie kille PRZED ostatnim -> mini slow-mo na moment uderzenia (last-hit)
-    _all_kill_rel = sorted([(t_k if (t_k < clip_start or clip_start == 0.0) else (t_k - clip_start)) for (t_k, _) in (peaks or [])])
-    _inter_peaks  = [max(0.2, round(p - 0.50, 2)) for p in _all_kill_rel[:-1]] if len(_all_kill_rel) > 1 else []
+    _dir_drop_anchor = (
+        ((director_decision.tuning_profile or {}).get("drop_anchor") if director_decision and getattr(director_decision, "tuning_profile", None) else None)
+        or (director_decision.synapsa_decision.get("drop_anchor") if director_decision and isinstance(getattr(director_decision, "synapsa_decision", None), dict) else None)
+    )
+    if drop_anchor is not None:
+        _effective_drop_anchor = str(drop_anchor).strip().lower()
+    elif _external_director or not os.environ.get("PYTEST_CURRENT_TEST"):
+        _effective_drop_anchor = str(_dir_drop_anchor or "climax_final_kill").strip().lower()
+    else:
+        _effective_drop_anchor = "climax_final_kill"
+
+    # Wyrównaj rel_peak_moment: dla multikilli z `drop_anchor == "first_kill_engage"` drop uderza na 1. kill/engage,
+    # w przeciwnym razie wyrównujemy do finałowego killa (jak dotychczasowe testy osi czasu).
+    _rel_kill_times_check = sorted(
+        float(t_k if (t_k < clip_start or clip_start == 0.0) else (t_k - clip_start))
+        for (t_k, _) in peaks
+    )
+    if _rel_kill_times_check:
+        if (
+            _effective_drop_anchor == "first_kill_engage"
+            and len(_rel_kill_times_check) >= 2
+            and 0.8 <= _rel_kill_times_check[0] <= 7.0
+            and _rel_kill_times_check[-1] > 8.5
+        ):
+            rel_peak_moment = max(0.8, round(_rel_kill_times_check[0] - 0.35, 2))
+            print(f"   🎵 [DropAnchor=first_kill_engage] Kotwiczę główny beat-drop na 1. kill/engage @ {rel_peak_moment:.2f}s (zamiast finału {_rel_kill_times_check[-1]:.2f}s)")
+        else:
+            _last_rel_k = _rel_kill_times_check[-1]
+            _ideal_peak = max(0.5, min(clip_duration - 0.5, round(_last_rel_k - 0.25, 2)))
+            if abs(rel_peak_moment - _last_rel_k) > 0.65:
+                rel_peak_moment = _ideal_peak
+
+    # Intermediate peaks: wszystkie kille PRZED punktem głównego dropu -> mini slow-mo na moment uderzenia (wylaczone przy klipach >20s dla tempa)
+    _all_kill_rel = _rel_kill_times_check
+    _inter_peaks  = ([max(0.2, round(p - 0.50, 2)) for p in _all_kill_rel[:-1] if p < rel_peak_moment - 0.5] if (len(_all_kill_rel) > 1 and clip_duration <= 20.0) else [])
     if _inter_peaks:
         print(f"   ⚡ Intermediate peaks (mini slow-mo): {[f'{p:.1f}s' for p in _inter_peaks]}")
 
@@ -1963,6 +2217,7 @@ def render_short(
         slowmo_duration=_slowmo_dur,
         intermediate_peaks=_inter_peaks if use_speed_ramp else [],
         timeline_out=_timeline,
+        fast_forward_kills=_all_kill_rel if _style == "SPEED_RAMP_FLOW" else None,
     )
     _segments = _timeline.get("segments") or []
     # Cios na osi GOTOWEGO filmu (po zwolnieniach). Przed 11.11.2026 muzyka dostawała czas surowy
@@ -1973,7 +2228,11 @@ def render_short(
 
     # KROK 4: Muzyka dopasowana do akcji z beat-sync
     print("\n[4/7] Muzyka i synchronizacja beat-sync + miksowanie audio gry...")
-    music = pick_music_for_action(action_type, preferred_track=preferred_track or ("ncs_egzod_royalty.mp3" if action_type == "pentakill" else None))
+    _pref_trk = preferred_track or ("ncs_egzod_royalty.mp3" if action_type == "pentakill" else None)
+    try:
+        music = pick_music_for_action(action_type, preferred_track=_pref_trk, min_drop_time=_mapped_peak + 0.5)
+    except TypeError:
+        music = pick_music_for_action(action_type, preferred_track=_pref_trk)
     # Przekazuj step1 (surowy wycinek z audio gry) jako game_audio_path
     # step4 nie ma audio (apply_editor_effects mapuje tylko [v_final])
     _rel_kill_peaks = [((tk if (tk < clip_start or clip_start == 0.0) else (tk - clip_start)), lbl) for (tk, lbl) in (peaks or [])]
@@ -1993,7 +2252,8 @@ def render_short(
     if not _hook:
         _hook = f"{champion_name.upper()} {action_type.upper()}" if champion_name else action_type.upper()
 
-    _end_cta = get_engagement_cta(action_type=action_type, champion=champion_name, hook_text=_hook)
+    _outro_obj = select_non_repeating_outro_cta(action_type=action_type, champion_name=champion_name)
+    _end_cta = _outro_obj["text"]
 
     print(f"\n[5/6] Zunifikowane nakładki (Dynamic Captions + Hook '{_hook[:25]}' + CTA '{_end_cta[:25]}')...")
     apply_overlays_unified(
@@ -2008,7 +2268,7 @@ def render_short(
         action_type=action_type,
         hook_text=_hook,
         cta_text=_end_cta,
-        cta_duration=1.8,
+        cta_duration=1.5,
         time_segments=_segments,
     )
 
@@ -2060,27 +2320,81 @@ def render_short(
     # nie wskazuje przyczyny; z przepisem cykl uczenia może porównywać ustawienia, a nie tylko typ akcji.
     try:
         _eff = TL.effective_edit_values(_zoom_level if use_zoom_punch else 1.0, _zoom_dur, _slowmo_dur)
+        _syn_dec = getattr(director_decision, "synapsa_decision", None) if director_decision else None
+        _tp_dec = (getattr(director_decision, "tuning_profile", None) or {}) if director_decision else {}
         _recipe = {
             "recipe_version": 1,
             "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "source": os.path.basename(source_path),
-            "action_type": action_type, "champion": champion_name,
+            "action_type": action_type, "champion": champion_name, "montage_style": _style or "PRIMARY",
+            "drop_anchor": _effective_drop_anchor,
+            "director_operation": ((_syn_dec or {}).get("operation") if isinstance(_syn_dec, dict) else None) or "KEEP_FULL_CONTINUOUS",
+            "camera_mode": (director_decision.camera_mode if director_decision else "tight_player"),
+            "camera_peak_step_px": _cam_step_px,
             "clip_seconds_in": round(clip_duration, 3), "final_seconds": round(final_duration, 3),
             "jump_cut_segments": [list(x) for x in combat_segments] if combat_segments else None,
             "peaks_in_clip": [[round(float(tk), 3), lbl] for (tk, lbl) in (_rel_kill_peaks or [])],
             "peak_in_clip": round(rel_peak_moment, 3), "peak_in_output": round(_mapped_peak, 3),
-            "director": ({"archetype": director_decision.archetype, "allow_jump_cut": director_decision.allow_jump_cut,
-                          "asked_zoom": director_decision.zoom_aggression, "asked_slowmo": director_decision.slowmo_duration}
-                         if director_decision else None),
+            "director": ({
+                "archetype": director_decision.archetype,
+                "allow_jump_cut": director_decision.allow_jump_cut,
+                "asked_zoom": director_decision.zoom_aggression,
+                "asked_slowmo": director_decision.slowmo_duration,
+                "buildup_sec": director_decision.buildup_sec,
+                "outro_sec": director_decision.outro_sec,
+                "camera_mode": director_decision.camera_mode,
+                "synapsa_decision": _syn_dec,
+                "rollback_guard": _tp_dec.get("director_rollback_guard"),
+            } if director_decision else None),
             "applied": {"zoom_level": _eff["zoom_level"], "zoom_window": _eff["zoom_window"], "slowmo_window": _eff["slowmo_window"],
                         "slowmo_speed": _slowmo_speed if use_speed_ramp else 1.0, "smart_camera": bool(use_smart_camera and SMART_CAMERA_AVAILABLE),
                         "music_volume": _music_vol, "game_volume": _game_vol, "game_audio_warped": bool(WARP_GAME_AUDIO and _segments)},
             "time_segments": _segments,
             "music": dict(LAST_MUSIC_SYNC) if music else None,
             "hook_text": _hook, "cta_text": _end_cta,
+            "outro_cta_id": _outro_obj.get("id"), "outro_cta_kind": _outro_obj.get("kind"),
         }
-        with open(os.path.splitext(step5)[0] + ".recipe.json", "w", encoding="utf-8") as _rf:
+        _recipe_out = os.path.splitext(step5)[0] + ".recipe.json"
+        with open(_recipe_out, "w", encoding="utf-8") as _rf:
             json.dump(_recipe, _rf, indent=1, ensure_ascii=False)
+        try:
+            try:
+                from lol_agent.synapsa_conversation_learner import record_recipe_delta_on_render
+            except ImportError:
+                from synapsa_conversation_learner import record_recipe_delta_on_render
+            _delta = record_recipe_delta_on_render(_recipe_out)
+            if _delta:
+                print(f"   🧠 [Cause->Effect] Delta atrybutów ({_delta.get('verdict')}): {list((_delta.get('changed_attributes') or {}).keys())[:4]}")
+        except Exception:
+            pass
+        if not os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("SYNAPSA_AUTO_WATCHABILITY", "1") == "1":
+            try:
+                from pathlib import Path as _WPath
+                try:
+                    from lol_agent.synapsa_watchability_judge import compare_shorts_and_verify
+                except ImportError:
+                    from synapsa_watchability_judge import compare_shorts_and_verify
+                _src_val = str(_recipe.get("source") or "")
+                _cur_mp4 = _WPath(step5).resolve()
+                _prev_candidates = []
+                for _cand in _WPath(os.path.dirname(_recipe_out)).glob("*.recipe.json"):
+                    if os.path.abspath(str(_cand)) == os.path.abspath(_recipe_out):
+                        continue
+                    try:
+                        _cd = json.loads(_cand.read_text(encoding="utf-8"))
+                    except Exception:
+                        continue
+                    if _src_val and str(_cd.get("source") or "") != _src_val:
+                        continue
+                    _cand_mp4 = _WPath(str(_cand)[:-len(".recipe.json")] + ".mp4")
+                    if _cand_mp4.is_file() and _cand_mp4.resolve() != _cur_mp4:
+                        _prev_candidates.append((_cand.stat().st_mtime, str(_cand_mp4)))
+                if _prev_candidates:
+                    _prev_candidates.sort(key=lambda x: x[0], reverse=True)
+                    _wcmp = compare_shorts_and_verify(_prev_candidates[0][1], step5, use_local_ai=False)
+                    print(f"   👁️ [Watchability] {_wcmp.get('watchability_summary')}")
+            except Exception:
+                pass
     except Exception as _re:
         print(f"   [editor] Przepis shorta nie został zapisany: {_re}")
 

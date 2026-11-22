@@ -71,39 +71,79 @@ def _yt_hashtags(champion: str, action_type: str) -> List[str]:
     ]
 
 
+def _dedup_preserve(items: List[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for item in items:
+        low = str(item).strip().lstrip("#").lower()
+        if low and low not in seen:
+            seen.add(low)
+            out.append(low)
+    return out
+
+
 def _tiktok_hashtags(champion: str, action_type: str) -> List[str]:
-    """TikTok: 3–5 focused tags only — wider tags are algorithmically broader."""
+    """TikTok: 5 precyzyjnych viralowych tagów (#leagueoflegends #<champ> #<champ>mains #<action> #fyp)."""
     clean = re.sub(r"['\s]", "", champion) if champion else "Katarina"
+    clean_low = clean.lower()
     action_map = {
-        "pentakill": ["pentakill", "lol"],
-        "quadrakill": ["quadrakill", "lol"],
-        "triple": ["triplekill", "lol"],
-        "solo_bolo": ["outplay", "lol", "1v1"],
-        "outplay": ["outplay", "lol"],
-        "clutch": ["clutch", "lol"],
+        "pentakill": ["pentakill", "lolpenta"],
+        "quadrakill": ["quadrakill", "lolquadra"],
+        "triple": ["triplekill", "loltriple"],
+        "double": ["doublekill", "loldouble"],
+        "solo_bolo": ["1v1", "solokill"],
+        "outplay": ["outplay", "lolclips"],
+        "clutch": ["lolclutch", "1hp"],
+        "steal": ["dragonsteal", "smite"],
     }
-    action_tags = action_map.get(action_type.lower(), ["outplay", "lol"])
-    return ["leagueoflegends", clean.lower(), *action_tags, "gaming"][:5]
+    action_tags = action_map.get(action_type.lower(), ["outplay", "lolclips"])
+    raw = [
+        "leagueoflegends",
+        clean_low,
+        f"{clean_low}mains",
+        action_tags[0],
+        "fyp",
+        "foryou",
+        "lolclips",
+        "gaming",
+    ]
+    return _dedup_preserve(raw)[:5]
 
 
 def _instagram_hashtags(champion: str, action_type: str) -> List[str]:
-    """Instagram: 10–15 mixed niche + broad tags."""
+    """Instagram: 10–15 mieszanych tagów niszowych i viralowych (bez duplikatów)."""
     clean = re.sub(r"['\s]", "", champion) if champion else "Katarina"
+    clean_low = clean.lower()
     action_map = {
         "pentakill": ["pentakill", "penta", "lolpentakill"],
         "quadrakill": ["quadrakill", "lolquadra"],
-        "triple": ["triplekill", "lol"],
+        "triple": ["triplekill", "loltriple"],
+        "double": ["doublekill", "loldouble"],
         "solo_bolo": ["outplay", "1v1", "solobolo"],
         "outplay": ["outplay", "loloutplay"],
         "clutch": ["clutch", "outplay"],
+        "steal": ["baronsteal", "dragonsteal", "smite"],
     }
     action_tags = action_map.get(action_type.lower(), ["outplay"])
-    return [
-        "leagueoflegends", "lol", "gaming", clean.lower(),
+    raw = [
+        "leagueoflegends", "lol", "gaming", clean_low, f"{clean_low}mains",
         *action_tags,
-        "lolhighlights", "gamingclips", "reels", "gamingcommunity",
-        f"{clean.lower()}gameplay", "esports",
-    ][:15]
+        "lolhighlights", "lolclips", "gamingclips", "reels", "gamingcommunity",
+        f"{clean_low}gameplay", "esports",
+    ]
+    return _dedup_preserve(raw)[:15]
+
+
+def _extract_clean_base_hook(base_metadata: Optional[Dict[str, Any]]) -> str:
+    """Czyści zatwierdzony tytuł z tagów YouTube (#shorts, #ytshorts, #shortsfeed itp.) pod TikTok/IG."""
+    if not isinstance(base_metadata, dict):
+        return ""
+    raw_title = str(base_metadata.get("title") or "").strip()
+    if not raw_title:
+        return ""
+    cleaned = re.sub(r"#\S+", "", raw_title)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" -—|")
+    return cleaned
 
 
 def _facebook_hashtags(champion: str, action_type: str) -> List[str]:
@@ -115,7 +155,21 @@ def _facebook_hashtags(champion: str, action_type: str) -> List[str]:
 # ─── Gemini helper ────────────────────────────────────────────────────────────
 
 def _call_gemini(prompt: str, max_retries: int = 2) -> str:
-    """Calls Gemini with retry. Returns empty string on failure."""
+    """
+    Priorytet #1: Lokalna Synapsa (0 tokenów API).
+    Fallback: Gemini API jeśli skonfigurowano GEMINI_API_KEY i Synapsa niedostępna.
+    """
+    try:
+        try:
+            from lol_agent.synapsa_engine import generate_with_synapsa
+        except ImportError:
+            from synapsa_engine import generate_with_synapsa
+        syn = generate_with_synapsa("social_caption", {"prompt": prompt}, timeout=60)
+        if syn and isinstance(syn.get("caption"), str) and syn["caption"].strip():
+            return syn["caption"].strip()
+    except Exception:
+        pass
+
     if not GENAI_OK or not GEMINI_API_KEY:
         return ""
     models = [GEMINI_MODEL] + list(GEMINI_FALLBACK_MODELS)
@@ -204,45 +258,50 @@ def generate_tiktok_copy(
     action_type: str,
     yt_history: Optional[List[Dict]] = None,
     learning_state: Optional[Dict] = None,
+    base_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    TikTok copy — short hook + 3-5 hashtags in one caption field.
-    Gemini prompt is tuned to TikTok algorithm patterns (hook speed, informal).
-    Falls back to template if Gemini unavailable.
+    TikTok copy — używa czystego zatwierdzonego tytułu (bez #shorts/#ytshorts),
+    a gdy go brak, pyta Synapsę / szablony przypisane do konkretnej akcji (koniec halucynacji).
     """
     tags = _tiktok_hashtags(champion, action_type)
     action_label = {
         "pentakill": "PENTAKILL",
         "quadrakill": "QUADRAKILL",
         "triple": "TRIPLE KILL",
+        "double": "DOUBLE KILL",
         "solo_bolo": "1v1 😤",
         "outplay": "OUTPLAY",
         "clutch": "CLUTCH 😱",
+        "steal": "OBJECTIVE STEAL 💀",
     }.get(action_type.lower(), action_type.upper())
 
-    # Try Gemini for a punchy hook
-    gemini_hook = ""
-    if GENAI_OK and GEMINI_API_KEY:
+    clean_base = _extract_clean_base_hook(base_metadata)
+    if len(clean_base) >= 8:
+        gemini_hook = clean_base[:90]
+    else:
         prompt = (
             f"Write a TikTok short caption (1 line, max 90 chars) for a League of Legends clip.\n"
             f"Champion: {champion}. Action: {action_label}.\n"
             f"Rules: casual tone, 1 emoji max, no hashtags, no quotation marks, hook first 3 words.\n"
+            f"Do NOT invent steals or pentakills if action is {action_label}.\n"
             f"Output ONLY the caption text, nothing else."
         )
         gemini_hook = _call_gemini(prompt)
-        # Sanitise: strip quotes, limit length
         gemini_hook = re.sub(r'^["\']|["\']$', '', gemini_hook).strip()[:90]
 
     if not gemini_hook:
-        # Deterministic fallback templates per action
         templates = {
-            "pentakill": f"How does {champion} do a pentakill so fast 😱",
-            "triple": f"{champion} triple kill in 3 seconds flat 🔥",
-            "solo_bolo": f"{champion} just 1v1'd the whole enemy team 😤",
-            "outplay": f"Nobody outplays {champion} and gets away with it",
-            "clutch": f"{champion} clutch when it matters most 💀",
+            "pentakill": f"How does {champion} wipe 5 players so fast 😱",
+            "quadrakill": f"Wait until you see the last reset on {champion} 💀",
+            "triple": f"3 down before they even reacted on {champion} ⚡",
+            "double": f"Greedy chase into {champion} gets punished in 2s 🔥",
+            "solo_bolo": f"{champion} 1v1 spacing check — would you fight this? 😤",
+            "outplay": f"Nobody outplays {champion} and walks away alive ⚡",
+            "clutch": f"{champion} surviving on 1 HP like nothing happened 💀",
+            "steal": f"Enemy jungler missed smite vs {champion} 💀",
         }
-        gemini_hook = templates.get(action_type.lower(), f"{champion} {action_label} you won't believe this")
+        gemini_hook = templates.get(action_type.lower(), f"{champion} {action_label} — clean or pure luck? 💀")[:90]
 
     tag_str = " ".join(f"#{t.lower()}" for t in tags)
     funnel_cta = "👉 Obserwuj nasz FB po więcej: facebook.com/Dwannellenga"
@@ -250,7 +309,7 @@ def generate_tiktok_copy(
 
     return {
         "platform": "tiktok",
-        "title": gemini_hook,          # TikTok API uses caption as title
+        "title": gemini_hook[:90],
         "caption": caption,
         "hashtags": tags,
     }
@@ -261,23 +320,37 @@ def generate_instagram_copy(
     action_type: str,
     yt_history: Optional[List[Dict]] = None,
     learning_state: Optional[Dict] = None,
+    base_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Instagram Reels copy — storytelling hook in first 2 lines (visible before More),
-    then hashtag block below.
+    Instagram Reels copy — używa czystego zatwierdzonego tytułu jako pierwszej linii,
+    a następnie pytania pod komentarze oraz bloku hasztagów poniżej fałdu.
     """
     tags = _instagram_hashtags(champion, action_type)
     action_label = {
         "pentakill": "PENTAKILL",
         "quadrakill": "QUADRAKILL",
         "triple": "TRIPLE KILL",
+        "double": "DOUBLE KILL",
         "solo_bolo": "1v1 carried",
         "outplay": "OUTPLAY",
         "clutch": "clutch play",
+        "steal": "objective steal",
     }.get(action_type.lower(), action_type.upper())
 
-    gemini_hook = ""
-    if GENAI_OK and GEMINI_API_KEY:
+    clean_base = _extract_clean_base_hook(base_metadata)
+    if len(clean_base) >= 8:
+        q_map = {
+            "pentakill": f"Rate this {champion} pentakill 1-10 below 👇",
+            "quadrakill": "Could enemy team actually stop that reset chain? 👇",
+            "triple": "Did enemy squad clump up for free or was that unreactable? 👇",
+            "double": "Greedy chase or clean bait? Drop your take below 👇",
+            "solo_bolo": f"Would you take this 1v1 against {champion}? 👇",
+            "clutch": "1 HP dream — who wins that fight in your games? 👇",
+        }
+        q_line = q_map.get(action_type.lower(), f"What's your favourite {champion} combo this patch? 👇")
+        gemini_hook = f"{clean_base[:80]}\n{q_line}"
+    else:
         prompt = (
             f"Write an Instagram Reels caption for a League of Legends highlight.\n"
             f"Champion: {champion}. Action: {action_label}.\n"
@@ -328,16 +401,14 @@ def generate_facebook_copy(
         "clutch": "clutch win",
     }.get(action_type.lower(), action_type.lower())
 
-    gemini_text = ""
-    if GENAI_OK and GEMINI_API_KEY:
-        prompt = (
-            f"Write a Facebook post for a League of Legends gaming page.\n"
-            f"Champion: {champion}. Action: {action_label}.\n"
-            f"Rules: conversational tone, 2-3 sentences max, ask a question at the end.\n"
-            f"No hashtag spam (max 1-2 hashtags at the very end). No quotation marks.\n"
-            f"Output ONLY the post text, nothing else."
-        )
-        gemini_text = _call_gemini(prompt).strip()
+    prompt = (
+        f"Write a Facebook post for a League of Legends gaming page.\n"
+        f"Champion: {champion}. Action: {action_label}.\n"
+        f"Rules: conversational tone, 2-3 sentences max, ask a question at the end.\n"
+        f"No hashtag spam (max 1-2 hashtags at the very end). No quotation marks.\n"
+        f"Output ONLY the post text, nothing else."
+    )
+    gemini_text = _call_gemini(prompt).strip()
 
     clean_champ = re.sub(r'[^a-zA-Z]', '', champion)
     if not gemini_text:
@@ -404,6 +475,7 @@ def generate_all_platform_copy(
             champion=champion,
             action_type=action_type,
             yt_history=yt_history,
+            base_metadata=base_metadata,
         )
 
     if "instagram" in platforms:
@@ -411,6 +483,7 @@ def generate_all_platform_copy(
             champion=champion,
             action_type=action_type,
             yt_history=yt_history,
+            base_metadata=base_metadata,
         )
 
     if "facebook" in platforms:

@@ -230,12 +230,29 @@ def check_camera_velocity_on_source(source_path: str) -> dict:
 def check_camera_velocity(output_path: str, source_path: str = None) -> dict:
     """
     Router:
-      source_path podany  → smart_camera standalone (najdokładniejszy)
-      source_path brak    → parsuj logi pipeline
-      logi brak           → informacja że brak danych
-    Uwaga: NIE używamy optical flow / phase-corr na output wideo —
-    minterpolate i zoom-punch generują fałszywe alarmy.
+      1) <output>.recipe.json z camera_peak_step_px -> dokładny pomiar z faktycznie wyrenderowanego wycinka
+      2) source_path podany  -> smart_camera standalone na pełnym źródle
+      3) source_path brak    -> parsuj logi pipeline
     """
+    if output_path:
+        recipe_path = os.path.splitext(output_path)[0] + ".recipe.json"
+        if os.path.isfile(recipe_path):
+            try:
+                with open(recipe_path, encoding="utf-8") as rf:
+                    rec = json.load(rf)
+                if isinstance(rec, dict) and rec.get("camera_peak_step_px") is not None:
+                    peak_delta = float(rec["camera_peak_step_px"])
+                    return {
+                        "source": "recipe_camera_peak_step",
+                        "ok": peak_delta <= VELOCITY_WARN,
+                        "peak_velocity_px": round(peak_delta, 1),
+                        "avg_velocity_px": 0.0,
+                        "jumps_over_threshold": [] if peak_delta <= VELOCITY_WARN else [(0.0, round(peak_delta, 1))],
+                        "threshold_px": VELOCITY_WARN,
+                    }
+            except Exception:
+                pass
+
     if source_path and os.path.isfile(source_path):
         return check_camera_velocity_on_source(source_path)
 
@@ -288,8 +305,62 @@ def check_silence_at_start(video_path: str) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MAIN REPORT
+# NON-EXITING STRUCTURED QA COLLECTOR + MAIN REPORT
 # ══════════════════════════════════════════════════════════════════════════════
+def collect_qa_metrics(video_path: str, source_path: str = None) -> dict:
+    """Uruchamia testy QA po renderze bez sys.exit() i zwraca ustrukturyzowany raport."""
+    if not os.path.isfile(video_path):
+        return {
+            "ok": False,
+            "status": "ERROR",
+            "issues": [f"Plik wideo nie istnieje: {video_path}"],
+            "warnings": [],
+            "checks": {},
+        }
+
+    valid_source = source_path if (source_path and os.path.isfile(source_path)) else None
+    issues = []
+    warnings = []
+
+    try:
+        kill = check_kill_timing(video_path)
+    except Exception as e:
+        kill = {"ok": False, "reason": str(e)}
+
+    try:
+        cam = check_camera_velocity(video_path, valid_source)
+    except Exception as e:
+        cam = {"ok": None, "reason": str(e)}
+
+    try:
+        sil = check_silence_at_start(video_path)
+    except Exception as e:
+        sil = {"ok": False, "silence_at_start_s": -1, "reason": str(e)}
+
+    if not kill.get("ok"):
+        warnings.append(f"Kill timing: {kill.get('reason', 'brak kill text OCR')}")
+    if cam.get("ok") is False:
+        issues.append(f"Camera velocity: skok {cam.get('peak_velocity_px', cam.get('max_delta_px', '?'))}px")
+    if not sil.get("ok"):
+        issues.append(f"Silence at start: {sil.get('silence_at_start_s', '?')}s")
+
+    cam_ok = cam.get("ok")
+    all_ok = bool(kill.get("ok")) and (cam_ok is None or bool(cam_ok)) and bool(sil.get("ok"))
+    status = "PASS" if all_ok else ("ERROR" if issues else "WARN")
+
+    return {
+        "ok": all_ok,
+        "status": status,
+        "issues": issues,
+        "warnings": warnings,
+        "checks": {
+            "kill_timing": kill,
+            "camera_velocity": cam,
+            "silence_at_start": sil,
+        },
+    }
+
+
 def run_qa(video_path: str, source_path: str = None) -> None:
     if not os.path.isfile(video_path):
         print(f"[QA] BLAD: plik nie istnieje: {video_path}")

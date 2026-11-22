@@ -404,8 +404,8 @@ TASK:
 
 TITLE ARCHETYPE ROTATION — choose the best fit for this clip:
 - DISRESPECT / EGO: "They Grouped For Free 💀", "They Thought 1v1 Was Safe 😏", "Walking Up Like That Is Crazy 💀"
-- STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "Vanished Before They Could Even Flash 💨"
-- STORY / TURNAROUND: "Duel Accepted. Duel Won. 💀", "They Already Typed 'GG' 🔥", "They Flashed Into Their Own Doom 💀"
+- STATEMENT / SPEED: "Entire Team Disappeared in 2 Seconds ⚡", "No Escape From the Reset Chain 💨"
+- STORY / TURNAROUND: "Duel Accepted. Duel Won. 💀", "They Already Typed 'GG' 🔥", "One Misstep Cost the Fight 💀"
 - MECHANICAL FLEX: "Pixel-Perfect Reaction 🔥", "Calculated to the Exact Millisecond 🧠", "Dodge Everything, Hit Everything 👑"
 - CLUTCH / STAKES: "Surviving on 1 HP to Win 🩸", "The Cleanest 1% HP Clutch 💀"
 - HUNT / CHASE: "No Escape 💀 Hunting Down The Squad 🔥", "Chasing Down Every Single Reset ⚡"
@@ -435,6 +435,56 @@ Return ONLY valid JSON (no markdown, no comments):
   "why_this_title": "One sentence explaining which archetype this title uses AND why it fits the actual clip context"
 }}"""
 
+
+    # Priorytet #1: Lokalna Synapsa (Qwen2.5-7B-4bit + LoRA, 0 tokenów API)
+    try:
+        try:
+            from lol_agent.synapsa_engine import generate_with_synapsa, score_and_select_best_titles
+            from lol_agent.lol_metadata_generator import _ensure_shorts_tag, _format_final_title, build_rich_youtube_tags
+        except ImportError:
+            from synapsa_engine import generate_with_synapsa, score_and_select_best_titles
+            from lol_metadata_generator import _ensure_shorts_tag, _format_final_title, build_rich_youtube_tags
+
+        syn = generate_with_synapsa(
+            "lol_metadata",
+            {
+                "champion": champion_name,
+                "action_type": action_type,
+                "kill_count": kill_count or 1,
+                "clip_duration": clip_duration or 15.0,
+                "hud_spells_verified": False,
+            },
+            timeout=90,
+        )
+        if syn and isinstance(syn.get("title_candidates"), list) and syn["title_candidates"]:
+            best_a, _ = score_and_select_best_titles(
+                [str(c) for c in syn["title_candidates"]],
+                action_type=action_type,
+                recent_titles=_recent_titles,
+            )
+            if best_a:
+                clean_a = re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', best_a, flags=re.IGNORECASE).strip()
+                return {
+                    "title": _format_final_title(clean_a),
+                    "description": _ensure_shorts_tag(syn.get("description", ""), champion_name, action_type),
+                    "tags": list(dict.fromkeys(build_rich_youtube_tags(champion_name, action_type, rank) + [str(t).lstrip("#").lower() for t in (syn.get("tags") or [])]))[:20],
+                    "hook_text": (syn.get("hook_text") or f"{action_type.upper()}!")[:40],
+                    "why_this_title": "Selected by Synapsa local LoRA + channel directive scorer",
+                    "champion": champion_name,
+                    "rank": rank,
+                    "action_type": action_type,
+                    "yt_context": {"videos_analyzed": len(yt_videos), "avg_views": avg_views, "best_views": best_views},
+                    "source": "synapsa_local_lora",
+                }
+    except Exception:
+        pass
+
+    if not GEMINI_API_KEY:
+        try:
+            from lol_agent.lol_metadata_generator import generate_metadata
+        except ImportError:
+            from lol_metadata_generator import generate_metadata
+        return generate_metadata(action_type, champion_name, rank)
 
     client = genai.Client(api_key=GEMINI_API_KEY)
     models_to_try = GEMINI_FALLBACK_MODELS if "GEMINI_FALLBACK_MODELS" in globals() else [GEMINI_MODEL]

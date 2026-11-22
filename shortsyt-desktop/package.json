@@ -1,7 +1,7 @@
 {
-  "name": "shortsyt-desktop",
-  "version": "1.0.0",
-  "description": "Shortsyt Desktop Application - League of Legends Shorts Automation",
+  "name": "flikcut-desktop",
+  "version": "1.1.0",
+  "description": "Flikcut Desktop Studio — Autonomous 9:16 Gaming Highlight Engine",
   "author": "Michał Zalewski",
   "license": "MIT",
   "repository": {
@@ -21,8 +21,8 @@
     "preview": "vite preview"
   },
   "build": {
-    "appId": "com.shortsyt.desktop",
-    "productName": "Shortsyt Studio",
+    "appId": "com.flikcut.desktop",
+    "productName": "Flikcut Studio",
     "directories": {
       "output": "dist-installer"
     },
@@ -32,7 +32,8 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "public/icon-512.png"
     },
     "nsis": {
       "oneClick": false,

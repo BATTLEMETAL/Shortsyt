@@ -18,38 +18,36 @@ export default function TokenCountdown({
   onRefresh,
   compact = false,
 }: TokenCountdownProps) {
-  // Determine color and status
-  // Czerwony gdy < 7 dni lub nieważny / brak
   const isExpiredOrMissing = !hasToken || !isValid;
   const isUrgent = isExpiredOrMissing || (daysRemaining !== null && daysRemaining < 7);
   const isCritical = isExpiredOrMissing || (daysRemaining !== null && daysRemaining <= 2);
 
   let theme = {
     border: 'border-[#2ECC71]/40',
-    bg: 'bg-[#2ECC71]/10',
+    bg: 'bg-[#0E0F11]',
     text: 'text-[#55E88D]',
-    badgeBg: 'bg-[#2ECC71]/20',
+    badgeBg: 'bg-[#2ECC71]/15',
     iconColor: 'text-[#2ECC71]',
-    badgeBorder: 'border-[#2ECC71]/50',
+    badgeBorder: 'border-[#2ECC71]/45',
   };
 
   if (isCritical) {
     theme = {
-      border: 'border-[#E84040]/40',
-      bg: 'bg-[#E84040]/10',
-      text: 'text-[#FF6060]',
-      badgeBg: 'bg-[#E84040]/20',
-      iconColor: 'text-[#E84040]',
-      badgeBorder: 'border-[#E84040]/50',
+      border: 'border-[#FF5C5C]/45',
+      bg: 'bg-[#0E0F11]',
+      text: 'text-[#FF5C5C]',
+      badgeBg: 'bg-[#FF5C5C]/15',
+      iconColor: 'text-[#FF5C5C]',
+      badgeBorder: 'border-[#FF5C5C]/50',
     };
   } else if (isUrgent) {
     theme = {
-      border: 'border-[#F0893A]/40',
-      bg: 'bg-[#F0893A]/10',
-      text: 'text-[#F0893A]',
-      badgeBg: 'bg-[#F0893A]/20',
-      iconColor: 'text-[#F0893A]',
-      badgeBorder: 'border-[#F0893A]/50',
+      border: 'border-[#FFB84D]/45',
+      bg: 'bg-[#0E0F11]',
+      text: 'text-[#FFB84D]',
+      badgeBg: 'bg-[#FFB84D]/15',
+      iconColor: 'text-[#FFB84D]',
+      badgeBorder: 'border-[#FFB84D]/50',
     };
   }
 
@@ -65,7 +63,7 @@ export default function TokenCountdown({
   if (compact) {
     return (
       <div
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold ${theme.bg} ${theme.border} ${theme.text}`}
+        className={`fk-tag inline-flex items-center gap-1.5 px-2.5 py-1 border text-xs font-bold tabular-nums ${theme.bg} ${theme.border} ${theme.text}`}
       >
         {isUrgent ? <AlertTriangle className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
         <span>{getLabel()}</span>
@@ -74,26 +72,26 @@ export default function TokenCountdown({
   }
 
   return (
-    <div className={`p-4 rounded-xl border transition-all ${theme.bg} ${theme.border}`}>
+    <div className={`fk-cut-sm p-4 border transition-all ${theme.bg} ${theme.border}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className={`p-2.5 rounded-lg bg-[#0A0E1A]/60 border ${theme.border} ${theme.iconColor}`}>
+          <div className={`p-2.5 fk-cut-sm bg-[#17191C] border ${theme.border} ${theme.iconColor}`}>
             {isUrgent ? <ShieldAlert className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
           </div>
           <div>
-            <div className="text-xs uppercase tracking-wider text-[#8B8FA8] font-semibold">
+            <div className="text-[11px] uppercase tracking-wider text-[#A0A7B1] font-bold">
               YouTube OAuth Token
             </div>
-            <div className={`text-base font-bold flex items-center gap-2 mt-0.5 ${theme.text}`}>
+            <div className={`text-base font-extrabold flex items-center gap-2 mt-0.5 ${theme.text}`}>
               {getLabel()}
             </div>
-            {message && <div className="text-xs text-[#8B8FA8] mt-0.5">{message}</div>}
+            {message && <div className="text-xs text-[#A0A7B1] mt-0.5">{message}</div>}
           </div>
         </div>
 
         {daysRemaining !== null && hasToken && (
           <div
-            className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl border font-bold ${theme.badgeBg} ${theme.badgeBorder} ${theme.text}`}
+            className={`fk-cut-sm flex flex-col items-center justify-center w-14 h-14 border font-extrabold tabular-nums ${theme.badgeBg} ${theme.badgeBorder} ${theme.text}`}
           >
             <span className="text-lg leading-none">{daysRemaining}</span>
             <span className="text-[10px] tracking-wide uppercase opacity-80">dni</span>
@@ -102,19 +100,21 @@ export default function TokenCountdown({
       </div>
 
       {isUrgent && (
-        <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-          <span className="text-xs text-[#FF6060] font-medium flex items-center gap-1">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            {daysRemaining !== null && daysRemaining < 7
-              ? 'Token wygasa za mniej niż 7 dni! Odnów go w ustawieniach.'
-              : 'Wymagana ponowna autoryzacja YouTube.'}
+        <div className="mt-3 pt-3 border-t border-[#272A2F] flex items-center justify-between gap-2">
+          <span className="min-w-0 text-xs text-[#FF5C5C] font-semibold flex items-center gap-1.5 leading-snug">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              {daysRemaining !== null && daysRemaining < 7
+                ? 'Token wygasa za mniej niż 7 dni! Odnów go w ustawieniach.'
+                : 'Wymagana ponowna autoryzacja YouTube.'}
+            </span>
           </span>
           {onRefresh && (
             <button
               onClick={onRefresh}
-              className="text-xs bg-[#C89B3C] hover:bg-[#E5C269] text-[#0A0E1A] font-bold px-3 py-1 rounded-md transition-colors flex items-center gap-1"
+              className="fk-btn shrink-0 whitespace-nowrap text-xs bg-[#C8FF3A] hover:bg-[#AEE820] text-[#050505] font-extrabold px-3.5 py-1.5 transition-colors flex items-center gap-1"
             >
-              <KeyRound className="w-3 h-3" />
+              <KeyRound className="w-3 h-3 shrink-0" />
               Autoryzuj
             </button>
           )}

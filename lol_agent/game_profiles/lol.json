@@ -1,102 +1,46 @@
 {
-  "game_id": "lol",
-  "game_name": "League of Legends",
-  "hud_type": "top_center_kills",
-  "kill_banner_roi": [
-    0.04,
-    0.28,
-    0.18,
-    0.82
-  ],
-  "kill_feed_roi": [
-    0.04,
-    0.25,
-    0.65,
-    0.98
-  ],
-  "hp_bar_roi": [
-    0.86,
-    0.905,
-    0.42,
-    0.58
-  ],
-  "vignette_roi": [
-    0.01,
-    0.1,
-    0.2,
-    0.8
-  ],
-  "ocr_patterns": {
-    "player_death": [
-      "you have been slain",
-      "executed",
-      "you died"
-    ],
-    "enemy_kill": [
-      "enemy penta",
-      "enemy quadra",
-      "enemy triple",
-      "enemy double",
-      "an ally has been slain"
-    ],
-    "ally_multikill": [
-      "an ally has scored"
-    ],
-    "ally_kill": [
-      "an enemy has been slain"
-    ],
-    "pentakill": [
-      "pentakill"
-    ],
-    "quadrakill": [
-      "quadrakill",
-      "quadra kill"
-    ],
-    "triple": [
-      "triple kill"
-    ],
-    "double": [
-      "double kill"
-    ],
-    "outplay": [
-      "shut down",
-      "shutdown",
-      "legendary",
-      "godlike",
-      "unstoppable"
-    ],
-    "kill": [
-      "you have slain",
-      "+300",
-      "+150",
-      "+1000"
-    ]
+  "game": "lol",
+  "display_name": "League of Legends",
+  "hud_exclusion_zones": {
+    "top_y_ratio": 0.10,
+    "bottom_y_ratio": 0.78,
+    "minimap_y_ratio": 0.62,
+    "minimap_x_ratio": 0.76,
+    "left_panel_y_ratio": 0.50,
+    "left_panel_x_ratio": 0.23,
+    "side_margin_px": 8
   },
-  "event_tiers": {
-    "pentakill": 5,
-    "quadrakill": 4,
-    "triple": 3,
-    "double": 2,
-    "outplay": 1,
-    "kill": 1
+  "health_bar_colors": {
+    "yellow_self_bar": {
+      "r_min": 160,
+      "g_min": 130,
+      "b_max": 110,
+      "rb_diff_min": 80,
+      "gb_diff_min": 50
+    },
+    "green_ally_bar": {
+      "g_min": 150,
+      "r_max": 120,
+      "b_max": 120,
+      "gr_diff_min": 50
+    },
+    "red_enemy_bar": {
+      "r_min": 150,
+      "g_max": 95,
+      "b_max": 85,
+      "rg_diff_min": 60,
+      "rb_diff_min": 70
+    }
   },
-  "action_labels": {
-    "pentakill": "PENTAKILL ??",
-    "quadrakill": "QUADRA KILL ?",
-    "triple": "TRIPLE KILL ??",
-    "double": "DOUBLE KILL",
-    "outplay": "OUTPLAY ??",
-    "kill": "KILL ??"
-  },
-  "yt_base_tags": [
-    "league of legends",
-    "lol",
-    "lol shorts",
-    "lol gameplay",
-    "lol highlights",
-    "lol montage",
-    "gaming shorts"
-  ],
-  "yt_category_id": "20",
-  "channel_context": "League of Legends gaming highlights channel"
+  "kill_labels": [
+    "PENTAKILL",
+    "QUADRA KILL",
+    "TRIPLE KILL",
+    "DOUBLE KILL",
+    "FIRST BLOOD",
+    "ACE",
+    "SHUTDOWN",
+    "OUTPLAY",
+    "KILL"
+  ]
 }

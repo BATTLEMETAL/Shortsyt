@@ -50,7 +50,7 @@ class TestCalendarSlotLifecycle:
     """Tests for reserving, updating, and releasing publication slots."""
 
     def test_reserve_slot_standard_peak_hour(self, mock_calendar_db):
-        slot_id = "slot_2026-10-25_18-30"
+        slot_id = "slot_2026-10-25_21-30"
         entry = reserve_slot(
             slot_id=slot_id,
             title="Katarina Outplay #Shorts",
@@ -63,7 +63,7 @@ class TestCalendarSlotLifecycle:
         assert entry["slot_id"] == slot_id
         assert entry["status"] == "reserved"
         assert entry["is_peak"] is True
-        assert entry["time"] == "18:30"
+        assert entry["time"] == "21:30"
         assert entry["champion"] == "Katarina"
 
         # Verify persisted in DB

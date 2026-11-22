@@ -30,6 +30,19 @@ class MontageDirectorDecision:
     kill_lock_enabled: bool            # czy blokować kadr w oknie eliminacji
     rationale: str                     # wyjaśnienie decyzji reżysera AI
     tuning_profile: Dict[str, Any] = field(default_factory=dict)
+    synapsa_decision: Dict[str, Any] = field(default_factory=dict)
+
+
+# Style zapasowe bramki jakości (OPUS_QUALITY_GATES_DIRECTIVE.md, punkt 4). Wybiera je lol_quality_gate.py,
+# gdy dobry materiał nie przejdzie oceny po renderze. Co każdy styl NAPRAWDĘ zmienia w edytorze:
+FALLBACK_STYLES = {
+    "SPEED_RAMP_FLOW": "zero cięć; martwy czas między killami przyspieszony (lol_timeline.apply_fast_forward)",
+    "IN_MEDIA_RES":    "start klipu przesunięty tak, by pierwszy kill wypadł w IN_MEDIA_RES_FIRST_KILL_AT s; zero cięć",
+    "CINEMATIC_DUEL":  "spokojna kamera (mniejszy krok i LERP), zero cięć, zoom 1.15 (po limicie 1.12), zwolnienie na ostatni cios",
+    "BEAT_REALIGN":    "ten sam montaż z innym utworem o sprawdzonym dropie (utwór wybiera bramka)",
+}
+IN_MEDIA_RES_FIRST_KILL_AT = 2.5     # s; uderzenie poprzedza kill, a detektora pierwszego uderzenia nie ma
+DUEL_CAMERA = {"max_pan_px": 50.0, "lerp_alpha": 0.30}
 
 
 def direct_clip_montage(
@@ -38,6 +51,11 @@ def direct_clip_montage(
     duration: float,
     peaks: Optional[List[Tuple[float, str]]] = None,
     user_pacing_override: Optional[str] = None,
+    force_style: Optional[str] = None,
+    objective_secured: bool = False,
+    ally_banner_blocked: bool = False,
+    min_hp_pct: Optional[float] = None,
+    dead_intro_detected: bool = False,
 ) -> MontageDirectorDecision:
     """
     Główna funkcja decyzyjna reżysera AI.
@@ -135,7 +153,81 @@ def direct_clip_montage(
             ),
         )
 
+    # ── STYL ZAPASOWY (bramka jakości): nadpisuje archetyp, reszta parametrów zostaje z diagnozy klipu ──
+    style = (force_style or "").upper().strip()
+    if style in FALLBACK_STYLES:
+        base = decision.archetype
+        decision.archetype = style
+        decision.allow_jump_cut = False
+        if style == "IN_MEDIA_RES":
+            decision.buildup_sec = 0.2
+        elif style == "CINEMATIC_DUEL":
+            decision.zoom_aggression = 1.15
+            decision.slowmo_duration = 1.6
+            decision.camera_mode = "duel_centroid"
+        decision.rationale = f"Styl zapasowy {style} (po nieudanej ocenie montażu {base}): {FALLBACK_STYLES[style]}."
+    else:
+        # Zastosuj wyuczone korekty z Bramki 48h (jeśli dostępne dla tego typu akcji)
+        try:
+            try:
+                from lol_agent.learning_engine import get_learning_directive
+            except ImportError:
+                from learning_engine import get_learning_directive
+            d_48 = (get_learning_directive() or {}).get("post_48h_gate_summary") or {}
+            adj = (d_48.get("director_adjustments_by_action") or {}).get(act)
+            if isinstance(adj, dict):
+                if adj.get("buildup_sec_delta"):
+                    decision.buildup_sec = max(0.3, round(decision.buildup_sec + float(adj["buildup_sec_delta"]), 2))
+                if adj.get("outro_sec_delta"):
+                    decision.outro_sec = max(0.8, round(decision.outro_sec + float(adj["outro_sec_delta"]), 2))
+                decision.rationale += f" [Korekta Bramki 48h dla {act}: buildup={decision.buildup_sec}s, outro={decision.outro_sec}s]"
+        except Exception:
+            pass
+
+    # Zastosuj hybrydowy selektor strategii Synapsa + pełny Kontrakt Skutków Parametrów
+    synapsa_dec: Dict[str, Any] = {}
+    try:
+        try:
+            from lol_agent.synapsa_engine import decide_montage_with_synapsa
+            from lol_agent.learning_engine import get_learning_directive
+        except ImportError:
+            from synapsa_engine import decide_montage_with_synapsa
+            from learning_engine import get_learning_directive
+        synapsa_dec = decide_montage_with_synapsa(
+            telemetry={
+                "action_type": act,
+                "champion": champ,
+                "duration": duration,
+                "peaks": peaks,
+                "gaps": gaps,
+                "objective_secured": objective_secured,
+                "ally_banner_blocked": ally_banner_blocked,
+                "min_hp_pct": min_hp_pct,
+                "dead_intro_detected": dead_intro_detected,
+            },
+            directive=get_learning_directive(),
+        )
+        decision.synapsa_decision = synapsa_dec
+        if style not in FALLBACK_STYLES and isinstance(synapsa_dec, dict) and synapsa_dec.get("param_contracts_applied"):
+            decision.buildup_sec = float(synapsa_dec.get("buildup_sec", decision.buildup_sec))
+            decision.outro_sec = float(synapsa_dec.get("outro_sec", decision.outro_sec))
+            decision.zoom_aggression = float(synapsa_dec.get("zoom_aggression", decision.zoom_aggression))
+            decision.slowmo_duration = float(synapsa_dec.get("slowmo_duration", decision.slowmo_duration))
+            decision.camera_mode = str(synapsa_dec.get("camera_mode") or decision.camera_mode)
+    except Exception:
+        pass
+
     # Zbuduj słownik profilu tuningowego do bezpośredniego użycia w edytorze
+    _is_solo_act = act in ("solo_bolo", "solo", "1v1", "duel", "disrespect", "ego_check")
+    _peak_ts = sorted(
+        float(p[0] if isinstance(p, (tuple, list)) else p.get("timestamp", 0.0))
+        for p in peaks
+    ) if peaks else []
+    _fallback_anchor = (
+        "first_kill_engage"
+        if (len(_peak_ts) >= 2 and not _is_solo_act and 0.8 <= _peak_ts[0] <= 7.0 and _peak_ts[-1] > 8.5)
+        else "climax_final_kill"
+    )
     decision.tuning_profile = {
         "buildup_sec": decision.buildup_sec,
         "outro_sec": decision.outro_sec,
@@ -145,6 +237,9 @@ def direct_clip_montage(
         "kill_lock_enabled": decision.kill_lock_enabled,
         "allow_jump_cut": decision.allow_jump_cut,
         "archetype": decision.archetype,
+        "preferred_montage_style": (synapsa_dec or {}).get("style", "PRIMARY"),
+        "drop_anchor": (synapsa_dec or {}).get("drop_anchor") or _fallback_anchor,
+        "synapsa_decision": synapsa_dec,
     }
 
     return decision

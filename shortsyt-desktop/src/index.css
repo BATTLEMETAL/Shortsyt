@@ -2,29 +2,134 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --k0: #050505;
+  --k1: #0E0F11;
+  --k2: #17191C;
+  --k3: #272A2F;
+  --white: #FFFFFF;
+  --mut: #A0A7B1;
+  --ink: #050505;
+  --volt: #C8FF3A;
+  --volt-d: #AEE820;
+  --cut-s: 10px;
+  --cut-m: 16px;
+  --cut-l: 24px;
+  --ease: cubic-bezier(.2, .9, .2, 1);
+  --snap: cubic-bezier(.3, 1.5, .5, 1);
+}
+
 @layer base {
+  html,
   body {
-    background-color: #0A0E1A;
-    color: #E4D6B5;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    margin: 0;
+    background-color: var(--k0);
+    color: var(--white);
+    font-family: "Manrope", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Custom sharp dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--k0);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--k3);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--volt);
   }
 }
 
-/* Custom LoL Dark Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+@layer utilities {
+  /* Flikcut "The Cut" 45-degree top-right chamfered panels */
+  .fk-cut {
+    clip-path: polygon(0 0, calc(100% - var(--cut-m)) 0, 100% var(--cut-m), 100% 100%, 0 100%);
+  }
+  .fk-cut-sm {
+    clip-path: polygon(0 0, calc(100% - var(--cut-s)) 0, 100% var(--cut-s), 100% 100%, 0 100%);
+  }
+  .fk-cut-lg {
+    clip-path: polygon(0 0, calc(100% - var(--cut-l)) 0, 100% var(--cut-l), 100% 100%, 0 100%);
+  }
 
-::-webkit-scrollbar-track {
-  background: #070A12;
-}
+  /* Flikcut primary button: 45-degree bottom-right cut + blade-of-light sweep */
+  .fk-btn {
+    position: relative;
+    overflow: hidden;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+    transition: transform 0.24s var(--ease), background-color 0.24s var(--ease), color 0.24s var(--ease);
+  }
+  .fk-btn::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -35%;
+    width: 24%;
+    background: rgba(255, 255, 255, 0.55);
+    transform: skewX(-45deg);
+    pointer-events: none;
+  }
+  .fk-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+  }
+  .fk-btn:hover:not(:disabled)::after {
+    left: 135%;
+    transition: left 0.65s var(--ease);
+  }
+  .fk-btn:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
+  }
 
-::-webkit-scrollbar-thumb {
-  background: #1E2438;
-  border-radius: 3px;
-}
+  .fk-btn-ghost {
+    position: relative;
+    overflow: hidden;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+    transition: transform 0.24s var(--ease), background-color 0.24s var(--ease), border-color 0.24s var(--ease);
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #C89B3C;
+  /* Flikcut tag pill */
+  .fk-tag {
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+  }
+
+  /* Flikcut signature crop brackets around 9:16 frames */
+  .fk-crn {
+    position: relative;
+  }
+  .fk-crn::before {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    pointer-events: none;
+    z-index: 20;
+    --b: var(--volt);
+    --l: 16px;
+    --w: 3px;
+    background:
+      linear-gradient(var(--b), var(--b)) left top / var(--l) var(--w),
+      linear-gradient(var(--b), var(--b)) left top / var(--w) var(--l),
+      linear-gradient(var(--b), var(--b)) right top / var(--l) var(--w),
+      linear-gradient(var(--b), var(--b)) right top / var(--w) var(--l),
+      linear-gradient(var(--b), var(--b)) left bottom / var(--l) var(--w),
+      linear-gradient(var(--b), var(--b)) left bottom / var(--w) var(--l),
+      linear-gradient(var(--b), var(--b)) right bottom / var(--l) var(--w),
+      linear-gradient(var(--b), var(--b)) right bottom / var(--w) var(--l);
+    background-repeat: no-repeat;
+  }
+
+  .fk-slash {
+    display: inline-block;
+    width: 8px;
+    height: 16px;
+    background: var(--volt);
+    transform: skewX(-45deg);
+    flex-shrink: 0;
+  }
 }

@@ -2,6 +2,7 @@
 Shortsyt API — async wrapper dla render_short()
 Uruchamia pipeline w osobnym wątku, żeby nie blokować FastAPI.
 """
+import os
 import sys
 import threading
 import time
@@ -211,7 +212,6 @@ def _run_pipeline(
                     found_path = str(cand.resolve())
                     break
                 try:
-                    import os
                     for entry in os.scandir(search_dir):
                         if entry.is_dir():
                             sub_cand = Path(entry.path) / target_name
@@ -249,32 +249,40 @@ def _run_pipeline(
         # Autocentrowanie okna akcji (Action Hook Guard):
         # Jeśli przekazano domyślne okno (clip_start == 0.0 i pełny lub domyślny czas wideo) a klip trwa > 10s:
         # Wykrywamy rzeczywiste ognisko walki, eliminując martwy czas przed walką i po zakończeniu akcji.
+        objective_secured = False
+        objective_label = ""
+        ally_banner_blocked = False
         is_default_window = (clip_start == 0.0 and (clip_end <= 15.0 or clip_end >= 20.0 or clip_end >= src_total_dur - 1.5))
-        if src_total_dur > 10.0 and is_default_window:
-            _update("Weryfikacja okna akcji", 7, f"Klip trwa {src_total_dur:.1f}s — dopasowuję optymalne okno akcji...")
+        if src_total_dur > 5.0:
+            if is_default_window and src_total_dur > 10.0:
+                _update("Weryfikacja okna akcji", 7, f"Klip trwa {src_total_dur:.1f}s — dopasowuję optymalne okno akcji...")
             try:
                 try:
                     from lol_agent.lol_frag_detector import analyze_clip_frags, compute_optimal_clip_window
                 except ImportError:
                     from lol_frag_detector import analyze_clip_frags, compute_optimal_clip_window
                 f_res = analyze_clip_frags(source_path, sample_fps=1.0)
-                auto_s, auto_e, auto_p, auto_segs = compute_optimal_clip_window(f_res, src_total_dur, action_type=action_type)
-                if auto_s > 1.5 or (auto_e < clip_end - 1.5) or (auto_e - auto_s) > (clip_end - clip_start):
-                    _update("Autocentrowanie na akcję", 8, f"Wykryto ognisko walki: {auto_s:.1f}s - {auto_e:.1f}s (dur={auto_e-auto_s:.1f}s, peak={auto_p:.1f}s)")
-                    clip_start = auto_s
-                    clip_end = auto_e
-                    peak_moment = auto_p
-                    if auto_segs and action_type.lower() not in ("solo_bolo", "solo", "1v1"):
-                        combat_segments = auto_segs
-                    if f_res.detected_frag_type:
-                        action_type = f_res.detected_frag_type
-                        if (not hook_text or hook_text.upper() in ("PENTAKILL", "OUTPLAY")) and action_type != "pentakill":
-                            hook_text = getattr(f_res, "suggested_title_hook", "") or action_type.upper().replace("_", " ")
-                    with _lock:
-                        _state.clip_start = clip_start
-                        _state.clip_end = clip_end
-                        _state.combat_segments = combat_segments
-                        _state.action_type = action_type
+                objective_secured = bool(getattr(f_res, "objective_secured", False))
+                objective_label = str(getattr(f_res, "objective_label", "") or "")
+                ally_banner_blocked = bool(getattr(f_res, "ally_banner_blocked", False))
+                if is_default_window and src_total_dur > 10.0:
+                    auto_s, auto_e, auto_p, auto_segs = compute_optimal_clip_window(f_res, src_total_dur, action_type=action_type)
+                    if auto_s > 1.5 or (auto_e < clip_end - 1.5) or (auto_e - auto_s) > (clip_end - clip_start):
+                        _update("Autocentrowanie na akcję", 8, f"Wykryto ognisko walki: {auto_s:.1f}s - {auto_e:.1f}s (dur={auto_e-auto_s:.1f}s, peak={auto_p:.1f}s)")
+                        clip_start = auto_s
+                        clip_end = auto_e
+                        peak_moment = auto_p
+                        if auto_segs and action_type.lower() not in ("solo_bolo", "solo", "1v1"):
+                            combat_segments = auto_segs
+                        if f_res.detected_frag_type:
+                            action_type = f_res.detected_frag_type
+                            if (not hook_text or hook_text.upper() in ("PENTAKILL", "OUTPLAY")) and action_type != "pentakill":
+                                hook_text = getattr(f_res, "suggested_title_hook", "") or action_type.upper().replace("_", " ")
+                        with _lock:
+                            _state.clip_start = clip_start
+                            _state.clip_end = clip_end
+                            _state.combat_segments = combat_segments
+                            _state.action_type = action_type
             except Exception as auto_ex:
                 print(f"[pipeline_runner] Auto-centering warning: {auto_ex}")
 
@@ -321,6 +329,95 @@ def _run_pipeline(
                 _update("Kill detection pominięta", 12, f"Błąd detekcji: {e2}")
                 peaks = []
 
+        # Synchronizacja końca okna i liczby banerów z telemetrią Riot Outplayed (brak ucięć końcówki i zawyżeń Double->Triple)
+        _op_est_last_kill_s = None
+        try:
+            try:
+                from lol_agent.outplayed_db import get_outplayed_clip_info as _get_op_info
+            except ImportError:
+                from outplayed_db import get_outplayed_clip_info as _get_op_info  # type: ignore
+            _op_info = _get_op_info(source_path)
+            if (
+                _op_info
+                and str(_op_info.get("source") or "").startswith("outplayed_")
+                and int(_op_info.get("event_tier_rank") or 0) >= 2
+            ):
+                _exp_rank = int(_op_info["event_tier_rank"])
+                _est_last = _op_info.get("est_last_kill_s")
+                _est_first = _op_info.get("est_first_kill_s")
+                _op_banners = {1: "KILL", 2: "DOUBLE KILL", 3: "TRIPLE KILL", 4: "QUADRAKILL", 5: "PENTAKILL"}
+                if isinstance(_est_last, (int, float)):
+                    _op_est_last_kill_s = float(_est_last)
+                    if clip_start <= _op_est_last_kill_s <= min(src_total_dur, clip_end + 6.0):
+                        _needed_end = round(min(src_total_dur, _op_est_last_kill_s + 1.9), 2)
+                        if _needed_end > clip_end and not combat_segments:
+                            clip_end = _needed_end
+                            with _lock:
+                                _state.clip_end = clip_end
+                            _update("Riot Outplayed Anchor", 12, f"Rozszerzono koniec okna na finałowy kill: {clip_end:.2f}s")
+
+                _cur_span = max(0.5, float(clip_end - clip_start))
+                _peaks_are_abs = any(float(p[0]) > (_cur_span + 0.5) for p in (peaks or []))
+                _rel_peaks = sorted(
+                    (
+                        (
+                            round(max(0.2, float(p[0]) - clip_start if _peaks_are_abs else float(p[0])), 2),
+                            str(p[1]),
+                        )
+                        for p in (peaks or [])
+                    ),
+                    key=lambda x: x[0],
+                )
+                _rel_peaks = [p for p in _rel_peaks if 0.0 <= p[0] <= _cur_span]
+                _max_allowed = max(_exp_rank, int(_op_info.get("total_kills_in_clip") or _exp_rank))
+                if len(_rel_peaks) > _max_allowed:
+                    _trimmed = _rel_peaks[-_exp_rank:]
+                    _rel_peaks = _trimmed[:-1] + [(_trimmed[-1][0], _op_banners.get(_exp_rank, _trimmed[-1][1]))]
+                elif _op_est_last_kill_s is not None and clip_start < _op_est_last_kill_s <= clip_end:
+                    _climax_rel = round(max(0.5, min(_cur_span - 0.5, _op_est_last_kill_s - clip_start)), 2)
+                    _want_lbl = _op_banners.get(_exp_rank, "TRIPLE KILL")
+                    if len(_rel_peaks) < min(_exp_rank, 2) or all(lbl != _want_lbl for _, lbl in _rel_peaks):
+                        if _rel_peaks and abs(_rel_peaks[-1][0] - _climax_rel) <= 1.2:
+                            _rel_peaks[-1] = (_rel_peaks[-1][0], _want_lbl)
+                        elif not any(abs(t - _climax_rel) <= 0.8 for t, _ in _rel_peaks):
+                            _rel_peaks.append((_climax_rel, _want_lbl))
+                            _rel_peaks.sort(key=lambda x: x[0])
+                        peak_moment = round(max(0.5, _climax_rel - 0.25), 2)
+                if _rel_peaks:
+                    peaks = _rel_peaks
+        except Exception as _op_err:
+            print(f"[pipeline_runner] Outplayed sync warning: {_op_err}")
+
+
+        # Telemetria minimapy i screen_inspector PRZED Reżyserem Synapsy (dostarcza min_hp_pct i kill_span_s)
+        map_zone_info = {"zone": "unknown", "zone_label": "", "confidence": 0.0}
+        try:
+            try:
+                from lol_agent.lol_minimap_analyzer import detect_map_zone
+            except ImportError:
+                from lol_minimap_analyzer import detect_map_zone
+            abs_peak_pre = (clip_start + peak_moment) if peak_moment < (clip_end - clip_start + 5) else peak_moment
+            abs_peak_pre = min(abs_peak_pre, clip_end - 0.5)
+            map_zone_info = detect_map_zone(source_path, abs_peak_pre, clip_start)
+            _update("Minimap zone detected", 12, f"Strefa akcji: {map_zone_info.get('zone')} ({map_zone_info.get('confidence', 0):.0%})")
+        except Exception as me:
+            _update("Minimap skip", 12, f"Minimap detection pominięta: {me}")
+
+        screen_telemetry: Dict[str, Any] = {}
+        try:
+            try:
+                from lol_agent.lol_screen_inspector import inspect_clip_screens
+            except ImportError:
+                from lol_screen_inspector import inspect_clip_screens
+            c_dur_pre = round(float(clip_end - clip_start), 1) if clip_end and clip_start is not None else 15.0
+            screen_telemetry = inspect_clip_screens(
+                str(source_path),
+                peaks=peaks,
+                trim_start=float(clip_start or 0.0),
+                clip_duration=c_dur_pre,
+            )
+        except Exception as si_err:
+            print(f"[pipeline_runner] Screen inspector pre-director warning: {si_err}")
 
         # Reżyser AI: Clip-Adaptive Montage Director
         director_dec = None
@@ -329,14 +426,87 @@ def _run_pipeline(
                 from lol_agent.lol_montage_director import direct_clip_montage
             except ImportError:
                 from lol_montage_director import direct_clip_montage
+            c_span_pre = max(0.1, float(clip_end - clip_start))
+            first_k_pre = 0.0
+            if peaks:
+                raw_k0 = float(peaks[0][0]) if isinstance(peaks[0], (tuple, list)) else float(peaks[0].get("timestamp", 0.0))
+                first_k_pre = (raw_k0 - clip_start) if raw_k0 > (c_span_pre + 0.5) else raw_k0
             director_dec = direct_clip_montage(
                 action_type=action_type,
                 champion_name=champion_name,
                 duration=clip_end - clip_start,
                 peaks=peaks,
+                objective_secured=objective_secured,
+                ally_banner_blocked=ally_banner_blocked,
+                min_hp_pct=screen_telemetry.get("min_hp_pct"),
+                dead_intro_detected=bool(peaks and first_k_pre > 4.5 and not objective_secured),
             )
             _update(f"Reżyser AI: {director_dec.archetype}", 13, director_dec.rationale)
             tuning_prof.update(director_dec.tuning_profile)
+
+            # Dry-Run Symulator i Rollback Guard dla operacji okienkowych Synapsy
+            syn_op = str(((director_dec.synapsa_decision or {}).get("operation")) or "")
+            if syn_op in ("DROP_ISOLATED_FIRST_KILL", "DROP_ISOLATED_LAST_KILL") and peaks and len(peaks) >= 2:
+                try:
+                    try:
+                        from lol_agent.lol_quality_gate import simulate_and_guard_director_decision
+                    except ImportError:
+                        from lol_quality_gate import simulate_and_guard_director_decision
+                    span = max(0.1, float(clip_end - clip_start))
+                    raw_pts = [
+                        (float(p[0]) if isinstance(p, (tuple, list)) else float(p.get("timestamp", 0.0)))
+                        for p in peaks
+                    ]
+                    is_src_ts = any(t > span + 0.5 for t in raw_pts)
+                    abs_kills = sorted(t if is_src_ts else (clip_start + t) for t in raw_pts)
+                    proposed_win = (clip_start, clip_end, peak_moment)
+                    if syn_op == "DROP_ISOLATED_FIRST_KILL":
+                        prop_s = max(clip_start, round(abs_kills[1] - float(director_dec.buildup_sec), 2))
+                        if prop_s > clip_start and (clip_end - prop_s) >= 8.0:
+                            proposed_win = (prop_s, clip_end, peak_moment)
+                    elif syn_op == "DROP_ISOLATED_LAST_KILL":
+                        prop_e = min(clip_end, round(abs_kills[-2] + float(director_dec.outro_sec), 2))
+                        if prop_e < clip_end and (prop_e - clip_start) >= 8.0:
+                            proposed_win = (clip_start, prop_e, peak_moment)
+
+                    if proposed_win != (clip_start, clip_end, peak_moment):
+                        guard = simulate_and_guard_director_decision(
+                            base_window=(clip_start, clip_end, peak_moment),
+                            proposed_window=proposed_win,
+                            all_kills_abs=abs_kills,
+                            proposed_style=director_dec.tuning_profile.get("preferred_montage_style", "PRIMARY"),
+                            objective_secured=objective_secured,
+                        )
+                        director_dec.tuning_profile["director_rollback_guard"] = guard
+                        tuning_prof["director_rollback_guard"] = guard
+                        if guard.get("approved"):
+                            new_s, new_e, new_p = guard["selected_window"]
+                            if new_s > clip_start:
+                                s_delta = new_s - clip_start
+                                clip_start = new_s
+                                if not is_src_ts:
+                                    peaks = [
+                                        (max(0.1, round((p[0] if isinstance(p, (tuple, list)) else float(p["timestamp"])) - s_delta, 2)),
+                                         p[1] if isinstance(p, (tuple, list)) else p.get("label", "KILL"))
+                                        for p in peaks
+                                        if (p[0] if isinstance(p, (tuple, list)) else float(p["timestamp"])) >= (s_delta - 0.3)
+                                    ]
+                                else:
+                                    peaks = [p for p in peaks if (p[0] if isinstance(p, (tuple, list)) else float(p["timestamp"])) >= (clip_start - 0.3)]
+                                if peak_moment <= span + 0.5 and peak_moment > s_delta:
+                                    peak_moment = max(0.5, round(peak_moment - s_delta, 2))
+                            elif new_e < clip_end:
+                                clip_end = new_e
+                                new_span = max(0.1, clip_end - clip_start)
+                                if not is_src_ts:
+                                    peaks = [p for p in peaks if (p[0] if isinstance(p, (tuple, list)) else float(p["timestamp"])) <= (new_span + 0.3)]
+                                else:
+                                    peaks = [p for p in peaks if (p[0] if isinstance(p, (tuple, list)) else float(p["timestamp"])) <= (clip_end + 0.3)]
+                            _update("Rollback Guard OK", 14, f"Zatwierdzono korektę okna {syn_op}: {clip_start:.1f}s-{clip_end:.1f}s")
+                        else:
+                            _update("Rollback Guard Block", 14, f"Cofnięto korektę {syn_op}: {guard.get('reason', '')}")
+                except Exception as rg_err:
+                    print(f"[pipeline_runner] Rollback Guard warning: {rg_err}")
         except Exception as de:
             print(f"[pipeline_runner] Montage director warning: {de}")
 
@@ -459,13 +629,16 @@ def _run_pipeline(
             else:
                 first_kill_t_abs = None
 
-            # 1) Outro za długie — skróć clip_end do last_kill + 1.8s (tylko dla pojedynczego klipu)
+            # 1) Outro za długie — skróć clip_end do last_kill + 2.0s (respektuj est_last_kill_s z Outplayed)
             if not combat_segments:
                 for detail in qa_details:
                     detail_low = detail.lower()
                     if any(kw in detail_low for kw in ("akcja po ostatnim", "pacing", "długość")):
                         if last_kill_t_abs is not None:
-                            new_end = round(last_kill_t_abs + 1.8, 1)
+                            guard_kill_t = last_kill_t_abs
+                            if _op_est_last_kill_s is not None and guard_kill_t < _op_est_last_kill_s <= min(src_total_dur, guard_kill_t + 6.0):
+                                guard_kill_t = _op_est_last_kill_s
+                            new_end = round(min(src_total_dur, guard_kill_t + 2.0), 1)
                             if new_end < clip_end:
                                 _update("QA Fix: Outro", 19, f"Skracam outro: clip_end {clip_end}→{new_end}s")
                                 clip_end = new_end
@@ -537,21 +710,84 @@ def _run_pipeline(
             _state.qa_score = qa_score
             _state.qa_details = qa_details
 
-        # Krok 1d — Minimap zone detection (kontekst lokalizacji akcji dla tytułu)
-        map_zone_info = {"zone": "unknown", "zone_label": "", "confidence": 0.0}
+        # Krok 1d — Metadane Synapsy (hook_text + title + comment) PRZED render_short, żeby hook Synapsy trafił na wideo!
+        meta = {}
         try:
+            k_count = len(peaks) if peaks else (1 if action_type.lower() in ("solo_bolo", "solo", "1v1") else 0)
+            c_dur = round(float(clip_end - clip_start), 1) if clip_end and clip_start is not None else 15.0
+            z_label = map_zone_info.get("zone_label", "") if map_zone_info.get("confidence", 0) >= 0.60 else ""
+            if action_type.lower() in ("solo_bolo", "solo", "1v1"):
+                c_style = f"1v1 Lane Duel / Pure Mechanical Skill Check{' in ' + z_label if z_label else ''}"
+                c_narrative = "Aggressive 1v1 mechanical outplay and ego check."
+            elif k_count >= 5 or "penta" in action_type.lower():
+                c_style = f"Full Teamfight Ace (5 Kills / Pentakill){' at ' + z_label if z_label else ''}"
+                c_narrative = "Relentless pentakill chase & teamfight wipe. Zero escape for the enemy."
+            elif "oneshot" in action_type.lower():
+                c_style = "Instant Burst Combo / Assassination"
+                c_narrative = "Instant proactive assassination and burst execution."
+            elif "clutch" in action_type.lower():
+                c_style = "1% HP Survival / Miracle Turnaround"
+                c_narrative = "Extreme low HP survival and comeback clutch."
+            elif "triple" in action_type.lower() or k_count == 3:
+                c_style = f"Relentless Triple Kill Chase & Rampage{' in ' + z_label if z_label else ''}"
+                c_narrative = "Offensive pursuit: Chasing down and hunting enemies across the map. NOT defending a tower dive."
+            elif "double" in action_type.lower() or k_count == 2:
+                c_style = f"Fast Double Kill Pursuit{' in ' + z_label if z_label else ''}"
+                c_narrative = "Aggressive engage and double kill execution."
+            else:
+                c_style = f"Aggressive Outplay / Hunting Enemies{' in ' + z_label if z_label else ''}"
+                c_narrative = "Offensive hunting and mechanical execution of fleeing opponents."
+
+            extra_ctx_pre = {
+                "map_zone": map_zone_info,
+                "kill_count": k_count,
+                "clip_duration": c_dur,
+                "combat_style": c_style,
+                "combat_narrative": c_narrative,
+                "is_solo": action_type.lower() in ("solo_bolo", "solo", "1v1"),
+                "peaks": peaks or [],
+                "montage_style": tuning_prof.get("preferred_montage_style", "PRIMARY"),
+                "kill_span_s": screen_telemetry.get("kill_span_s", 0.0),
+                "min_hp_pct": screen_telemetry.get("min_hp_pct"),
+                "low_hp_survival": bool(screen_telemetry.get("low_hp_survival")),
+                "clean_stomp": bool(screen_telemetry.get("clean_stomp")),
+                "enemies_in_fight": screen_telemetry.get("enemies_in_fight", k_count or 1),
+                "combo_tempo": screen_telemetry.get("combo_tempo", ""),
+                "hud_spells_used": screen_telemetry.get("hud_spells_used") or {},
+                "screen_telemetry": screen_telemetry,
+                "objective_secured": objective_secured,
+                "objective_label": objective_label,
+            }
             try:
-                from lol_agent.lol_minimap_analyzer import detect_map_zone
+                from lol_agent.lol_metadata_generator import generate_metadata_universal, sanitize_hook_text
             except ImportError:
-                from lol_minimap_analyzer import detect_map_zone
-            # peak_moment może być relative (do clip_start) lub absolute — normalizujemy
-            abs_peak = (clip_start + peak_moment) if peak_moment < (clip_end - clip_start + 5) else peak_moment
-            abs_peak = min(abs_peak, clip_end - 0.5)
-            map_zone_info = detect_map_zone(source_path, abs_peak, clip_start)
-            zone_log = f"{map_zone_info.get('zone')} ({map_zone_info.get('confidence', 0):.0%})"
-            _update("Minimap zone detected", 19, f"Strefa akcji: {zone_log}")
-        except Exception as me:
-            _update("Minimap skip", 19, f"Minimap detection pominięta: {me}")
+                from lol_metadata_generator import generate_metadata_universal, sanitize_hook_text
+            meta = generate_metadata_universal(
+                game_type=game_type,
+                action_type=action_type,
+                subject_name=champion_name,
+                rank=rank,
+                extra_context=extra_ctx_pre,
+            )
+            hook_up = str(hook_text or "").upper().strip()
+            generic_pre = (
+                not hook_up
+                or hook_up in ("PENTAKILL", "OUTPLAY", "INSANE OUTPLAY!", "INSANE OUTPLAY")
+                or hook_up.startswith(("TRIPLE KILL - 3 DOWN", "QUADRAKILL - ONE MORE", "TRIPLE KILL - CLEAN RESET"))
+            )
+            if generic_pre and meta.get("hook_text"):
+                hook_text = sanitize_hook_text(
+                    meta["hook_text"],
+                    action_type=action_type,
+                    champion=champion_name,
+                    kill_span_s=float(screen_telemetry.get("kill_span_s") or 0.0),
+                    low_hp_survival=bool(screen_telemetry.get("low_hp_survival")),
+                    min_hp_pct=screen_telemetry.get("min_hp_pct"),
+                    objective_secured=objective_secured,
+                    map_zone=z_label,
+                )
+        except Exception as meta_pre_err:
+            print(f"[pipeline_runner] Pre-render metadata warning: {meta_pre_err}")
 
         # Krok 2 — render
         check_cancellation()
@@ -572,6 +808,10 @@ def _run_pipeline(
             peaks=peaks,
             output_filename=output_filename,
             combat_segments=combat_segments,
+            montage_style=tuning_prof.get("preferred_montage_style"),
+            director_decision=director_dec,
+            objective_secured=objective_secured,
+            ally_banner_blocked=ally_banner_blocked,
         )
 
         check_cancellation()
@@ -602,6 +842,79 @@ def _run_pipeline(
                 qa_status = post_qa.qa_status
                 qa_score = post_qa.qa_score
                 qa_details = post_qa.diagnostic_details
+                try:
+                    try:
+                        from lol_agent.qa_after_render import collect_qa_metrics
+                        from lol_agent.lol_quality_gate import read_recipe, rescore as gate_rescore
+                    except ImportError:
+                        from qa_after_render import collect_qa_metrics
+                        from lol_quality_gate import read_recipe, rescore as gate_rescore
+                    qa_rep = collect_qa_metrics(str(output), source_path=str(source_path))
+                    recipe = read_recipe(str(output))
+                    if isinstance(qa_details, dict):
+                        qa_details = dict(qa_details)
+                    else:
+                        qa_details = {"summary": str(qa_details)} if qa_details else {}
+                    qa_details["qa_after_render"] = qa_rep
+                    if recipe and qa_score is not None:
+                        scorer_raw = None
+                        try:
+                            try:
+                                from lol_agent.lol_quality_scorer import score_short
+                            except ImportError:
+                                from lol_quality_scorer import score_short
+                            rel_peaks = rendered_peaks or []
+                            clip_span = max(1.0, float(clip_end - clip_start)) if (clip_end and clip_start is not None) else 15.0
+                            rel_peak_m = max(0.5, float(peak_moment) - float(clip_start or 0.0)) if peak_moment is not None else clip_span * 0.5
+                            scorer_analysis = {
+                                "peaks": rel_peaks,
+                                "peak_start": 0.0,
+                                "peak_end": clip_span,
+                                "peak_moment": rel_peak_m,
+                                "clip_duration": clip_span,
+                            }
+                            music_meta = (recipe.get("music") or {})
+                            scorer_raw = score_short(
+                                rendered_path=str(output),
+                                source_path=str(source_path),
+                                analysis=scorer_analysis,
+                                beat_drop_time=float(music_meta.get("drop_time") or 0.0),
+                                music_file=music_meta.get("track") or "",
+                            )
+                        except Exception:
+                            scorer_raw = None
+
+                        if not scorer_raw:
+                            scorer_raw = {
+                                "score": float(qa_score),
+                                "pass": float(qa_score) >= 70.0,
+                                "breakdown": {
+                                    "source_resolution": {"score": 100.0, "value": "", "weight": 0.15},
+                                    "kill_coverage": {"score": float(post_qa.visibility_score), "value": "", "weight": 0.35},
+                                    "beat_sync": {"score": float(qa_score), "value": "", "weight": 0.25},
+                                    "first_frame": {"score": float(post_qa.hook_score), "value": "", "weight": 0.15},
+                                    "duration": {"score": float(post_qa.pacing_score), "value": "", "weight": 0.10},
+                                },
+                                "issues": list(post_qa.issues) if getattr(post_qa, "issues", None) else [],
+                            }
+                        rescored = gate_rescore(scorer_raw, recipe, qa_report=qa_rep)
+                        qa_details["recipe_gate"] = {
+                            "score": rescored.get("score"),
+                            "pass": rescored.get("pass"),
+                            "codes": rescored.get("codes"),
+                            "measured": rescored.get("measured"),
+                            "kill_coverage_pct": scorer_raw.get("kill_coverage_pct"),
+                        }
+                        if rescored.get("score") is not None:
+                            qa_score = round(0.5 * float(qa_score) + 0.5 * float(rescored["score"]), 1)
+                        elif qa_rep.get("issues"):
+                            penalty = float((rescored.get("qa_report") or {}).get("penalty") or 0.0)
+                            if penalty > 0:
+                                qa_score = max(0.0, round(float(qa_score) - penalty, 1))
+                        if qa_status == "PASS" and qa_rep.get("status") == "ERROR":
+                            qa_status = "WARN"
+                except Exception as qa_extra_err:
+                    print(f"[pipeline_runner] QA metrics warning: {qa_extra_err}")
                 _update("Post-Flight QA", 88, f"Realna ocena montażu: {qa_status} ({qa_score}/100)")
         except Exception as post_qa_err:
             print(f"[pipeline_runner] Post-flight QA warning: {post_qa_err}")
@@ -633,79 +946,108 @@ def _run_pipeline(
                 action_label=action_type.upper().replace("_", " "),
                 champion_name=champion_name,
                 output_path=thumb_out,
+                source_clip_path=str(source_path) if source_path and os.path.isfile(str(source_path)) else None,
+                source_peak_moment=float(peak_moment) if peak_moment is not None else None,
             )
         except Exception as te:
             _update("Błąd miniaturki", 92, f"Miniaturka warning: {te}")
 
-        # Metadane
-        meta = {}
-        try:
-            # Określ styl walki z danych klipu
-            k_count = len(peaks) if peaks else (1 if action_type.lower() in ("solo_bolo", "solo", "1v1") else 0)
-            c_dur = round(float(clip_end - clip_start), 1) if clip_end and clip_start else 15.0
-            z_label = map_zone_info.get("zone_label", "") if map_zone_info.get("confidence", 0) >= 0.60 else ""
-            
-            if action_type.lower() in ("solo_bolo", "solo", "1v1"):
-                c_style = f"1v1 Lane Duel / Pure Mechanical Skill Check{' in ' + z_label if z_label else ''}"
-                c_narrative = "Aggressive 1v1 mechanical outplay and ego check."
-            elif k_count >= 5 or "penta" in action_type.lower():
-                c_style = f"Full Teamfight Ace (5 Kills / Pentakill){' at ' + z_label if z_label else ''}"
-                c_narrative = "Relentless pentakill chase & teamfight wipe. Zero escape for the enemy."
-            elif "oneshot" in action_type.lower():
-                c_style = "Instant Burst Combo / Assassination"
-                c_narrative = "Instant proactive assassination and burst execution."
-            elif "clutch" in action_type.lower():
-                c_style = "1% HP Survival / Miracle Turnaround"
-                c_narrative = "Extreme low HP survival and comeback clutch."
-            elif "triple" in action_type.lower() or k_count == 3:
-                c_style = f"Relentless Triple Kill Chase & Rampage{' in ' + z_label if z_label else ''}"
-                c_narrative = "Offensive pursuit: Chasing down and hunting enemies across the map. NOT defending a tower dive."
-            elif "double" in action_type.lower() or k_count == 2:
-                c_style = f"Fast Double Kill Pursuit{' in ' + z_label if z_label else ''}"
-                c_narrative = "Aggressive engage and double kill execution."
-            else:
-                c_style = f"Aggressive Outplay / Hunting Enemies{' in ' + z_label if z_label else ''}"
-                c_narrative = "Offensive hunting and mechanical execution of fleeing opponents."
-
-            extra_ctx = {
-                "map_zone": map_zone_info,
-                "kill_count": k_count,
-                "clip_duration": c_dur,
-                "combat_style": c_style,
-                "combat_narrative": c_narrative,
-                "is_solo": action_type.lower() in ("solo_bolo", "solo", "1v1"),
-            }
-
+        # Metadane (użyj wygenerowanych przed renderem lub uzupełnij fallbackiem jeśli brak)
+        clip_duration = float(clip_end) - float(clip_start) if clip_end and clip_start is not None else 15.0
+        if not meta or not meta.get("title"):
             try:
-                from lol_agent.lol_metadata_generator import generate_metadata_universal
-            except ImportError:
-                from lol_metadata_generator import generate_metadata_universal
-            meta = generate_metadata_universal(
-                game_type=game_type,
-                action_type=action_type,
-                subject_name=champion_name,
-                rank=rank,
-                extra_context=extra_ctx,
-            )
-        except Exception:
-            try:
+                k_count = len(peaks) if peaks else (1 if action_type.lower() in ("solo_bolo", "solo", "1v1") else 0)
+                c_dur = round(clip_duration, 1)
+                z_label = map_zone_info.get("zone_label", "") if map_zone_info.get("confidence", 0) >= 0.60 else ""
+                if not screen_telemetry:
+                    try:
+                        try:
+                            from lol_agent.lol_screen_inspector import inspect_clip_screens
+                        except ImportError:
+                            from lol_screen_inspector import inspect_clip_screens
+                        src_inspect_target = str(source_path) if os.path.isfile(str(source_path)) else str(output)
+                        screen_telemetry = inspect_clip_screens(
+                            src_inspect_target,
+                            peaks=peaks,
+                            trim_start=float(clip_start or 0.0),
+                            clip_duration=c_dur,
+                        )
+                    except Exception as si_err:
+                        print(f"[pipeline_runner] Screen inspector warning: {si_err}")
+
+                if not recipe and os.path.isfile(str(output)):
+                    try:
+                        try:
+                            from lol_agent.lol_quality_gate import read_recipe
+                        except ImportError:
+                            from lol_quality_gate import read_recipe
+                        recipe = read_recipe(str(output))
+                    except Exception:
+                        pass
+
+                recipe_dict = recipe if isinstance(recipe, dict) else {}
+                montage_style = (recipe_dict.get("montage_style") or "").strip()
+                mei_dict = {}
+                if isinstance(qa_details, dict):
+                    rg = qa_details.get("recipe_gate") or {}
+                    if isinstance(rg, dict) and rg.get("measured"):
+                        mei_dict = rg.get("measured") or {}
+                    elif qa_details.get("hook_score") is not None:
+                        mei_dict = {
+                            "hook_score": qa_details.get("hook_score"),
+                            "pacing_score": qa_details.get("pacing_score"),
+                        }
+
+                extra_ctx = {
+                    "map_zone": map_zone_info,
+                    "kill_count": k_count,
+                    "clip_duration": c_dur,
+                    "is_solo": action_type.lower() in ("solo_bolo", "solo", "1v1"),
+                    "recipe": recipe_dict,
+                    "mei": mei_dict,
+                    "peaks": peaks or [],
+                    "montage_style": montage_style,
+                    "kill_span_s": screen_telemetry.get("kill_span_s", 0.0),
+                    "min_hp_pct": screen_telemetry.get("min_hp_pct"),
+                    "low_hp_survival": bool(screen_telemetry.get("low_hp_survival")),
+                    "clean_stomp": bool(screen_telemetry.get("clean_stomp")),
+                    "enemies_in_fight": screen_telemetry.get("enemies_in_fight", k_count or 1),
+                    "combo_tempo": screen_telemetry.get("combo_tempo", ""),
+                    "hud_spells_used": screen_telemetry.get("hud_spells_used") or {},
+                    "screen_telemetry": screen_telemetry,
+                    "objective_secured": objective_secured,
+                    "objective_label": objective_label,
+                }
                 try:
-                    from lol_agent.lol_metadata_generator import generate_channel_title, build_channel_description, build_pinned_comment
+                    from lol_agent.lol_metadata_generator import generate_metadata_universal
                 except ImportError:
-                    from lol_metadata_generator import generate_channel_title, build_channel_description, build_pinned_comment
-                valid_fallback_zone = map_zone_info.get("zone_label", "") if map_zone_info.get("confidence", 0) >= 0.60 else ""
-                fallback_title = generate_channel_title(action_type, champion_name, rank, map_zone_label=valid_fallback_zone)
-                meta = {
-                    "title": fallback_title,
-                    "description": build_channel_description(fallback_title, champion_name, action_type, map_zone_label=valid_fallback_zone),
-                    "pinned_comment": build_pinned_comment(champion_name, action_type),
-                }
+                    from lol_metadata_generator import generate_metadata_universal
+                meta = generate_metadata_universal(
+                    game_type=game_type,
+                    action_type=action_type,
+                    subject_name=champion_name,
+                    rank=rank,
+                    extra_context=extra_ctx,
+                )
             except Exception:
-                meta = {
-                    "title": f"{action_type.upper()} {champion_name} #Shorts",
-                    "description": f"Insane {action_type} play! #Shorts",
-                    "pinned_comment": "Rate this play 1-10! 👇",
-                }
+                try:
+                    try:
+                        from lol_agent.lol_metadata_generator import generate_channel_title, build_channel_description, build_pinned_comment
+                    except ImportError:
+                        from lol_metadata_generator import generate_channel_title, build_channel_description, build_pinned_comment
+                    valid_fallback_zone = map_zone_info.get("zone_label", "") if map_zone_info.get("confidence", 0) >= 0.60 else ""
+                    fallback_title = generate_channel_title(action_type, champion_name, rank, map_zone_label=valid_fallback_zone)
+                    meta = {
+                        "title": fallback_title,
+                        "description": build_channel_description(fallback_title, champion_name, action_type, map_zone_label=valid_fallback_zone),
+                        "pinned_comment": build_pinned_comment(champion_name, action_type),
+                    }
+                except Exception:
+                    meta = {
+                        "title": f"{action_type.upper()} {champion_name} #Shorts",
+                        "description": f"Insane {action_type} play! #Shorts",
+                        "pinned_comment": "Rate this play 1-10! 👇",
+                    }
 
         if _cancel_event.is_set():
             return
@@ -760,6 +1102,7 @@ def _run_pipeline(
                 "champion_name": champion_name,
                 "rank": rank,
                 "output_path": str(output),
+                "thumbnail_path": str(thumb_file) if thumb_file else None,
                 "rendered_at": datetime.now().isoformat(),
                 "mei": mei_info,
             })

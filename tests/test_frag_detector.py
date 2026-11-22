@@ -40,7 +40,7 @@ def test_frag_analysis_result_structure():
 def test_measure_player_hp_blank_frame():
     blank = np.zeros((1080, 1920, 3), dtype=np.uint8)
     hp = _measure_player_hp(blank)
-    assert hp == 0.0
+    assert hp is None
 
 
 def test_measure_player_hp_synthetic_green_bar():

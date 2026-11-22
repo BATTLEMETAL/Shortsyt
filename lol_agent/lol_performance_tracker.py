@@ -70,15 +70,24 @@ def fetch_video_stats(video_id: str, duration_s: float = 15.0) -> Optional[dict]
         # Dołącz realne dane retencji z YouTube Analytics API jeśli dostępne
         try:
             try:
-                from lol_agent.api.youtube_analytics import fetch_video_retention_data
+                from lol_agent.api.youtube_analytics import fetch_video_retention_data, fetch_bulk_video_analytics
             except ImportError:
-                from api.youtube_analytics import fetch_video_retention_data
+                from api.youtube_analytics import fetch_video_retention_data, fetch_bulk_video_analytics
             r_data = fetch_video_retention_data(video_id, duration_s=duration_s)
             if r_data and r_data.get("status") == "success":
                 base_stats["hook_retention_pct"] = r_data.get("hook_retention_pct")
                 base_stats["swiped_away_pct"] = r_data.get("swiped_away_pct")
                 base_stats["completion_rate_pct"] = r_data.get("completion_rate_pct")
                 base_stats["avg_view_pct"] = r_data.get("avg_view_pct")
+            bulk = fetch_bulk_video_analytics()
+            yb = bulk.get(video_id) if isinstance(bulk, dict) else None
+            if yb:
+                if base_stats.get("avg_view_pct") is None and yb.get("avg_view_pct") is not None:
+                    base_stats["avg_view_pct"] = yb.get("avg_view_pct")
+                base_stats["engaged_views"] = yb.get("engaged_views")
+                base_stats["engaged_view_rate_pct"] = yb.get("engaged_view_rate_pct")
+                base_stats["shares"] = yb.get("shares", 0)
+                base_stats["subscribers_gained"] = yb.get("subscribers_gained", 0)
         except Exception:
             pass
 
@@ -131,6 +140,166 @@ def schedule_check(
     _save_pending(pending)
     eta = datetime.fromtimestamp(check_at).strftime("%Y-%m-%d %H:%M")
     print(f"  [PerformanceTracker] Weryfikacja tempa (Stage 1) zaplanowana na: {eta}")
+
+
+def _piecewise_score(val: float, low_x: float, mid_x: float, high_x: float) -> float:
+    """Mapuje metrykę na skalę 0-100: low_x -> 30, mid_x -> 80, high_x -> 100."""
+    if val <= low_x:
+        return max(0.0, round(30.0 * (val / max(low_x, 1e-6)), 1))
+    if val <= mid_x:
+        return round(30.0 + 50.0 * ((val - low_x) / max(mid_x - low_x, 1e-6)), 1)
+    if val <= high_x:
+        return round(80.0 + 20.0 * ((val - mid_x) / max(high_x - mid_x, 1e-6)), 1)
+    return 100.0
+
+
+def evaluate_48h_post_publish_gate(
+    entry: Dict[str, Any],
+    stats: Dict[str, Any],
+    channel_median_views: float = 1640.0,
+) -> Dict[str, Any]:
+    """
+    Bramka 48h (Reality Gate): mierzy Real Watchability Index (RWI 0-100) oraz wykonuje
+    Definition Match Audit — sprawdza, czy realny odbiór po 48h potwierdził hipotezę montażową (t=0h).
+    """
+    views = int(stats.get("views") or entry.get("views") or 0)
+    likes = int(stats.get("likes") or entry.get("likes") or 0)
+    comments = int(stats.get("comments") or entry.get("comments") or 0)
+    shares = int(stats.get("shares") or entry.get("shares") or 0)
+    subs_gained = int(stats.get("subscribers_gained") or entry.get("subscribers_gained") or 0)
+
+    hook_ret = stats.get("hook_retention_pct")
+    if hook_ret is None:
+        hook_ret = entry.get("hook_retention_pct")
+    swiped = stats.get("swiped_away_pct")
+    if swiped is None:
+        swiped = entry.get("swiped_away_pct")
+    if hook_ret is None and swiped is not None and float(swiped) > 0:
+        hook_ret = round(100.0 - float(swiped), 1)
+
+    engaged_rate = stats.get("engaged_view_rate_pct")
+    if engaged_rate is None:
+        engaged_rate = entry.get("engaged_view_rate_pct")
+
+    avd_pct = stats.get("avg_view_pct")
+    if avd_pct is None:
+        avd_pct = entry.get("avg_view_pct")
+
+    # 1. Składniki Real Watchability Index (RWI)
+    reach_48h_score = round(min(100.0, (views / max(float(channel_median_views), 1.0)) * 70.0), 1)
+
+    if hook_ret is not None and float(hook_ret) > 0:
+        hook_watch_score = _piecewise_score(float(hook_ret), 65.0, 83.5, 90.0)
+        hook_signal_source = "hook_retention_pct"
+    elif engaged_rate is not None and float(engaged_rate) > 0:
+        hook_watch_score = _piecewise_score(float(engaged_rate), 35.0, 50.0, 60.0)
+        hook_signal_source = "engaged_view_rate_pct"
+    else:
+        hook_watch_score = round(min(85.0, max(35.0, reach_48h_score)), 1)
+        hook_signal_source = "reach_fallback"
+
+    if avd_pct is not None and float(avd_pct) > 0:
+        avd_loop_score = _piecewise_score(float(avd_pct), 75.0, 100.0, 115.0)
+        avd_signal_source = "avg_view_pct"
+    else:
+        avd_loop_score = round(min(85.0, max(35.0, reach_48h_score)), 1)
+        avd_signal_source = "reach_fallback"
+
+    weighted_eng_pct = ((likes + comments * 3 + shares * 5) / max(views, 1)) * 100.0
+    engagement_sub_score = round(
+        min(100.0, weighted_eng_pct * 45.0 + (20.0 if subs_gained > 0 else 0.0)),
+        1,
+    )
+
+    rwi_score = round(
+        0.35 * hook_watch_score
+        + 0.35 * avd_loop_score
+        + 0.20 * reach_48h_score
+        + 0.10 * engagement_sub_score,
+        1,
+    )
+
+    if rwi_score >= 80.0:
+        watchability_tier = "EXCELLENT"
+    elif rwi_score >= 65.0:
+        watchability_tier = "GOOD"
+    elif rwi_score >= 50.0:
+        watchability_tier = "AVERAGE"
+    else:
+        watchability_tier = "POOR"
+
+    # 2. Definition Match Audit (czy realne oglądanie po 48h pasuje do założeń z montażu)
+    pre_qa_score = float(entry.get("quality_score") or entry.get("initial_qa_score") or 85.0)
+    mei = entry.get("mei") or {}
+
+    pred_hook_score = float(mei.get("hook_score") if mei.get("hook_score") is not None else pre_qa_score)
+    hook_latency = float(mei.get("hook_latency_s") if mei.get("hook_latency_s") is not None else 1.0)
+    pred_hook_good = (pred_hook_score >= 75.0) and (hook_latency <= 1.8)
+    real_hook_good = hook_watch_score >= 70.0
+
+    if pred_hook_good and real_hook_good:
+        hook_verdict = "HOOK_CONFIRMED"
+    elif pred_hook_good and not real_hook_good:
+        hook_verdict = "OVERESTIMATED_HOOK"
+    elif not pred_hook_good and real_hook_good:
+        hook_verdict = "UNDERESTIMATED_HOOK"
+    else:
+        hook_verdict = "HOOK_WEAK"
+
+    pred_pacing_score = float(mei.get("pacing_score") if mei.get("pacing_score") is not None else pre_qa_score)
+    pred_density = float(mei.get("combat_density_pct") if mei.get("combat_density_pct") is not None else 75.0)
+    pred_pacing_good = (pred_pacing_score >= 70.0) and (pred_density >= 65.0)
+    real_pacing_good = avd_loop_score >= 70.0
+
+    if pred_pacing_good and real_pacing_good:
+        pacing_verdict = "PACING_CONFIRMED"
+    elif pred_pacing_good and not real_pacing_good:
+        pacing_verdict = "OVERESTIMATED_PACING"
+    elif not pred_pacing_good and real_pacing_good:
+        pacing_verdict = "UNDERESTIMATED_PACING"
+    else:
+        pacing_verdict = "PACING_WEAK"
+
+    pred_good = pre_qa_score >= 75.0
+    real_good = rwi_score >= 68.0
+    if pred_good and real_good:
+        overall_verdict = "FIT_CONFIRMED"
+    elif pred_good and not real_good:
+        overall_verdict = "FALSE_POSITIVE_MONTAGE"
+    elif not pred_good and real_good:
+        overall_verdict = "SURPRISE_VIRAL"
+    else:
+        overall_verdict = "TRUE_NEGATIVE"
+
+    recommended_adjustments: Dict[str, Any] = {}
+    if hook_verdict in ("OVERESTIMATED_HOOK", "HOOK_WEAK"):
+        recommended_adjustments["buildup_sec_delta"] = -0.3
+        recommended_adjustments["prefer_style"] = "IN_MEDIA_RES"
+    if pacing_verdict in ("OVERESTIMATED_PACING", "PACING_WEAK"):
+        recommended_adjustments["outro_sec_delta"] = -0.4
+        recommended_adjustments.setdefault("prefer_style", "SPEED_RAMP_FLOW")
+
+    return {
+        "rwi_score": rwi_score,
+        "watchability_tier": watchability_tier,
+        "components": {
+            "hook_watch_score": hook_watch_score,
+            "avd_loop_score": avd_loop_score,
+            "reach_48h_score": reach_48h_score,
+            "engagement_sub_score": engagement_sub_score,
+        },
+        "signal_sources": {
+            "hook": hook_signal_source,
+            "avd": avd_signal_source,
+        },
+        "definition_audit": {
+            "pre_qa_score": round(pre_qa_score, 1),
+            "hook_verdict": hook_verdict,
+            "pacing_verdict": pacing_verdict,
+            "overall_verdict": overall_verdict,
+            "recommended_adjustments": recommended_adjustments,
+        },
+    }
 
 
 def run_pending_checks(force_all: bool = False) -> bool:
@@ -212,6 +381,9 @@ def run_pending_checks(force_all: bool = False) -> bool:
         else:
             prediction_eval = "NEUTRAL"
 
+        gate_48h = evaluate_48h_post_publish_gate(entry, stats)
+        gate_48h["ready_48h"] = bool(elapsed_hours >= 48.0)
+
         log_entry = {
             **entry,
             **stats,
@@ -219,6 +391,7 @@ def run_pending_checks(force_all: bool = False) -> bool:
             "views_per_hour": views_per_hour,
             "result": result,
             "prediction_eval": prediction_eval,
+            "gate_48h": gate_48h,
             "checked_at": datetime.now().isoformat()
         }
         _append_performance_log(log_entry)

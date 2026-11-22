@@ -160,3 +160,12 @@ complete_oauth.py
 open_port_8765.bat
 setup_token_refresh.ps1
 verify_truth.py
+
+# Runtime archives, caches & legacy backups (Etap 20)
+debug_triple/
+backup_old_agency/
+tiktokiprettywoman/
+lol_agent/overnight_batches/
+lol_agent/overnight_scan_cache.json
+lol_agent/recipes_archive/
+

@@ -67,8 +67,8 @@ def test_get_next_optimal_publish_time_structure():
     assert isinstance(slot, dict)
     assert "publish_at" in slot
     assert "label" in slot
-    # Must be one of the two peak slots: 08:30 or 18:30
-    assert any(h in slot["label"] for h in ["08:30", "18:30"])
+    # Must be one of the two peak slots: 11:00 or 21:30
+    assert any(h in slot["label"] for h in ["11:00", "21:30"])
 
 
 def test_get_lol_youtube_service_non_interactive_returns_none(tmp_path, monkeypatch):
