@@ -62,13 +62,48 @@ def test_format_final_title_deduplicates_existing_tags():
     assert formatted.endswith("#shorts #leagueoflegends #lol")
 
 
-def test_get_next_optimal_publish_time_structure():
+def test_get_next_optimal_publish_time_structure(monkeypatch):
+    from lol_agent.api.youtube_uploader import get_active_peak_slots_cet
+    monkeypatch.setattr(
+        "lol_agent.api.youtube_uploader.get_occupied_publish_slots",
+        lambda force_refresh=True: {}
+    )
     slot = get_next_optimal_publish_time()
     assert isinstance(slot, dict)
     assert "publish_at" in slot
     assert "label" in slot
-    # Must be one of the two peak slots: 11:00 or 21:30
-    assert any(h in slot["label"] for h in ["11:00", "21:30"])
+    active_slots = get_active_peak_slots_cet(weekday=slot["weekday"])
+    global_slots = get_active_peak_slots_cet()
+    assert slot["peak_slots"] == active_slots
+    assert any(h in slot["label"] for h in active_slots)
+    assert "weekday_schedule" in slot and len(slot["weekday_schedule"]) == 7
+    assert "11:00" not in global_slots
+
+
+def test_update_weekly_schedule_dry_run_cache(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    import update_weekly_schedule as uws
+
+    monkeypatch.setattr("lol_agent.learning_engine.DIRECTIVE_FILE", tmp_path / "learning_directive.json")
+    monkeypatch.setattr("lol_agent.learning_engine.TUNING_FILE", tmp_path / "tuning_config.json")
+    monkeypatch.setattr(
+        "lol_agent.learning_engine.run_channel_learning_cycle",
+        lambda force_refresh=False: {
+            "best_pub_hour_analysis": {
+                "recommended_slots_by_weekday_cet": {
+                    str(d): ["10:00", "21:00"] if d == 4 else ["11:00", "18:00"]
+                    for d in range(7)
+                },
+                "weekday_slot_profiles_cet": {},
+            }
+        },
+    )
+    snap = uws.refresh_weekly_peak_schedule(fetch_live=False, dry_run=True)
+    weekly = snap.get("peak_hours_by_weekday_cet") or {}
+    assert len(weekly) == 7
+    assert weekly["4"] == ["10:00", "21:00"]
+    assert weekly["1"] == ["11:00", "18:00"]
+    assert "snapshot_path" not in snap
 
 
 def test_get_lol_youtube_service_non_interactive_returns_none(tmp_path, monkeypatch):

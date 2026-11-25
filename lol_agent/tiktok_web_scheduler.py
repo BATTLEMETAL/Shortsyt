@@ -127,6 +127,55 @@ def open_tiktok_web_login_window(
                 pass
 
 
+def _detect_web_captcha(page: Any) -> bool:
+    """Wykrywa ekran CAPTCHA / anty-bot w TikTok Studio — nigdy nie rozwiązuje ani nie obchodzi wyzwania."""
+    try:
+        if page.locator("iframe[src*='captcha'], div[id*='captcha']").count() > 0:
+            return True
+        body_text = (page.inner_text("body", timeout=2000) or "").lower()
+        return any(tok in body_text for tok in ("verify to continue", "drag the slider", "complete the puzzle"))
+    except Exception:
+        return False
+
+
+def _apply_web_studio_cover(page: Any, thumbnail_path: Optional[str]) -> bool:
+    """Best-effort wgrywa okładkę 9:16 przez przycisk 'Edit cover -> Upload cover' w TikTok Studio Web."""
+    if not thumbnail_path or not Path(str(thumbnail_path)).is_file():
+        return False
+    try:
+        edit_btn = page.locator(
+            "button:has-text('Edit cover'), button:has-text('Edytuj okładkę'), [data-e2e*='cover']:has-text('Edit')"
+        ).first
+        if edit_btn.count() == 0:
+            return False
+        edit_btn.wait_for(state="visible", timeout=8000)
+        edit_btn.click()
+        page.wait_for_timeout(800)
+
+        upload_tab = page.locator(
+            "button:has-text('Upload cover'), [role='tab']:has-text('Upload'), div:has-text('Upload cover')"
+        ).first
+        if upload_tab.count() > 0:
+            upload_tab.click(timeout=4000)
+            page.wait_for_timeout(500)
+
+        cover_input = page.locator("input[type='file'][accept*='image']").last
+        if cover_input.count() == 0:
+            return False
+        cover_input.set_input_files(str(Path(thumbnail_path).resolve()))
+        page.wait_for_timeout(1200)
+
+        confirm_btn = page.locator("button:has-text('Confirm'), button:has-text('Save')").last
+        if confirm_btn.count() > 0:
+            confirm_btn.click(timeout=5000)
+            page.wait_for_timeout(800)
+        print(f"🖼️ [TikTokWeb] Wgrano okładkę 9:16 przez Edit cover: {Path(thumbnail_path).name}")
+        return True
+    except Exception as exc:
+        print(f"⚠️ [TikTokWeb] Nie udało się ustawić okładki przez Web UI (kontynuuję Post): {exc}")
+        return False
+
+
 def schedule_tiktok_via_web_studio(
     video_path: str,
     caption: str,
@@ -138,7 +187,7 @@ def schedule_tiktok_via_web_studio(
 ) -> Dict[str, Any]:
     """
     Wysyła czysty plik wideo do TikTok Studio Web (bez doklejania klatki 0.08s),
-    wypełnia opis + hashtagi i opcjonalnie ustawia natywne planowanie `Schedule`.
+    wypełnia opis + hashtagi, wgrywa miniaturę (best-effort) i publikuje/planuje post.
     """
     vp = Path(video_path)
     if not vp.is_file():
@@ -163,6 +212,7 @@ def schedule_tiktok_via_web_studio(
 
     prof = Path(profile_dir) if profile_dir else WEB_PROFILE_DIR
     prof.mkdir(parents=True, exist_ok=True)
+    print(f"🌐 [TikTokWeb] Start uploadu przez Chrome Studio ({vp.name})...")
 
     try:
         with sync_playwright() as pw:
@@ -170,6 +220,15 @@ def schedule_tiktok_via_web_studio(
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 page.goto(TIKTOK_STUDIO_UPLOAD_URL, wait_until="domcontentloaded", timeout=timeout_ms)
+
+                if _detect_web_captcha(page):
+                    return {
+                        "success": False,
+                        "platform": "tiktok",
+                        "mode": "web_studio",
+                        "captcha_blocked": True,
+                        "error": "TikTok wymaga ręcznej weryfikacji CAPTCHA — fallback na API Inbox.",
+                    }
 
                 # Sprawdź, czy użytkownik jest zalogowany do TikTok Studio
                 if "login" in page.url.lower():
@@ -183,6 +242,16 @@ def schedule_tiktok_via_web_studio(
                 file_input = page.locator("input[type='file']").first
                 file_input.wait_for(state="attached", timeout=30000)
                 file_input.set_input_files(str(upload_vp))
+                print(f"🌐 [TikTokWeb] Plik załadowany ({upload_vp.name}), czekam na edytor...")
+
+                if _detect_web_captcha(page):
+                    return {
+                        "success": False,
+                        "platform": "tiktok",
+                        "mode": "web_studio",
+                        "captcha_blocked": True,
+                        "error": "TikTok wymaga ręcznej weryfikacji CAPTCHA — fallback na API Inbox.",
+                    }
 
                 # Poczekaj na edytor opisu
                 caption_box = page.locator("[contenteditable='true']").first
@@ -192,18 +261,30 @@ def schedule_tiktok_via_web_studio(
                 page.keyboard.press("Backspace")
                 page.keyboard.type(caption[:2200], delay=8)
 
+                cover_uploaded = _apply_web_studio_cover(page, thumbnail_path)
+
                 if publish_at:
-                    dt = datetime.fromisoformat(publish_at.replace("Z", "+00:00")).astimezone(timezone.utc)
+                    datetime.fromisoformat(publish_at.replace("Z", "+00:00")).astimezone(timezone.utc)
                     schedule_radio = page.get_by_text("Schedule", exact=False).first
                     if schedule_radio.count() > 0:
                         schedule_radio.click()
                         page.wait_for_timeout(800)
+
+                if _detect_web_captcha(page):
+                    return {
+                        "success": False,
+                        "platform": "tiktok",
+                        "mode": "web_studio",
+                        "captcha_blocked": True,
+                        "error": "TikTok wymaga ręcznej weryfikacji CAPTCHA — fallback na API Inbox.",
+                    }
 
                 # Kliknij Post / Schedule jeśli przycisk stał się aktywny
                 submit_btn = page.locator("button:has-text('Post'), button:has-text('Schedule')").last
                 submit_btn.wait_for(state="visible", timeout=60000)
                 submit_btn.click()
                 page.wait_for_timeout(5000)
+                print(f"✅ [TikTokWeb] Wysłano przez Chrome Studio (cover_uploaded={cover_uploaded}).")
 
                 return {
                     "success": True,
@@ -211,6 +292,7 @@ def schedule_tiktok_via_web_studio(
                     "mode": "web_studio",
                     "caption": caption[:2200],
                     "publish_at": publish_at,
+                    "cover_uploaded": cover_uploaded,
                     "cover_embedded": temp_cover_path is not None,
                     "message": "Opublikowano / zaplanowano przez TikTok Studio Web",
                 }

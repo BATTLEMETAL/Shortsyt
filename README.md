@@ -1,210 +1,131 @@
-# Shortsyt — Autonomous AI Video Pipeline & Gaming Shorts Studio
+# Flikcut Studio (Shortsyt) — Autonomous Local-GPU Video & Multi-Platform Publishing Engine
 
 [![CI](https://github.com/BATTLEMETAL/Shortsyt/actions/workflows/ci.yml/badge.svg)](https://github.com/BATTLEMETAL/Shortsyt/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](.)
-[![Electron](https://img.shields.io/badge/Electron-32-47848F?logo=electron&logoColor=white)](.)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](.)
-[![OpenCV](https://img.shields.io/badge/OpenCV-Computer%20Vision-5C3EE8?logo=opencv&logoColor=white)](.)
-[![FastAPI](https://img.shields.io/badge/FastAPI-v2-009688?logo=fastapi&logoColor=white)](.)
-[![Tests](https://img.shields.io/badge/Tests-52%20Passed-brightgreen)](.)
-[![YouTube](https://img.shields.io/badge/YouTube-dwannellenga471-FF0000?logo=youtube)](https://www.youtube.com/@dwannellenga471/shorts)
-[![Quality Score](https://img.shields.io/badge/Quality%20Score-91%2F100-brightgreen)](.)
+[![Tests](https://img.shields.io/badge/Tests-430%20Passed%20(pytest)-brightgreen)](.)
+[![Local LLM](https://img.shields.io/badge/Synapsa-Qwen2.5--7B%20QLoRA%20(4--bit%20GPU)-8A2BE2)](.)
+[![Vision & Render](https://img.shields.io/badge/Pipeline-OpenCV%20%2B%20FFmpeg%20NVENC-5C3EE8)](.)
+[![Backend](https://img.shields.io/badge/Backend-FastAPI%20%2B%20SQLite%20WAL-009688)](.)
+[![Desktop](https://img.shields.io/badge/Desktop-Electron%2032%20%2B%20React%2018%20%2B%20TS-47848F)](.)
+[![Production Views](https://img.shields.io/badge/Production-515K%2B%20Views%20(230%2B%20Shorts)-FF0000)](https://www.youtube.com/@dwannellenga471/shorts)
 
-> **Autonomous AI-driven YouTube Shorts generation and publishing pipeline.** Built with Computer Vision (OpenCV HP-bar tracking), OCR momentum analysis (Tesseract), AI multimodal narrative engine (Gemini), dynamic FFmpeg rendering (9:16 vertical crop, auto-chase speedup, slow-mo 60FPS), and a native Electron Desktop Studio (React 18 + Vite + TailwindCSS).
-
-> 📖 **Standardy i Wytyczne Operacyjne**: Szczegółowe parametry kinematyki kamery, logiki okien akcji, profili gier i bezpieczeństwa zebrane są w [PROJECT_GUIDELINES.md](docs/PROJECT_GUIDELINES.md) oraz [CONTEXT.md](CONTEXT.md).
+> **End-to-end autonomous 9:16 & 16:9 video engineering, local LLM inference, and multi-platform distribution system.** Designed to run 100% locally on consumer GPU hardware (RTX 3060 12 GB VRAM) with zero paid cloud API dependency in the core generation path.
 
 ---
 
-## 🎬 Live Production Demos
+## 📊 Verified Production Telemetry
 
-Real YouTube Shorts rendered and published automatically by the pipeline:
-
-| Video | Action / Highlights | Metrics & Quality | Link |
-|---|---|---|---|
-| **Katarina Triple Kill (Full Engage)** | **Jump-Cut with 3.5s Engage Lead** + Full Combat Tracking + Beat Sync | **13.7s Pacing**, QA: 100/100, 1080x1920 60FPS | [Watch on YouTube](https://www.youtube.com/shorts/POgSCGC9yvQ) |
-| **Katarina Pentakill 1v5** | Auto Chase Speedup 2.8x + 0.45x Slow-mo + Dynamic Zoom | Smart Camera: 90/90 frames, QA: 91/100 | [Watch on YouTube](https://www.youtube.com/shorts/cVTTQASHe9w) |
-| **Katarina Triple Kill Outplay** | Instant OCR Kill detection + Custom audio sync | Fast Short Control (14.8s), QA: 92/100 | [Watch on YouTube](https://www.youtube.com/shorts/rfWXE2-7fkQ) |
-
----
-
-## 📊 Live Production Stats
-
-| Metric | Value |
+| Metric | Production Result |
 |---|---|
 | **Production Channel** | [Dwannellenga (@dwannellenga471)](https://www.youtube.com/@dwannellenga471/shorts) |
-| **Published Shorts** | **48+ Verified Production Shorts** (54K+ Views) |
-| **Unit Test Coverage** | **52 Passing Automated Tests** (Locally + CI) |
-| **Smart Camera Accuracy** | **100% Tracking Stability** (Kinematic LERP 0.35 + Shunpo Snap 220px) |
-| **Average Quality Score** | **94–100 / 100** (Automated Pre-Flight & Post-Render QA) |
-| **Pipeline Render Time** | **12–15s per short** (Local FFmpeg NVENC GPU Hardware Acceleration) |
-| **Pacing Modes** | **3 Profiles** (Aggressive 10-13s / Balanced 14-17s / Cinematic 20-25s) |
-| **Cost per Video** | **$0** (Local OpenCV + Tesseract + FFmpeg + Local GPU) |
+| **Scale & Reach** | **230+ Published Shorts** · **515K+ Total Views** |
+| **30-Day Retention (YT Analytics API)** | **97.4% Average Percentage Viewed** · **17.3% Swiped Away** |
+| **48h Post-Publish Reality Gate** | **213 Audited Videos** (`66.2%` `FIT_CONFIRMED` via RWI composite score) |
+| **Automated Test Suite** | **430 Passing `pytest` Tests** (`117` engine + `313` backend & integration) |
+| **Inference & Render Cost** | **$0 Cloud API Cost** (`Qwen2.5-7B-4bit QLoRA v2` + `FFmpeg NVENC`) |
 
 ---
 
-## 🎯 Smart Camera v25 — Zero-Touch Computer Vision & Combat Tracking
+## 🧠 Core Engineering Systems
 
-### The Problem: Fast Dashing Champions & 9:16 Crop
-In fast-paced games like League of Legends, high-mobility champions (e.g., Katarina with Shunpo/blinks, Zed, Yasuo) instantly teleport across the screen. Traditional bounding-box tracking or centroid visual tracking fails:
-- **Teleportation glitches:** The camera jerks abruptly or lags behind, causing severe disorientation in 9:16 vertical mode.
-- **VFX & UI attraction:** Explosions, AOE circles, minimap icons, and death animations pull visual centroids away from the champion.
-- **Chat occlusion:** Chat messages in the bottom-left corner confuse naive optical flow algorithms.
+### 1. Local AI Inference & Fine-Tuning (`Synapsa Qwen2.5-7B-4bit QLoRA v2`)
+- **Zero-Cloud Copywriting & Classification (`lol_agent/synapsa_engine.py`, `synapsa_title_trainer.py`):** Offloads hook/title generation, pinned comments, comment replies, and multi-platform descriptions (`YouTube Shorts`, `TikTok`, `Instagram Reels`, `Facebook Reels`) to a locally served 4-bit quantized **Qwen2.5-7B** model with LoRA adapters trained on empirical channel telemetry.
+- **Anti-Slop & Regression Guards (`lol_agent/synapsa_conversation_learner.py`):** Programmatic rejection of LLM clichés, strict ground-truth binding to HUD telemetry, and automated watchability comparison checks against historical before/after parameter deltas.
 
-### The Solution: Smart Camera v25 Algorithm
-`smart_camera.py` implements a specialized stateful tracking algorithm operating in full 1080p:
+### 2. Binary Overwolf / Outplayed LevelDB V8 Parser (`lol_agent/outplayed_db.py`)
+- **Zero-Dependency Chromium IndexedDB `.log` Decoder:** Parses binary Chromium LevelDB/IndexedDB V8 wire records directly from disk using custom varint/zigzag/IEEE-754 decoding without launching Electron or LevelDB native bindings.
+- **Accurate Event Anchoring:** Extracts exact kill timestamps (`kill`, `doublekill`, `triple`, `quadrakill`, `pentakill`), K/D/A stats, match outcome, and champion identity while filtering deleted/`.Trash` artifacts and misaligned clips.
 
-1. **Precision Player HP-Bar Detection (1080p):**
-   Isolates player gold in color-space: `(r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)` with strict geometry filters (`aspect 2.0–20.0`, `height 3–16px`, `min_area 30`).
-2. **Instant Shunpo/Flash Snap:**
-   When champion blinks across the screen (`delta > 250px`), the camera snaps immediately instead of sluggishly dragging behind.
-3. **Combat Centroid Fallback:**
-   If the player is temporarily obscured (>4 frames during Zhonya, stealth, or brush), the camera smoothly transitions toward the enemy combat centroid:
-   $$\text{Target}_X = \frac{2 \times \text{Player}_X + \text{FightCenter}_X}{3}$$
-4. **UI Exclusion Zones:**
-   Bottom-left chat (`y: 0.72–0.96, x: 0.04–0.40`) and bottom-right minimap are masked out from centroid calculations.
-5. **Multi-Kill Streak Freeze:**
-   Holds the camera steady during multi-kill banner popups (`FREEZE_STREAK = 8`, `BANNER_SHIFT = 160px`) so gold kill banners never get cut off.
+### 3. Computer Vision Smart Camera & Unified FFmpeg Timeline (`lol_agent/smart_camera.py`, `lol_agent/lol_timeline.py`, `lol_agent/lol_editor.py`)
+- **1080p HP-Bar Tracking & Kinematic Smoothing:** Color-space isolation of player health bars with dynamic dash/teleport snapping, combat-centroid fallback during occlusion, and kill-banner stabilization for crisp `1080x1920 @ 60fps` vertical crops.
+- **Unified Timeline Engine & Pre-Flight Quality Validator (`lol_agent/lol_quality_validator.py`):** Replaces naive scalar quality heuristics with explicit failure assertions (`center_blocked_kills`, `camera_peak_step > 220px`, `intro_too_long`, OCR kill visibility, `11–15s` pacing bounds) and hardware-accelerated NVENC encoding.
+- **16:9 Long-Form Compilations (`lol_agent/lol_longform_montage.py`, `lol_agent/commercial_montage.py`):** Automated multi-clip highlight compilations with chapter markers, hero thumbnails, and beat-aligned transitions.
 
----
+### 4. 48h Reality Gate & Empirical Bayes Learning (`lol_agent/lol_performance_tracker.py`, `lol_agent/learning_engine.py`)
+- **Closed-Loop YouTube Analytics Calibration:** Automatically reconciles published uploads with live YouTube Data API & Analytics API telemetry (`views`, `engaged_view_rate_pct`, `avg_view_pct`, `swiped_away_pct`) into an atomic JSONL performance log and Real Watchability Index (`RWI`).
+- **Shrinkage-Regularized Format Weighting:** Computes median-shrunk action weights, duration buckets (`short` / `balanced` / `cinematic`), and `Viral Vault` promotion (`lol_agent/viral_vault.py`, zero-byte NTFS hardlinks).
 
-## ⚡ 3-Mode Pacing & Viral Retention Engine (v33)
+### 5. Concurrent Multi-Platform Publisher & Storage Reliability (`lol_agent/state_db.py`, `lol_agent/scheduled_queue.py`)
+- **SQLite WAL & Cross-Platform OS File Locking:** Stores scheduled posts, publication fingerprints, and slot queues in `SQLite` (`WAL` mode, busy timeouts) guarded by OS-level locks (`msvcrt` on Windows / `fcntl` on POSIX) to eliminate duplicate uploads under concurrent workers.
+- **Multi-Network Distribution:** Automated publishing and OAuth2/PKCE lifecycle across YouTube Data API v3, TikTok Direct Post, Instagram Graph API, and Facebook Reels (`lol_agent/multi_publisher.py`, `tiktok_publisher.py`, `facebook_publisher.py`).
 
-Shortsyt includes a real-time pacing engine integrated with the Desktop Studio UI:
-
-| Pacing Mode | Target Duration | Zoom-Punch | Slow-Mo Duration | Music Balance | Game Sound | Title Tone |
-|---|---|---|---|---|---|---|
-| 🔥 **Aggressive** | **10.0 – 13.0s** | **1.30x** | **0.9s** | **90%** | 50% | `hype` (Viral & High Energy) |
-| ⚖️ **Balanced** | **14.0 – 17.0s** | **1.20x** | **1.4s** | **85%** | 65% | `narrative` (Storytelling & Clutch) |
-| 🎬 **Cinematic** | **20.0 – 25.0s** | **1.10x** | **2.2s** | **70%** | **80%** | `narrative` (Bass-Drop Focus) |
-
-### Key Retention Innovations:
-- **Jump-Cut with 3.5s Engage Lead:** Automatically detects dead running between fights and cuts it out, while preserving a 3.5-second lead buffer so the viewer sees the physical jump-in and ability casting before kills.
-- **Universal Sidechain Audio Ducking:** Automatically dips background music by -45% on kill sounds and announcer shouts.
-- **Neon Loop Progress Scrubber:** Hextech Gold (`0xC89B3C`) 5px progress bar at the bottom optimized for seamless YouTube Shorts looping.
-- **Pre-Flight Quality Gate (`lol_quality_validator.py`):** Rejection protocol that validates kill visibility (>70% confidence inside 9:16 window), action hook (<1.5s to first engage), and auto-rejects obscured clips.
+### 6. Autonomous DFY Niche Research & Anti-Plagiarism Engine (`lol_agent/niche_research_engine.py`, `lol_agent/niche_research/`)
+- **Multi-Source Reference Intelligence:** Searches high-performing vertical references, analyzes hook cadence and visual pacing, and outputs HTML pitch decks & production storyboards while enforcing originality/anti-plagiarism similarity thresholds (`<= 0.35`) and fallback adaptation when LoRA adapters differ from domain context.
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ System Architecture
 
 ```mermaid
-flowchart TD
-    subgraph Ingestion & Analysis
-    A[Raw 16:9 Gameplay Clip] --> B[Pre-Pipeline Analyzer & Ranker]
-    B --> C[Computer Vision: Smart Camera v25]
-    B --> D[OCR Frag & Momentum Detector]
-    end
-
-    subgraph Tuning & Pacing
-    M[3-Mode Pacing Manager: tuning_manager] -.->|Buildup & Outro| D
-    M -.->|Zoom & Slow-Mo| E[Dynamic FFmpeg 9:16 Editor v33]
-    M -.->|Tone Hype/Story/Meme| F[AI Narrative & SEO: Gemini 2.5 Flash]
-    end
-
-    subgraph Render & QA
-    C -->|Trajectory X| E
-    D -->|Cut Windows & Peaks| E
-    N[GPU Hardware Accel: NVENC/QSV/CPU] --> E
-    E --> F
-    E --> G[Hero-Frame Thumbnail 1080x1920]
-    F --> H[Pre-Flight & Post-Render QA Validator]
-    G --> H
-    end
-
-    subgraph Deployment & Feedback Loop
-    H -->|QA Score >= 90| I[YouTube Data API v3 Publisher]
-    H -->|Reject| J[Quarantine & Debug Log]
-    I --> O[Auditor Feedback Loop: auditor_feedback]
-    O -.->|24h-48h Views & CTR Correlation| M
-    end
-
-    subgraph Control Layer
-    K[FastAPI Backend - Port 8765] <--> L[Electron Desktop Studio - React 18]
-    K <--> I
-    end
+flowchart LR
+    SRC["Overwolf Outplayed (.mp4 + LevelDB V8 .log)"] --> DB["Binary V8 Parser (outplayed_db.py)"]
+    DB --> CV["Smart Camera + OCR Detector (OpenCV / Tesseract)"]
+    CV --> QA["Explicit Defect Gate & Unified Timeline (NVENC FFmpeg)"]
+    SYN["Synapsa Local LLM (Qwen2.5-7B-4bit QLoRA)"] --> COPY["Multi-Platform Metadata & Copywriter"]
+    QA --> COPY
+    COPY --> QUEUE["SQLite WAL + OS Lock Queue (state_db.py / scheduled_queue.py)"]
+    QUEUE --> PUB["YouTube / TikTok / Instagram / Facebook Publishers"]
+    PUB --> YT["YouTube Data & Analytics API (48h Reality Gate)"]
+    YT --> LE["Empirical Bayes Learning Engine -> Next Render"]
+    API["FastAPI Server (:8765)"] <--> UI["Flikcut Studio Desktop (Electron + React + TS)"]
+    API <--> QUEUE
 ```
 
 ---
 
-## 💻 Launch & CLI Usage
+## 📂 Repository Layout
 
-### 🚀 1-Click Desktop Studio Launcher
-Start the FastAPI server and launch the Desktop GUI with a single click:
+```text
+├── lol_agent/                  # Core Python AI, CV, rendering & learning engine
+│   ├── api/                    # FastAPI server, JWT auth, modular APIRouters & job runner
+│   ├── autonomous/             # Clip watcher & autonomous pre-render evaluator
+│   ├── engine_tests/           # 117 standalone engine, watchability & learning unit tests
+│   ├── game_profiles/          # Modular game & commercial-ad detection profiles
+│   ├── metadata_profiles/      # Channel-specific SEO & narrative copy profiles
+│   ├── outplayed_db.py         # Chromium IndexedDB V8 binary log decoder
+│   ├── synapsa_engine.py       # Local Qwen2.5-7B 4-bit inference bridge
+│   ├── smart_camera.py         # 1080p HP-bar tracking & 9:16 trajectory engine
+│   ├── lol_timeline.py         # Unified audio/video/speed-ramp timeline builder
+│   ├── learning_engine.py      # Empirical Bayes tuning & 48h Reality Gate analytics
+│   ├── niche_research_engine.py# DFY niche discovery, anti-plagiarism & pitch generator
+│   └── state_db.py             # SQLite WAL + OS file-locking persistence layer
+├── shortsyt-desktop/           # Electron 32 + React 18 + TypeScript Studio UI
+│   ├── electron/               # Main process & preload bridge
+│   └── src/                    # Analytics, Clip Browser, Compilations, Niche Research & Calendar
+├── scripts/                    # CLI telemetry reports & OAuth helpers
+├── tests/                      # 313 pytest unit & FastAPI integration tests
+├── docs/                       # Static showcase & OAuth verification pages
+├── .github/workflows/ci.yml    # GitHub Actions pytest & coverage workflow
+├── pyproject.toml              # Package metadata, ruff & pytest configuration
+└── requirements.txt            # Python production & test dependencies
+```
+
+---
+
+## 💻 Quick Start
+
+### 1. Backend & Test Suite
 ```powershell
-.\Uruchom_Shortsyt_Studio.bat
+python -m venv venv313
+.\venv313\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# Run full automated test suites (430 tests total)
+python -m pytest lol_agent/engine_tests/ --noconftest -q
+python -m pytest tests/ -q
+
+# Launch FastAPI server (port 8765)
+uvicorn lol_agent.api.main:app --host 0.0.0.0 --port 8765
 ```
 
-### ⌨️ CLI Autonomous Runner
-Run the autonomous pipeline from terminal or command line:
-
+### 2. Electron Desktop Studio (`shortsyt-desktop/`)
 ```powershell
-# Standard run with automatic analysis, 9:16 rendering, and QA
-python lol_agent/run_lol_agent.py --file "path\to\clip.mp4"
-
-# Custom short parameters & fine control
-python lol_agent/run_lol_agent.py `
-  --file "path\to\clip.mp4" `
-  --champion Katarina `
-  --action pentakill `
-  --start 12.5 `
-  --end 27.3 `
-  --music "ncs_alan_walker_fade.mp3" `
-  --no-slowmo
-
-# Dry-run mode (render video, thumbnail, and metadata without uploading)
-python lol_agent/run_lol_agent.py --file "path\to\clip.mp4" --dry-run
-
-# Pre-pipeline ranker (find top clips automatically from raw folder)
-python lol_agent/lol_pre_pipeline_analyzer.py --top 5
+cd shortsyt-desktop
+npm install
+npm run build     # TypeScript check + Vite bundle
+npm run dev       # Launch Electron + Vite UI
 ```
 
-### CLI Options:
-- `--file <path>`: Source 16:9 video path (Medal/Outplayed/OBS raw gameplay).
-- `--champion <name>`: Champion whitelist override (prevents AI hallucination).
-- `--action <type>`: Action type (`pentakill`, `quadrakill`, `triple`, `outplay`, `clutch`).
-- `--start <sec>` / `--end <sec>`: Precise clip boundaries.
-- `--music <name>`: Custom background audio track selection.
-- `--no-slowmo`: Disable automatic slow-motion on peak moments.
-- `--dry-run`: Render video, thumbnail, and metadata without publishing.
-- `--force`: Bypass deduplication fingerprint checks.
-
 ---
 
-## 🖥️ Desktop Studio & API
-
-### Electron Desktop Studio (`shortsyt-desktop/`)
-- **Built with:** Electron 32 + React 18 + Vite + TypeScript + TailwindCSS.
-- **Features:**
-  - **Live Pipeline Dashboard & Render Monitor:** Real-time 7-stage progress tracking with live log streaming.
-  - **Clip Browser & Pre-Analysis Ranking:** Automated action scoring, champion badge detection, and custom folder picker.
-  - **3-Mode Feedback & Pacing Tuning:** Interactive sliders for Zoom Aggression, Slow-Mo Duration, Audio Balance, and Title Tone (Hype / Narrative / Meme) with instant persistence.
-  - **Calendar Scheduler:** Daily publishing slots (08:30 / 11:30 / 18:00 CET) with queued rendering.
-  - **Interactive Post-Render Review:** Vertical 9:16 player, editable viral metadata, Hero-Frame thumbnail inspect, and one-click YouTube upload.
-  - **YouTube Token Guard:** Live OAuth token expiration countdown with one-click re-authorization.
-
-### FastAPI Backend (`lol_agent/api/`)
-- REST endpoints including `/health`, `/status`, `/clips`, `/thumbnails`, `/camera-preview`, `/config/tuning`, `/youtube/upload`.
-- Asynchronous GPU-accelerated pipeline runner with NVENC support.
-
----
-
-## 🛠️ Technology Stack
-
-| Layer | Technologies & Libraries | Key Responsibilities |
-|---|---|---|
-| **Computer Vision & Tracking** | OpenCV, NumPy, Color Space Segmentation | Real-time 1080p HP-bar tracking, weighted combat centroid blending, instant Shunpo snap |
-| **Action & Kill Detection** | Tesseract OCR (5.4.0), PyTesseract, Regex Analyzers | Triple-zone HUD scanning (kill banner, feed, chat), engage lead 3.5s buffer |
-| **Video & Audio Processing** | FFmpeg (NVENC GPU / CPU), Librosa, Pydub | Dynamic 9:16 smart pan, minterpolate 60FPS slow-mo, audio beat-sync, sidechain ducking |
-| **Pacing & Self-Optimization** | Python, SciPy Pearson Correlation, JSON Profiles | 3-mode pacing presets (Aggressive/Balanced/Cinematic), 48h YouTube retention feedback loop |
-| **AI Metadata & Hooks** | Google Gemini 2.5 Flash Multimodal API | Viral title generation, channel-specific descriptions, auto-pinned comments, SEO tags |
-| **Desktop Application** | Electron 32, React 18, Vite, TypeScript, TailwindCSS | Native GUI, interactive render monitor, clip browser, style tuner, calendar scheduler |
-| **Backend & Automation** | FastAPI, Uvicorn, Python 3.13, YouTube Data API v3 | REST endpoints, OAuth2 token rotation, automated upload & thumbnail publishing |
-
----
-
-## 🔒 Privacy & Safety
-
-- Tokens, OAuth credentials (`accounts/`), `.env`, and raw video binaries are strictly excluded via `.gitignore`.
-- Video processing, computer vision analysis, and rendering happen 100% locally on your machine.
-
+## 🔒 Security & Data Hygiene
+- Credentials, OAuth tokens (`accounts/`, `client_secret*.json`, `*.pickle`), local databases (`*.db`, `*.jsonl`), learned internal model state, and machine-specific paths are excluded from version control via `.gitignore` and environment configuration (`.env.example`).

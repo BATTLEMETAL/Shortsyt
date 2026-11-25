@@ -315,6 +315,14 @@ export interface OutputItem {
   path: string;
   size_mb: number;
   modified: number;
+  already_published?: boolean;
+  partially_published?: boolean;
+  can_retry_publish?: boolean;
+  published_platforms?: string[];
+  failed_platforms?: Record<string, string>;
+  missing_platforms?: string[];
+  scheduled_publish_at?: string | null;
+  file_exists?: boolean;
 }
 
 export async function apiListOutputs(): Promise<OutputItem[]> {
@@ -656,7 +664,7 @@ export interface FragAnalysis {
   suggested_badge_color: string;
 }
 
-export async function apiGetCalendarSlots(startDate?: string, days: number = 14, forceRefresh: boolean = false): Promise<{ slots: CalendarSlot[]; days: number; total: number; social_queue_summary?: { total: number; pending: number; published: number; failed: number } }> {
+export async function apiGetCalendarSlots(startDate?: string, days: number = 14, forceRefresh: boolean = false): Promise<{ slots: CalendarSlot[]; days: number; total: number; peak_hours_cet?: string[]; social_queue_summary?: { total: number; pending: number; published: number; failed: number } }> {
   const client = await createClient();
   const params: any = { days };
   if (startDate) params.start_date = startDate;
@@ -754,7 +762,19 @@ export interface LearningDirective {
   channel_avg_engagement_rate?: number;
   top_action_type: string;
   action_weights: Record<string, number>;
-  action_stats: Record<string, { count: number; avg_views: number; performance_ratio: number; weight: number }>;
+  action_stats: Record<
+    string,
+    {
+      count: number;
+      avg_views: number;
+      median_views?: number;
+      max_views?: number;
+      performance_ratio?: number;
+      performance_ratio_mean?: number;
+      performance_ratio_median?: number;
+      weight?: number;
+    }
+  >;
   duration_analysis?: {
     best_bucket: string;
     viral_avg_duration_s: number;
@@ -1374,6 +1394,16 @@ export interface OvernightShortItem {
   fallback_mediocre?: boolean;
   render_ok: boolean;
   error?: string | null;
+  already_published?: boolean;
+  partially_published?: boolean;
+  can_retry_publish?: boolean;
+  published_platforms?: string[];
+  failed_platforms?: Record<string, string>;
+  missing_platforms?: string[];
+  publish_recommended?: boolean;
+  publish_block_reasons?: string[];
+  scheduled_publish_at?: string | null;
+  file_exists?: boolean;
 }
 
 export interface OvernightBatchManifest {
@@ -1466,3 +1496,319 @@ export async function apiGetOvernightCatalog(params?: {
   const res = await client.get<OvernightCatalogResponse>('/overnight/catalog', { params });
   return res.data;
 }
+
+// ── Niche Research & DFY Local Business Pitch Preview ────────────────────────
+
+export interface NicheResearchRequest {
+  niche_query: string;
+  business_name: string;
+  city?: string;
+  offer?: string;
+  cta?: string;
+  niche_preset?: 'AUTO' | 'FOOD_GASTRO' | 'NAILS_BEAUTY' | 'PRODUCT_ECOMMERCE_AD' | 'EXPERT_BRAND_SHORT';
+  reference_url?: string;
+  analyze_video_count?: number;
+  use_synapsa?: boolean;
+  force_refresh?: boolean;
+}
+
+export interface ResearchReferenceVideo {
+  video_id: string;
+  title: string;
+  url: string;
+  channel: string;
+  views: number;
+  duration_s: number;
+  thumbnail?: string;
+  is_primary_reference?: boolean;
+  source?: string;
+}
+
+export interface ResearchStoryboardShot {
+  step: number;
+  role: string;
+  start_s: number;
+  end_s: number;
+  duration_s: number;
+  visual_plan_pl: string;
+  overlay_text_pl: string;
+  camera_note_pl: string;
+}
+
+export interface NicheResearchBlueprint {
+  slug: string;
+  created_at: string;
+  niche_query: string;
+  niche_preset: string;
+  preset_label: string;
+  client_profile: {
+    business_name: string;
+    city: string;
+    offer: string;
+    cta: string;
+  };
+  synapsa_used: boolean;
+  synapsa_source: string;
+  reference_videos: ResearchReferenceVideo[];
+  reference_montage_stats: {
+    duration_s: number;
+    cuts_per_10s: number;
+    avg_shot_len_s: number;
+    first_cut_s: number;
+    opening_0_2s_motion: number;
+    measurement_source: string;
+  };
+  what_works_summary_pl: string[];
+  montage_rules: {
+    target_duration_s: number;
+    target_shot_len_s: number;
+    target_cuts_per_10s: number;
+    hook_window_s: number;
+    color_grade_profile: string;
+    audio_style_pl: string;
+    recommended_peak_hours_cet: string[];
+    structure_pattern: string;
+  };
+  original_titles_pl: string[];
+  opening_hook_pl: string;
+  caption_pl: string;
+  hashtags_pl: string[];
+  originality_report: {
+    max_similarity_threshold: number;
+    approved_titles: string[];
+    rejected_count: number;
+    originality_score_pct: number;
+    evaluations: Array<{
+      title: string;
+      max_similarity: number;
+      originality_score_pct: number;
+      passed: boolean;
+      reason: string;
+      source?: string;
+    }>;
+  };
+  storyboard: ResearchStoryboardShot[];
+  client_shot_list: string[];
+  comparison: {
+    youtube_pattern: {
+      title: string;
+      channel: string;
+      url: string;
+      views: number;
+      duration_s: number;
+      cuts_per_10s: number;
+      avg_shot_len_s: number;
+      first_cut_s: number;
+    };
+    client_original_plan: {
+      business_name: string;
+      city: string;
+      top_title: string;
+      opening_hook_pl: string;
+      duration_s: number;
+      scene_count: number;
+      originality_score_pct: number;
+      cta: string;
+      peak_hours_cet: string[];
+    };
+  };
+  preview_video_filename?: string | null;
+  preview_video_url?: string | null;
+  pitch_html_filename?: string | null;
+  pitch_html_url?: string | null;
+}
+
+export interface NicheResearchListItem {
+  slug: string;
+  niche_query: string;
+  niche_preset: string;
+  business_name: string;
+  city: string;
+  created_at: string;
+  synapsa_source: string;
+  originality_score_pct: number;
+  has_preview_video: boolean;
+  preview_video_filename?: string | null;
+  pitch_html_filename?: string | null;
+}
+
+export interface PreviewMockupResponse {
+  ok: boolean;
+  slug: string;
+  preview_video_filename: string;
+  preview_video_url: string;
+  thumbnail_filename?: string | null;
+  pitch_html_filename?: string | null;
+  pitch_html_url?: string | null;
+  render: {
+    duration_s: number;
+    width: number;
+    height: number;
+    scene_count: number;
+  };
+}
+
+export async function apiRunNicheResearch(params: NicheResearchRequest): Promise<{ ok: boolean; blueprint: NicheResearchBlueprint }> {
+  const client = await createClient();
+  const res = await client.post('/research/niche', params, { timeout: 180000 });
+  return res.data;
+}
+
+export async function apiListNicheResearches(): Promise<{ ok: boolean; items: NicheResearchListItem[]; total: number }> {
+  const client = await createClient();
+  const res = await client.get('/research/niches');
+  return res.data;
+}
+
+export async function apiGetNicheResearch(slug: string): Promise<{ ok: boolean; blueprint: NicheResearchBlueprint }> {
+  const client = await createClient();
+  const res = await client.get(`/research/niche/${encodeURIComponent(slug)}`);
+  return res.data;
+}
+
+export async function apiRenderPitchMockup(slug: string): Promise<PreviewMockupResponse> {
+  const client = await createClient();
+  const res = await client.post('/research/preview-mockup', { slug }, { timeout: 180000 });
+  return res.data;
+}
+
+export async function apiResearchMediaUrl(filename: string): Promise<string> {
+  const baseURL = await getServerUrl();
+  const token = await getJwtToken();
+  const qp = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${baseURL}/research/media/${encodeURIComponent(filename)}${qp}`;
+}
+
+// ─── Etap 31: Tygodniowe/Miesięczne Kompilacje Poziome 16:9 & Viral Vault ─────
+
+export interface VaultItem {
+  clip_id: string;
+  state: 'staging' | 'approved' | 'expired';
+  champion: string;
+  action_type: string;
+  match_kda?: string;
+  views: number;
+  avg_view_percentage?: number;
+  yt_video_id?: string;
+  title?: string;
+  promotion_reason?: string;
+  staged_at?: string;
+  approved_at?: string;
+}
+
+export interface RelatedVideoLink {
+  video_id: string;
+  title: string;
+  published_at: string;
+  watch_url: string;
+  studio_edit_url: string;
+}
+
+export interface CompilationRecord {
+  comp_id: string;
+  mode: 'weekly' | 'monthly';
+  champion: string;
+  status: string;
+  output_filename: string;
+  thumbnail_filename?: string;
+  video_exists?: boolean;
+  thumbnail_exists?: boolean;
+  duration_s: number;
+  resolution: string;
+  fps: number;
+  clips_count: number;
+  clips_order: string[];
+  chapters: { time_s: number; label: string }[];
+  tracks_used: string[];
+  title: string;
+  description: string;
+  tags: string[];
+  thumbnail_headline?: string;
+  thumbnail_subline?: string;
+  youtube_id?: string;
+  youtube_url?: string;
+  created_at?: string;
+}
+
+export interface CompilationsVaultResponse {
+  ok: boolean;
+  vault: {
+    vault_dir: string;
+    counts: { staging: number; approved: number; expired: number; rendered: number };
+    items: VaultItem[];
+  };
+  related_links: {
+    target_longform?: { video_id: string; url: string; title: string } | null;
+    shorts: RelatedVideoLink[];
+    api_limitation_note: string;
+  };
+}
+
+export async function apiGetCompilationsVault(): Promise<CompilationsVaultResponse> {
+  const client = await createClient();
+  const res = await client.get('/compilations/vault');
+  return res.data;
+}
+
+export async function apiBootstrapVault(champion = 'Katarina', limit = 12): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/compilations/vault/bootstrap', { champion, limit });
+  return res.data;
+}
+
+export async function apiSyncVault(): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/compilations/vault/sync', {});
+  return res.data;
+}
+
+export async function apiStartCompilationRender(params: {
+  mode: 'weekly' | 'monthly';
+  champion?: string;
+  max_clips?: number;
+}): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/compilations/render', params);
+  return res.data;
+}
+
+export async function apiGetCompilationStatus(): Promise<{
+  status: 'idle' | 'running' | 'done' | 'error';
+  progress: number;
+  step: string;
+  error?: string | null;
+  latest?: CompilationRecord | null;
+}> {
+  const client = await createClient();
+  const res = await client.get('/compilations/status');
+  return res.data;
+}
+
+export async function apiListCompilations(): Promise<{ ok: boolean; items: CompilationRecord[]; total: number }> {
+  const client = await createClient();
+  const res = await client.get('/compilations/list');
+  return res.data;
+}
+
+export async function apiPublishCompilation(params: {
+  comp_id?: string;
+  output_filename: string;
+  title: string;
+  description: string;
+  tags: string[];
+  thumbnail_filename?: string;
+  privacy: 'public' | 'private' | 'unlisted';
+  publish_at?: string;
+}): Promise<any> {
+  const client = await createClient();
+  const res = await client.post('/compilations/publish', params, { timeout: 600000 });
+  return res.data;
+}
+
+export async function apiCompilationMediaUrl(filename: string): Promise<string> {
+  const baseURL = await getServerUrl();
+  const token = await getJwtToken();
+  const qp = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${baseURL}/compilations/media/${encodeURIComponent(filename)}${qp}`;
+}
+

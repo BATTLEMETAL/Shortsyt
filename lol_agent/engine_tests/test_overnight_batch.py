@@ -619,5 +619,283 @@ def test_monotonic_quadra_captions_and_champion_aware_outro_cta(tmp_path):
         assert cta["id"] not in ("debate_shunpo", "debate_lucky")
 
 
+def test_overnight_ranking_defects_and_lora_timestamp_hallucination_guard(tmp_path):
+    """Reprodukuje r1 vs r2 z paczki 082153: wykrywa wady montażowe i blokuje halucynowane czasy 3.0s/4.5s/8.2s."""
+    # 1. _score_and_classify_candidate obniża przewagę niepotwierdzonego OCR triple z rozciągniętym spanem 15.5s
+    r1_raw = {
+        "filename": "20-21-23-947_0.mp4",
+        "path": "C:/tmp/r1.mp4",
+        "clip_start": 5.5,
+        "clip_end": 25.2,
+        "kills": [
+            {"timestamp": 8.0, "label": "KILL", "tier": 1},
+            {"timestamp": 15.5, "label": "DOUBLE KILL", "tier": 2},
+            {"timestamp": 23.5, "label": "TRIPLE KILL", "tier": 3},
+        ],
+        "raw_detected_frag_type": "triple",
+        "objective_secured": True,
+        "confidence": 0.90,
+        "min_hp_percentage": 45.0,
+        "player_died": False,
+        "event_source": "ocr_only",
+    }
+    r2_raw = {
+        "filename": "16-32-37-217_0.mp4",
+        "path": "C:/tmp/r2.mp4",
+        "clip_start": 9.0,
+        "clip_end": 23.8,
+        "kills": [
+            {"timestamp": 12.1, "label": "KILL", "tier": 1},
+            {"timestamp": 15.5, "label": "DOUBLE KILL", "tier": 2},
+            {"timestamp": 19.6, "label": "TRIPLE KILL", "tier": 3},
+        ],
+        "raw_detected_frag_type": "triple",
+        "event_tier": "triple",
+        "event_tier_rank": 3,
+        "event_source": "outplayed_backup",
+        "objective_secured": False,
+        "confidence": 0.90,
+        "min_hp_percentage": 34.0,
+        "player_died": False,
+    }
+    s1 = ob._score_and_classify_candidate(r1_raw)
+    s2 = ob._score_and_classify_candidate(r2_raw)
+    # Kara za kill_span_s=15.5s i bonus Outplayed +3.0 zbliżają/przewyższają r2 nad niepotwierdzonym r1
+    assert s2["hype_score"] >= s1["hype_score"]
+
+    # 2. _extract_defects wyłapuje dead_gap_gt_3.8s, moderate_edge_clipping i camera_jump_gt_220px na metrykach r1
+    r1_insp = {
+        "video_dur_s": 12.666,
+        "player_visible_ratio": 0.722,
+        "player_edge_clip_ratio": 0.154,
+        "camera_peak_step_px": 290.0,
+        "longest_gap_out_sec": 4.097,
+        "first_kill_out_sec": 3.03,
+        "frame0_hook_legible": True,
+        "audio_clip_gt_096": 0,
+        "av_delta_s": 0.0,
+        "black_end_frame": False,
+    }
+    defects_r1, crit_r1 = ob._extract_defects(r1_insp, ig_ready=True, item={})
+    assert crit_r1 is False
+    assert "dead_gap_gt_3.8s" in defects_r1
+    assert "moderate_edge_clipping" in defects_r1
+    assert "camera_jump_gt_220px" in defects_r1
+
+    # 3. Ranker przelicza wagi (0.35/0.50/0.15) + kary za defekty tak, że czystszy short (r2 po poprawie czasu) wygrywa z wadliwym r1
+    p1 = tmp_path / "r1.mp4"
+    p2 = tmp_path / "r2.mp4"
+    p1.write_bytes(b"stub1")
+    p2.write_bytes(b"stub2")
+    ranked = ob.rank_rendered_overnight_shorts([
+        {
+            "render_ok": True,
+            "output_path": str(p1),
+            "output_filename": "r1.mp4",
+            "champion_name": "Katarina",
+            "action_type": "triple",
+            "hype_score": s1["hype_score"],
+            "watchability_score": 88.47,
+            "qa_score": 90,
+            "player_visible_ratio": 0.722,
+            "player_edge_clip_ratio": 0.154,
+            "camera_peak_step_px": 290.0,
+            "longest_gap_out_sec": 4.097,
+            "defects": defects_r1,
+            "has_critical_defect": False,
+        },
+        {
+            "render_ok": True,
+            "output_path": str(p2),
+            "output_filename": "r2.mp4",
+            "champion_name": "Katarina",
+            "action_type": "triple",
+            "hype_score": s2["hype_score"],
+            "watchability_score": 91.22,
+            "qa_score": 91,
+            "player_visible_ratio": 0.778,
+            "player_edge_clip_ratio": 0.0,
+            "camera_peak_step_px": 120.0,
+            "longest_gap_out_sec": 2.4,
+            "defects": [],
+            "has_critical_defect": False,
+        },
+    ], scan_stats={"qualified_count": 2}, use_local_ai=False)
+    assert ranked["recommended_filename"] == "r2.mp4"
+
+    # 4. Strażnik _is_clean_consistent_polish_note blokuje halucynowane szablony LoRA z paczki 082153
+    r1_item = {
+        "action_type": "triple",
+        "overnight_rank": 1,
+        "final_score": 74.2,
+        "hype_score": 72.0,
+        "watchability_score": 88.47,
+        "qa_score": 90,
+        "duration_s": 12.666,
+        "first_kill_out_sec": 3.03,
+        "kill_span_s": 15.5,
+        "longest_gap_out_sec": 4.097,
+        "kill_timestamps_out": [0.5, 7.4, 11.3],
+        "defects": defects_r1,
+        "has_critical_defect": False,
+    }
+    assert ob._is_clean_consistent_polish_note(
+        "Zabójstwa w 3.0s, 4.5s i 8.2s; player_visible_ratio=0.722",
+        r1_item,
+    ) is False
+    assert ob._is_clean_consistent_polish_note(
+        "Wielokrotne zabójstwo w 3.0s, 4.5s i 8.2s z solidnym tempem",
+        r1_item,
+    ) is False
+    assert ob._is_clean_consistent_polish_note(
+        "Wygrana multikillowa z 3 zabójstwami w 8.2s — obiektywnie najlepszy klip na ten film.",
+        r1_item,
+    ) is False
+    assert ob._is_clean_consistent_polish_note(
+        "Wygrana multikillowa z 3 zabójstwami w 8.2s, mocne tempo w drugiej połowie klipu.",
+        r1_item,
+    ) is False
+    assert ob._is_clean_consistent_polish_note(
+        "Katarina TRIPLE (watch=88.5, qa=90): pierwsza eliminacja w 3.0s, ostatnia w 11.3s, widoczne wady kadru.",
+        r1_item,
+    ) is True
+
+
+def test_etap27_viral_titles_publish_gate_and_speed_bridge(tmp_path):
+    """Sprawdza kare AI-zargonu, odblokowanie 'bad idea', SCHEMA_VERSION=4, publish_recommended i speed_bridge_gap_s."""
+    from lol_agent.synapsa_engine import score_title_candidate
+
+    # 1. Potoczny curiosity gap musi wygrac z AI-zargonem (Reset Chain / Relentless / Rampage / Execution)
+    s_viral = score_title_candidate("They Grouped For Free 💀 #shorts #leagueoflegends #lol", action_type="triple")
+    s_jargon1 = score_title_candidate("Relentless Reset Chain Triple 💥 #shorts #leagueoflegends #lol", action_type="triple")
+    s_jargon2 = score_title_candidate("Pixel-Perfect Rampage Execution ⚡ #shorts #leagueoflegends #lol", action_type="triple")
+    s_bad_idea = score_title_candidate("Chasing Katarina Is a Bad Idea 💀 #shorts #leagueoflegends #lol", action_type="triple")
+    assert s_viral > s_jargon1 + 30.0
+    assert s_viral > s_jargon2 + 30.0
+    assert s_bad_idea > 0.0  # usuniety bledny ban na 'bad idea'
+
+    # 2. Schema cache musi byc podbita >= 5 (uniewaznienie starych wpisow po P0.2)
+    assert ob.SCAN_CACHE_SCHEMA_VERSION >= 5
+
+    # 3. Bramka publish_recommended blokuje dlugie dziury (>=5.5s), wolne intra (>4.0s) i za niskie final (<76)
+    p_good = tmp_path / "good.mp4"
+    p_gap = tmp_path / "gap.mp4"
+    p_good.write_bytes(b"ok")
+    p_gap.write_bytes(b"gap")
+    ranked = ob.rank_rendered_overnight_shorts([
+        {
+            "render_ok": True, "output_path": str(p_good), "output_filename": "good.mp4",
+            "champion_name": "Katarina", "action_type": "triple",
+            "hype_score": 76.0, "watchability_score": 90.0, "qa_score": 92,
+            "duration_s": 13.8, "first_kill_out_sec": 2.4, "longest_gap_out_sec": 3.1,
+            "player_visible_ratio": 0.85, "defects": [], "has_critical_defect": False,
+        },
+        {
+            "render_ok": True, "output_path": str(p_gap), "output_filename": "gap.mp4",
+            "champion_name": "Katarina", "action_type": "triple",
+            "hype_score": 76.0, "watchability_score": 88.0, "qa_score": 91,
+            "duration_s": 16.0, "first_kill_out_sec": 4.5, "longest_gap_out_sec": 6.8,
+            "player_visible_ratio": 0.80, "defects": ["slow_intro_gt_3.5s", "dead_gap_gt_3.8s"], "has_critical_defect": False,
+        },
+    ], scan_stats={"qualified_count": 2}, use_local_ai=False)
+    items = ranked["items"]
+    assert items[0]["output_filename"] == "good.mp4" and items[0]["publish_recommended"] is True
+    assert items[1]["output_filename"] == "gap.mp4" and items[1]["publish_recommended"] is False
+    assert any("dead_gap_" in r for r in items[1]["publish_block_reasons"])
+    assert any("slow_intro_" in r for r in items[1]["publish_block_reasons"])
+
+    # 4. Opcja A w lol_editor: PRIMARY z speed_bridge_gap_s=4.5 przyspiesza luke 10s, bez dotykania domyslnego kontraktu None
+    import test_editor_pipeline as tep
+    tep._render("double", [(3.0, "KILL"), (13.0, "DOUBLE KILL")], 13.0, speed_bridge_gap_s=4.5)
+    r_bridged = tep._recipe_of()
+    assert r_bridged["montage_style"] == "PRIMARY"
+    assert any(abs(float(s.get("speed", 1.0)) - 2.2) < 0.05 for s in r_bridged["time_segments"])
+
+
+def test_batch_96960_loophole_guards():
+    """Regresja dla luk wykrytych w batchu 96960: Part #1, Three na double, wieze, 'bez wad' i champion_mismatch."""
+    from lol_agent.synapsa_engine import score_title_candidate, score_and_select_best_titles
+
+    # Part #1 musi przegrac po sprawdzeniu surowego raw_low (zanim _strip_tags_clean obetnie #1)
+    s_part = score_title_candidate(
+        "When The Enemy Overextended Too Far 😈 Part #1 #shorts #leagueoflegends #lol",
+        action_type="triple",
+    )
+    s_clean = score_title_candidate(
+        "When The Enemy Overextended Too Far 😈 #shorts #leagueoflegends #lol",
+        action_type="triple",
+    )
+    assert s_part < 0.0 and s_clean > 40.0
+
+    # Jesli jedyny kandydat z LoRA zawiera Part #1, sanityzer post-selekcji musi go usunac
+    best_a, best_b = score_and_select_best_titles(
+        [
+            "When The Enemy Overextended Too Far 😈 Part #1 #shorts #leagueoflegends #lol",
+            "Enemy Team Grouped For Free Part 2 #shorts #leagueoflegends #lol",
+        ],
+        action_type="triple",
+    )
+    assert "part" not in best_a.lower()
+    assert "part" not in best_b.lower()
+    assert best_a == "Enemy Team Grouped For Free #shorts #leagueoflegends #lol"
+    assert best_b == "When The Enemy Overextended Too Far 😈 #shorts #leagueoflegends #lol"
+
+    # Tier liczbowy ('Three' na DOUBLE) i halucynowane 'DOUBLE TOWER DOWN' musza byc ukarane
+    assert score_title_candidate(
+        "Eliminating Three Before They Reacted 👑 #shorts #leagueoflegends #lol",
+        action_type="double",
+    ) < 0.0
+    assert score_title_candidate(
+        "Two For The Price Of One 💀 DOUBLE TOWER DOWN! #shorts #leagueoflegends #lol",
+        action_type="double",
+    ) < 0.0
+
+    # 'bez wad' odrzucone przy obecnych realnych wadach
+    assert ob._is_clean_consistent_polish_note(
+        "Hype 82.0, Watchability 97.3 — bez wad.",
+        {
+            "final_score": 81.4,
+            "hype_score": 82.0,
+            "watchability_score": 97.3,
+            "defects": ["camera_jump_gt_220px", "dead_gap_gt_3.8s", "slow_intro_gt_3.5s"],
+            "has_critical_defect": False,
+            "overnight_rank": 1,
+            "action_type": "triple",
+        },
+    ) is False
+
+    # Notatka wychwalajaca lub przywolujaca Katarine bez Evelynn przy champion_mismatch musi byc odrzucona
+    assert ob._is_clean_consistent_polish_note(
+        "Podsumowanie zagrania na Katarinę: podwójne zabójstwo ze słabym wstępem i niską widocznością.",
+        {
+            "final_score": 61.7,
+            "champion_name": "Evelynn",
+            "requested_champion": "Katarina",
+            "champion_mismatch": True,
+            "defects": ["wrong_champion:Evelynn!=Katarina"],
+            "has_critical_defect": False,
+            "overnight_rank": 5,
+            "action_type": "double",
+        },
+    ) is False
+    # Notatka szczerze wskazujaca Evelynn i mismatch przechodzi jesli dluga i bez falszywych pochwal
+    assert ob._is_clean_consistent_polish_note(
+        "Evelynn DOUBLE (final 61.7): slabe tempo w porownaniu do klipow Katariny, brak akcji na poczatku.",
+        {
+            "final_score": 61.7,
+            "champion_name": "Evelynn",
+            "requested_champion": "Katarina",
+            "champion_mismatch": True,
+            "defects": ["slow_intro_gt_4.8s", "wrong_champion:Evelynn!=Katarina"],
+            "has_critical_defect": False,
+            "overnight_rank": 5,
+            "action_type": "double",
+        },
+    ) is True
+
+
+
+
+
 
 

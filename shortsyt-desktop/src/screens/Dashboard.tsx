@@ -78,6 +78,7 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
   const [previewFilename, setPreviewFilename] = useState<string | null>(null);
   const [backendUrl, setBackendUrl] = useState<string>('http://localhost:8765');
   const [brokenThumbs, setBrokenThumbs] = useState<Record<string, boolean>>({});
+  const [thumbVersion, setThumbVersion] = useState<number>(() => Date.now());
   const [ttTopTags, setTtTopTags] = useState<string[]>([]);
 
   const logsContainerRef = useRef<HTMLDivElement>(null);
@@ -140,6 +141,8 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
             const latestRes = await apiGetLatestOvernight();
             if (mountedRef.current && latestRes?.batch) {
               setLatestBatch(latestRes.batch);
+              setBrokenThumbs({});
+              setThumbVersion(Date.now());
               lastLoadedBatchIdRef.current = latestRes.batch.batch_id;
             }
           }
@@ -252,21 +255,21 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
 
       {/* LIVE OVERNIGHT PROGRESS BANNER */}
       {overnightStatus && ['scanning', 'rendering', 'evaluating'].includes(overnightStatus.status) && (
-        <div className="p-4 fk-cut bg-[#0E0F11] border border-indigo-400/50 space-y-2">
+        <div className="p-4 fk-cut bg-[#0E0F11] border border-[#C8FF3A]/45 space-y-2">
           <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="font-bold text-indigo-200 flex items-center gap-2 min-w-0 truncate">
-              <Loader2 className="w-4 h-4 animate-spin text-indigo-300 flex-shrink-0" />
+            <span className="font-bold text-[#C8FF3A] flex items-center gap-2 min-w-0 truncate">
+              <Loader2 className="w-4 h-4 animate-spin text-[#C8FF3A] flex-shrink-0" />
               <span className="truncate">Tryb Nocny w toku: {overnightStatus.phase}</span>
             </span>
             <span className="font-mono text-[#C8FF3A] font-black">{overnightStatus.progress}%</span>
           </div>
           <div className="w-full h-1.5 bg-[#17191C] rounded-full overflow-hidden">
-            <div className="h-full bg-indigo-400 transition-all duration-300" style={{ width: `${Math.min(100, Math.max(2, overnightStatus.progress || 0))}%` }} />
+            <div className="h-full bg-[#C8FF3A] transition-all duration-300" style={{ width: `${Math.min(100, Math.max(2, overnightStatus.progress || 0))}%` }} />
           </div>
           <div className="flex items-center justify-between text-[11px] text-[#A0A7B1] flex-wrap gap-2">
             <span>Skan: {overnightStatus.scanned_clips}/{overnightStatus.total_clips} • Mocne: {overnightStatus.qualified_count} • Zmontowano: {overnightStatus.rendered_count}/{overnightStatus.selected_count || 5}</span>
-            <button onClick={() => navigate('/clips')} className="text-indigo-300 hover:text-white font-semibold flex items-center gap-1">
-              Szczegóły w Przeglądarce Klipów <ArrowRight className="w-3 h-3" />
+            <button onClick={() => navigate('/clips')} className="text-[#C8FF3A] hover:text-white font-semibold flex items-center gap-1 whitespace-nowrap">
+              Szczegóły w Studio Klipów <ArrowRight className="w-3 h-3" />
             </button>
           </div>
         </div>
@@ -280,7 +283,7 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
               <div className="text-sm font-black text-[#FFFFFF] flex items-center gap-2 flex-wrap">
                 <Moon className="w-4 h-4 text-[#C8FF3A]" />
                 Gotowe Najlepsze Montaże z Nocy — Top {latestBatch.items.length} Synapsy
-                <span className="text-[9px] px-2 py-0.5 rounded bg-indigo-500/20 border border-indigo-400/35 text-indigo-200 font-bold">
+                <span className="text-[9px] px-2 py-0.5 rounded bg-[#C8FF3A]/15 border border-[#C8FF3A]/35 text-[#C8FF3A] font-bold">
                   {latestBatch.champion_name || 'Katarina'} • ZERO AUTO-UPLOADU
                 </span>
               </div>
@@ -288,7 +291,7 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
                 Skan: {latestBatch.scan_stats?.scanned_unpublished ?? 0} nieopubl. (znaleziono {latestBatch.scan_stats?.total_clips_found ?? 0}) • Mocne: {latestBatch.scan_stats?.qualified_count ?? 0} • Odrzucone: {latestBatch.scan_stats?.rejected_count ?? 0}
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
               {latestBatch.recommended_filename && (
                 <button
                   onClick={() => handlePreviewShort(latestBatch.recommended_filename!)}
@@ -338,7 +341,7 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
               const thumbParts = item.thumbnail_path ? item.thumbnail_path.split(/[\\/]/).filter(Boolean) : [];
               const thumbName = item.thumbnail_filename || (thumbParts.length > 0 ? thumbParts[thumbParts.length - 1] : null);
               const thumbUrl = thumbName && !brokenThumbs[item.output_filename]
-                ? `${backendUrl}/thumbnails/${encodeURIComponent(thumbName)}`
+                ? `${backendUrl}/thumbnails/${encodeURIComponent(thumbName)}?v=${thumbVersion}`
                 : null;
               return (
                 <div
@@ -408,6 +411,23 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
                               <Star className="w-2.5 h-2.5 fill-current" />Ulubiony
                             </span>
                           )}
+                          {item.can_retry_publish ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-300 font-bold">
+                              ⚠️ Brak: {(item.missing_platforms || []).map(p => p.toUpperCase()).join('+') || 'YT'}
+                            </span>
+                          ) : item.already_published && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2ECC71]/20 border border-[#2ECC71]/40 text-[#2ECC71] font-bold">
+                              ✅ {(item.published_platforms || []).length > 0 ? item.published_platforms!.join('+').toUpperCase() : 'OPUBL./KOLEJKA'}
+                            </span>
+                          )}
+                          {item.publish_recommended === false && (
+                            <span
+                              title={(item.publish_block_reasons || []).join(', ')}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-[#FE2C55]/20 border border-[#FE2C55]/50 text-[#FF7A96] font-bold"
+                            >
+                              🚫 ODRADZANE DO PUBLIKACJI
+                            </span>
+                          )}
                           <span className="text-[10px] font-bold uppercase text-indigo-300">
                             {item.champion_name} • {item.action_type}
                           </span>
@@ -442,21 +462,33 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
 
                   {item.render_ok && (
                     <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                      {item.file_exists !== false && (
+                        <button
+                          onClick={() => handlePreviewShort(item.output_filename)}
+                          className="px-3 py-1.5 rounded-lg bg-[#272A2F] hover:bg-[#32363D] text-xs font-semibold text-[#FFFFFF] flex items-center gap-1.5"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />Odtwórz
+                        </button>
+                      )}
                       <button
-                        onClick={() => handlePreviewShort(item.output_filename)}
-                        className="px-3 py-1.5 rounded-lg bg-[#272A2F] hover:bg-[#32363D] text-xs font-semibold text-[#FFFFFF] flex items-center gap-1.5"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />Odtwórz
-                      </button>
-                      <button
+                        disabled={Boolean(item.already_published && !item.can_retry_publish)}
                         onClick={() => navigate('/outputs', { state: { publishFilename: item.output_filename } })}
-                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 ${
-                          isWinner
+                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 disabled:opacity-55 disabled:cursor-not-allowed ${
+                          item.can_retry_publish
+                            ? 'bg-amber-400 hover:bg-amber-300 text-[#050505]'
+                            : item.already_published
+                            ? 'bg-[#17191C] text-[#2ECC71] border border-[#2ECC71]/40'
+                            : isWinner
                             ? 'bg-[#C8FF3A] hover:bg-[#AEE820] text-[#050505]'
                             : 'bg-[#17191C] hover:bg-[#272A2F] text-[#C8FF3A] border border-[#C8FF3A]/40'
                         }`}
                       >
-                        <Share2 className="w-3.5 h-3.5" />Wybierz i Opublikuj
+                        <Share2 className="w-3.5 h-3.5" />
+                        {item.can_retry_publish
+                          ? `Wrzuć ponownie (brak: ${(item.missing_platforms || []).map(p => p.toUpperCase()).join('+') || 'YT'})`
+                          : item.already_published
+                          ? 'Już w kolejce / opublikowano'
+                          : 'Wybierz i Opublikuj'}
                       </button>
                     </div>
                   )}

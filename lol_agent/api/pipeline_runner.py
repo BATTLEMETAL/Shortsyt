@@ -199,7 +199,7 @@ def _run_pipeline(
             # Szukaj pliku w znanych katalogach nagrań
             candidate_dirs = [
                 Path(__file__).parent.parent / "input_clips",
-                Path(r"C:\Users\mz100\Videos\Overwolf\Outplayed\League of Legends"),
+                Path.home() / "Videos" / "Overwolf" / "Outplayed" / "League of Legends",
                 Path(r"C:\Medal\Edits"),
             ]
             target_name = Path(source_path).name
@@ -812,6 +812,8 @@ def _run_pipeline(
             director_decision=director_dec,
             objective_secured=objective_secured,
             ally_banner_blocked=ally_banner_blocked,
+            speed_bridge_gap_s=4.5,
+            auto_trim_intro=True,
         )
 
         check_cancellation()

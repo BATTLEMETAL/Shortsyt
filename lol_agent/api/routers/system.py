@@ -425,7 +425,7 @@ def _ensure_cloudflared_binary() -> Path:
 def _update_live_stats_remote_url(url: Optional[str]) -> None:
     targets = [
         DARK_ROOT / "docs" / "live_stats.json",
-        Path(r"C:\Users\mz100\OneDrive\Pulpit\odpal\Shortsyt\live_stats.json"),
+        Path.home() / "OneDrive" / "Pulpit" / "odpal" / "Shortsyt" / "live_stats.json",
     ]
     now_iso = datetime.now().isoformat()
     for path in targets:

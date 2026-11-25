@@ -95,3 +95,51 @@ def test_generate_thumbnail_creates_valid_pro_image(synthetic_video, tmp_path):
     with Image.open(thumb_out) as thumb:
         assert thumb.size == (THUMB_W, THUMB_H)
         assert thumb.format == "JPEG"
+
+
+def test_generate_thumbnail_variants_produce_distinct_images(tmp_path):
+    """Successive variant_index values (0..3) must produce genuinely distinct thumbnails."""
+    import hashlib
+
+    video_path = tmp_path / "varied_clip.mp4"
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(str(video_path), fourcc, 15.0, (1920, 1080))
+    # 6s video with visibly distinct colors and action positions across segments
+    palettes = [
+        ((30, 50, 210), (320, 420)),
+        ((200, 190, 40), (700, 520)),
+        ((50, 210, 80), (1180, 450)),
+        ((215, 70, 190), (1500, 560)),
+    ]
+    for f_idx in range(90):
+        seg = min(3, f_idx // 23)
+        bg_bgr, center = palettes[seg]
+        frame = np.full((1080, 1920, 3), bg_bgr, dtype=np.uint8)
+        cv2.circle(frame, center, 180, (25, 220, 255), -1)
+        cv2.rectangle(frame, (center[0] - 90, center[1] - 220), (center[0] + 90, center[1] - 190), (20, 210, 240), -1)
+        out.write(frame)
+    out.release()
+
+    hashes = []
+    arrays = []
+    for v_idx in range(4):
+        out_jpg = str(tmp_path / f"thumb_v{v_idx}.jpg")
+        res = generate_thumbnail(
+            video_path=str(video_path),
+            peak_moment=2.5,
+            action_label="TRIPLE KILL",
+            champion_name="Katarina",
+            output_path=out_jpg,
+            variant_index=v_idx,
+        )
+        assert res == out_jpg and os.path.isfile(out_jpg)
+        hashes.append(hashlib.sha256(open(out_jpg, "rb").read()).hexdigest())
+        with Image.open(out_jpg) as img:
+            assert img.size == (THUMB_W, THUMB_H)
+            arrays.append(np.asarray(img.convert("RGB"), dtype=np.float32))
+
+    assert len(set(hashes)) == 4
+    for i in range(len(arrays)):
+        for j in range(i + 1, len(arrays)):
+            mean_diff = float(np.mean(np.abs(arrays[i] - arrays[j])))
+            assert mean_diff > 5.0

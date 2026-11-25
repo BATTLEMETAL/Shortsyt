@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import struct
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -237,6 +238,9 @@ def _build_clip_entry(
 ) -> Optional[Dict[str, Any]]:
     raw_path = str(clip_obj.get("path") or "").strip()
     if not raw_path:
+        return None
+    low_p = raw_path.replace("/", "\\").lower()
+    if "\\recently deleted\\" in low_p or "\\.trash\\" in low_p:
         return None
 
     path_info = parse_outplayed_path_info(raw_path)
@@ -474,8 +478,222 @@ def _parse_idb_text_fragments(text: str) -> Dict[str, Dict[str, Any]]:
     return delta
 
 
+def _read_v8_varint(buf: bytes, pos: int) -> Tuple[Optional[int], int]:
+    val = 0
+    shift = 0
+    n = len(buf)
+    while pos < n and shift < 35:
+        b = buf[pos]
+        pos += 1
+        val |= (b & 0x7F) << shift
+        if not (b & 0x80):
+            return val, pos
+        shift += 7
+    return None, pos
+
+
+def _read_v8_string(buf: bytes, pos: int, max_chars: int = 1024) -> Tuple[Optional[str], int]:
+    if pos >= len(buf):
+        return None, pos
+    tag = buf[pos]
+    if tag not in (0x22, 0x63):  # '"' OneByteString | 'c' TwoByteString
+        return None, pos
+    byte_len, p = _read_v8_varint(buf, pos + 1)
+    if byte_len is None or byte_len < 0 or byte_len > max_chars * (2 if tag == 0x63 else 1) or p + byte_len > len(buf):
+        return None, pos
+    raw = buf[p : p + byte_len]
+    try:
+        txt = raw.decode("utf-16le" if tag == 0x63 else "utf-8", errors="ignore")
+        return txt, p + byte_len
+    except Exception:
+        return None, pos
+
+
+def _read_v8_number(buf: bytes, pos: int) -> Tuple[Optional[float], int]:
+    if pos >= len(buf):
+        return None, pos
+    tag = buf[pos]
+    if tag == 0x49:  # 'I' ZigZag varint Int32
+        raw, p = _read_v8_varint(buf, pos + 1)
+        if raw is None:
+            return None, pos
+        return float((raw >> 1) ^ -(raw & 1)), p
+    if tag == 0x55:  # 'U' unsigned varint Uint32
+        raw, p = _read_v8_varint(buf, pos + 1)
+        if raw is None:
+            return None, pos
+        return float(raw), p
+    if tag == 0x4E and pos + 9 <= len(buf):  # 'N' IEEE-754 double
+        try:
+            val = struct.unpack("<d", buf[pos + 1 : pos + 9])[0]
+            if val == val:  # skip NaN
+                return float(val), pos + 9
+        except Exception:
+            pass
+    return None, pos
+
+
+def _extract_v8_match_meta_chunk(chunk: bytes) -> Dict[str, Any]:
+    meta: Dict[str, Any] = {}
+    sc_idx = chunk.rfind(b'"\x10selectedChampion')
+    if sc_idx != -1:
+        champ, _ = _read_v8_string(chunk, sc_idx + 18, max_chars=40)
+        if champ:
+            meta["selectedChampion"] = champ.strip()
+        tail = chunk[sc_idx : min(len(chunk), sc_idx + 220)]
+        for field_key in (b"killCount", b"assistCount", b"deathCount"):
+            fk = b'"' + bytes([len(field_key)]) + field_key
+            idx = tail.find(fk)
+            if idx != -1:
+                num, _ = _read_v8_number(tail, idx + len(fk))
+                if num is not None and 0.0 <= num <= 200.0:
+                    meta[field_key.decode("ascii")] = int(num)
+        iv_idx = tail.find(b'"\tisVictory')
+        if iv_idx != -1 and iv_idx + 11 < len(tail):
+            b_tag = tail[iv_idx + 11]
+            if b_tag in (0x54, 0x46):
+                meta["isVictory"] = b_tag == 0x54
+    return meta
+
+
+def _parse_idb_v8_records(raw_bytes: bytes) -> Dict[str, Dict[str, Any]]:
+    """
+    Dekoduje rekordy Overwolf Outplayed zapisane binarnie w formacie V8 Structured Clone
+    wewnątrz plików WAL LevelDB (*.log).
+    """
+    delta: Dict[str, Dict[str, Any]] = {}
+    if not raw_bytes:
+        return delta
+
+    # 1. Zmapuj foldery meczów -> metadane (selectedChampion, KDA) z najnowszych nagłówków
+    folder_meta_map: Dict[str, Dict[str, Any]] = {}
+    for m_sc in re.finditer(re.escape(b'"\x10selectedChampion'), raw_bytes):
+        sc_pos = m_sc.start()
+        meta = _extract_v8_match_meta_chunk(raw_bytes[sc_pos : min(len(raw_bytes), sc_pos + 240)])
+        if not meta.get("selectedChampion"):
+            continue
+        fwd = raw_bytes[sc_pos : min(len(raw_bytes), sc_pos + 6000)]
+        p_match = fwd.find(b'"\x04path')
+        if p_match != -1:
+            clip_p, _ = _read_v8_string(fwd, p_match + 6, max_chars=512)
+            if clip_p:
+                mf = parse_outplayed_path_info(clip_p)["match_folder"]
+                if mf:
+                    folder_meta_map[mf] = meta
+
+    # 2. Przetwórz kolejno obiekty klipów (ostatni wpis w WAL wygrywa po _upsert_merged)
+    path_marker = b'"\x04path'
+    for m_path in re.finditer(re.escape(path_marker), raw_bytes):
+        p_start = m_path.start()
+        clip_path, p_after = _read_v8_string(raw_bytes, p_start + len(path_marker), max_chars=512)
+        if not clip_path or not re.search(r"\.(?:mp4|mov|mkv|avi)$", clip_path, flags=re.IGNORECASE):
+            continue
+
+        # Wyznacz bezpieczny koniec bieżącego klipu (do kolejnego klipu / nowego meczu)
+        search_limit = min(len(raw_bytes), p_after + 16384)
+        next_candidates = []
+        for sep in (b'"\x04path', b'o"\tstartTimeN', b'"\x10selectedChampion'):
+            nxt = raw_bytes.find(sep, p_after + 12, search_limit)
+            if nxt != -1:
+                next_candidates.append(nxt)
+        clip_end_pos = min(next_candidates) if next_candidates else search_limit
+        clip_tail = raw_bytes[p_after:clip_end_pos]
+        clip_head = raw_bytes[max(0, p_start - 420) : p_start]
+
+        # Czasy start/end klipu i ulubione mogą stać bezpośrednio przed "path"
+        start_time = None
+        end_time = None
+        st_idx = clip_head.rfind(b'"\tstartTime')
+        if st_idx != -1:
+            start_time, _ = _read_v8_number(clip_head, st_idx + 11)
+        et_idx = clip_head.rfind(b'"\x07endTime')
+        if et_idx != -1:
+            end_time, _ = _read_v8_number(clip_head, et_idx + 9)
+        if isinstance(start_time, float) and isinstance(end_time, float) and end_time > start_time:
+            if (end_time - start_time) > 1000.0:
+                start_time /= 1000.0
+                end_time /= 1000.0
+        else:
+            start_time = None
+            end_time = None
+
+        is_favorite = False
+        for seg_chk in (clip_head, clip_tail[:400]):
+            fv_idx = seg_chk.rfind(b'"\nisFavorite')
+            if fv_idx != -1 and fv_idx + 12 < len(seg_chk):
+                b_tag = seg_chk[fv_idx + 12]
+                if b_tag in (0x54, 0x46):
+                    is_favorite = b_tag == 0x54
+
+        # Wyciągnij zdarzenia (kill/assist/death, time ms, past/future, label)
+        events: List[Dict[str, Any]] = []
+        type_marker = b'"\x04type'
+        for m_ev in re.finditer(re.escape(type_marker), clip_tail):
+            ev_type, ev_after = _read_v8_string(clip_tail, m_ev.start() + len(type_marker), max_chars=32)
+            if not ev_type or ev_type.lower() not in {"kill", "assist", "death", "victory"}:
+                continue
+            nxt_ev = clip_tail.find(type_marker, ev_after)
+            ev_end = min(len(clip_tail), nxt_ev if nxt_ev != -1 else (ev_after + 520))
+            ev_slice = clip_tail[ev_after:ev_end]
+
+            ev_time_ms = None
+            t_idx = ev_slice.find(b'"\x04time')
+            if t_idx != -1:
+                ev_time_ms, _ = _read_v8_number(ev_slice, t_idx + 6)
+
+            timing_dict: Dict[str, float] = {}
+            past_idx = ev_slice.find(b'"\x04past')
+            if past_idx != -1:
+                past_ms, _ = _read_v8_number(ev_slice, past_idx + 6)
+                if past_ms is not None:
+                    timing_dict["past"] = past_ms
+            fut_idx = ev_slice.find(b'"\x06future')
+            if fut_idx != -1:
+                fut_ms, _ = _read_v8_number(ev_slice, fut_idx + 8)
+                if fut_ms is not None:
+                    timing_dict["future"] = fut_ms
+
+            ev_label = ""
+            lbl_idx = ev_slice.find(b'"\x05label')
+            if lbl_idx != -1:
+                lbl_s, _ = _read_v8_string(ev_slice, lbl_idx + 7, max_chars=32)
+                if lbl_s:
+                    ev_label = lbl_s
+
+            events.append({
+                "type": ev_type.lower(),
+                "time": ev_time_ms,
+                "timing": timing_dict,
+                "data": {"label": ev_label} if ev_label else {},
+            })
+
+        mf = parse_outplayed_path_info(clip_path)["match_folder"]
+        match_meta = dict(folder_meta_map.get(mf) or {})
+        if not match_meta.get("selectedChampion"):
+            # Fallback do najbliższego poprzedzającego nagłówka info w buforze (max 65 KB wstecz)
+            back = raw_bytes[max(0, p_start - 65536) : p_start]
+            match_meta = _extract_v8_match_meta_chunk(back)
+
+        clip_obj: Dict[str, Any] = {
+            "path": clip_path,
+            "isFavorite": is_favorite,
+            "events": events,
+        }
+        if start_time is not None and end_time is not None:
+            clip_obj["startTime"] = start_time
+            clip_obj["endTime"] = end_time
+        if match_meta.get("selectedChampion"):
+            clip_obj["selectedChampion"] = match_meta["selectedChampion"]
+
+        entry = _build_clip_entry(clip_obj, match_meta or None, source="outplayed_live")
+        if entry:
+            _upsert_merged(delta, entry)
+
+    return delta
+
+
 def _load_live_idb_delta(idb_dir: Path) -> Dict[str, Dict[str, Any]]:
-    """Bezpiecznie skanuje tylko do odczytu 2 najnowsze pliki *.log z IndexedDB LevelDB."""
+    """Bezpiecznie skanuje tylko do odczytu 2 najnowsze pliki *.log z IndexedDB LevelDB (JSON + V8 binary)."""
     delta: Dict[str, Dict[str, Any]] = {}
     if not idb_dir.exists():
         return delta
@@ -497,10 +715,12 @@ def _load_live_idb_delta(idb_dir: Path) -> Dict[str, Dict[str, Any]]:
             continue
         if not raw_bytes:
             continue
+        for entry in _parse_idb_v8_records(raw_bytes).values():
+            _upsert_merged(delta, entry)
         text = raw_bytes.decode("utf-8", errors="ignore")
         parsed = _parse_idb_text_fragments(text)
-        for k, entry in parsed.items():
-            delta[k] = entry
+        for entry in parsed.values():
+            _upsert_merged(delta, entry)
 
     return delta
 

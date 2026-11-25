@@ -25,7 +25,7 @@ try:
     _TESS_CANDIDATES = [
         r"C:\Program Files\Tesseract-OCR\tesseract.exe",
         r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        r"C:\Users\mz100\AppData\Local\Programs\Tesseract-OCR\tesseract.exe",
+        os.path.expanduser(r"~\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"),
     ]
     for _p in _TESS_CANDIDATES:
         if os.path.exists(_p):
@@ -650,15 +650,24 @@ def compute_optimal_clip_window(
             or (not is_dense_teamfight and (first_k - c_start) >= 2.0)
         )
 
+        try:
+            try:
+                from lol_agent.account_manager import get_target_duration_bounds
+            except ImportError:
+                from account_manager import get_target_duration_bounds  # type: ignore
+            profile_min_dur, profile_max_dur = get_target_duration_bounds(4 if is_multikill_tier and kill_count >= 4 else 2)
+        except Exception:
+            profile_min_dur, profile_max_dur = 11.0, 15.2
+
         if is_approach_fit and not is_dense_teamfight:
             # PODEJŚCIE A: "DOBIEGAM DO AKCJI, WALCZĘ, KOŃCZĘ" (Approach & Context)
-            # Pokazuje podejście gracza, inicjację, wymianę ciosów i zwięzły finisz (12-18s)
+            # Pokazuje podejście gracza, inicjację, wymianę ciosów i zwięzły finisz (docelowo <= 15.2s)
             approach_lead = min(4.0, max(2.5, buildup * 1.8)) if has_real_video else max(1.5, min(2.5, buildup))
             start = max(0.0, round(c_start - approach_lead, 1))
-            if (c_start - start) > 4.5:
-                start = max(0.0, round(c_start - 4.5, 1))
+            if (c_start - start) > 3.5:
+                start = max(0.0, round(c_start - 3.5, 1))
             end = min(max_allowed_end, round(final_kill_t + clean_outro, 1))
-            target_max = 18.0
+            target_max = profile_max_dur
             if (end - start) > target_max and len(real_kills) <= 1:
                 start = max(0.0, round(end - target_max, 1))
             print(f"   🎬 [Montage Director] Wybrano PODEJŚCIE A (Approach & Context): start={start:.1f}s, end={end:.1f}s (dur={end-start:.1f}s, outro={end-final_kill_t:.1f}s)")
@@ -681,8 +690,8 @@ def compute_optimal_clip_window(
         if has_real_video and last_k > lethal_hit_t and (last_k + 0.6) > end:
             end = min(max_allowed_end, round(last_k + 0.6, 1))
 
-        # Wydłużanie czasu (setup/context) wyłącznie z PRZODU nagrania:
-        MIN_SHORT_SPAN = 10.0
+        # Wydłużanie czasu (setup/context) wyłącznie z PRZODU nagrania do min_dur z profilu (domyślnie 11.0s):
+        MIN_SHORT_SPAN = profile_min_dur
         if (end - start) < MIN_SHORT_SPAN and start > 0.0:
             needed = MIN_SHORT_SPAN - (end - start)
             start = max(0.0, round(start - needed, 1))
@@ -690,10 +699,10 @@ def compute_optimal_clip_window(
         # TWARDY BEZPIECZNIK OUTRO: Po ostatnim killu MAX 2.0s do końca klipu!
         end = min(end, max_allowed_end)
 
-        # Retention Lead-In Guard: szybki hook (<= 4.2s do 1. killa, lub <= 5.2s przy epicznym obiekcie), min. 10s
+        # Retention Lead-In Guard: szybki hook (<= 3.5s do 1. killa, lub <= 4.5s przy epicznym obiekcie), min. 11s
         obj_sec = bool(getattr(frag_res, "objective_secured", False))
         ally_blk = bool(getattr(frag_res, "ally_banner_blocked", False))
-        max_lead_in = 5.2 if obj_sec else 4.2
+        max_lead_in = 4.5 if obj_sec else 3.5
         if real_kills and (first_k - start) > max_lead_in:
             start = max(0.0, round(first_k - max_lead_in, 1))
             if (end - start) < MIN_SHORT_SPAN:
@@ -816,7 +825,7 @@ def _pick_varied_hook(action_type: str, video_path: str = "", min_hp: float = 10
             "QUADRAKILL - 4 DOWN IN SECONDS",
             "QUADRAKILL - THEY THOUGHT 4v1 WAS SAFE",
             "QUADRAKILL - ONE MORE LEFT",
-            "QUADRAKILL - RELENTLESS CHASE",
+            "QUADRAKILL - ZERO ESCAPE",
         ],
         "triple": [
             "TRIPLE KILL - ENEMY DIFF",
@@ -828,9 +837,9 @@ def _pick_varied_hook(action_type: str, video_path: str = "", min_hp: float = 10
         "double": [
             "DOUBLE KILL - CLEAN OR LUCKY?",
             "DOUBLE KILL - 2v1 TURNAROUND",
-            "DOUBLE KILL - THEY GANKED WRONG LANE",
+            "DOUBLE KILL - GREEDY CHASE PUNISHED",
             "DOUBLE KILL - TWO DOWN INSTANTLY",
-            "DOUBLE KILL - NEVER DIVE THIS",
+            "DOUBLE KILL - ZERO ESCAPE",
         ],
         "solo_bolo": [
             "SOLO BOLO - 1v1 MASTERCLASS",

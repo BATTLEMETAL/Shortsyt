@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
 authors = [
-    {name = "Michał Zalewski", email = "mz10062001@gmail.com"},
+    {name = "Michał Zalewski", email = "BATTLEMETAL@users.noreply.github.com"},
 ]
 
 keywords = ["youtube", "shorts", "computer-vision", "opencv", "ffmpeg", "fastapi", "electron", "ai-automation"]

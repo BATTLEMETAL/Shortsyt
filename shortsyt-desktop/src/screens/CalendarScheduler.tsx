@@ -15,6 +15,7 @@ import {
 
 export function CalendarScheduler() {
   const [slots, setSlots] = useState<CalendarSlot[]>([]);
+  const [peakHoursCet, setPeakHoursCet] = useState<string[]>(['15:00', '21:30']);
   const [days, setDays] = useState<number>(14);
   const [loading, setLoading] = useState<boolean>(true);
   const [autoFilling, setAutoFilling] = useState<boolean>(false);
@@ -94,6 +95,9 @@ export function CalendarScheduler() {
         apiGetSocialQueue().catch(() => null),
       ]);
       setSlots(res.slots || []);
+      if (Array.isArray(res.peak_hours_cet) && res.peak_hours_cet.length > 0) {
+        setPeakHoursCet(res.peak_hours_cet);
+      }
       if (qRes) {
         setSocialQueueItems(qRes.items || []);
         setSocialSummary(qRes.summary || { total: 0, pending: 0, published: 0, failed: 0 });
@@ -285,7 +289,7 @@ export function CalendarScheduler() {
             <h1 className="text-2xl font-bold text-white tracking-tight">Kalendarz Publikacji i Analityka Skuteczności</h1>
           </div>
           <p className="text-[#A0A7B1] text-sm mt-1">
-            Harmonogram 2 filmów dziennie (11:00 i 21:30 CET) • Zero kanibalizacji zasięgów • Wskaźnik skuteczności Shortsów
+            Harmonogram 2 filmów dziennie ({peakHoursCet.join(' i ')} CET) • Zero kanibalizacji zasięgów • Wskaźnik skuteczności Shortsów
           </p>
         </div>
 
@@ -345,7 +349,7 @@ export function CalendarScheduler() {
             <Flame className="w-5 h-5 text-[#C8FF3A]" />
           </div>
           <p className="text-2xl font-bold text-white mt-2">{totalFreePeak}</p>
-          <span className="text-xs text-[#686E78]">Okna 11:00 & 21:30 CET</span>
+          <span className="text-xs text-[#686E78]">Okna {peakHoursCet.join(' & ')} CET</span>
         </div>
 
         <div className="bg-[#0E0F11] border border-[#272A2F] fk-cut-sm p-4">
@@ -542,7 +546,7 @@ export function CalendarScheduler() {
                   )}
                 </div>
                 <span className="text-xs text-[#A0A7B1]">
-                  {isPastDate ? `${daySlots.length} film(ów)` : '2 okna publikacji (11:00 & 21:30 CET)'}
+                  {isPastDate ? `${daySlots.length} film(ów)` : `${peakHoursCet.length} okna publikacji (${peakHoursCet.join(' & ')} CET)`}
                 </span>
               </div>
 

@@ -590,6 +590,167 @@ def test_tiktok_creator_and_user_info_and_inbox_mode(tmp_path, monkeypatch):
         assert mock_upload.call_args.kwargs["post_mode"] == "inbox"
 
 
+def test_scheduled_queue_blocks_duplicate_published_and_enforces_spacing(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    from lol_agent.scheduled_queue import check_and_flush_scheduled_posts
+
+    queue_file = tmp_path / "scheduled_social_queue.json"
+    monkeypatch.setattr("lol_agent.scheduled_queue.QUEUE_FILE", queue_file)
+
+    v1 = tmp_path / "clip1.mp4"
+    v2 = tmp_path / "clip2.mp4"
+    v1.write_bytes(b"video-one")
+    v2.write_bytes(b"video-two")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    items = [
+        {
+            "id": "ig_already_pub",
+            "platform": "instagram",
+            "video_path": str(v1.resolve()),
+            "caption": "Old copy",
+            "publish_at": "2020-01-01T00:00:00Z",
+            "published_at": "2020-01-01T00:01:00Z",
+            "status": "published",
+        },
+        {
+            "id": "ig_dup_pending",
+            "platform": "instagram",
+            "video_path": str(v1.resolve()),
+            "caption": "Dup copy",
+            "publish_at": "2020-01-02T00:00:00Z",
+            "status": "pending",
+        },
+        {
+            "id": "ig_fresh_pending_1",
+            "platform": "instagram",
+            "video_path": str(v2.resolve()),
+            "caption": "Fresh 2",
+            "publish_at": now_iso,
+            "status": "pending",
+        },
+        {
+            "id": "ig_fresh_pending_2",
+            "platform": "instagram",
+            "video_path": str((tmp_path / "clip3.mp4").resolve()),
+            "caption": "Fresh 3",
+            "publish_at": now_iso,
+            "status": "pending",
+        },
+    ]
+    (tmp_path / "clip3.mp4").write_bytes(b"video-three")
+    queue_file.write_text(json.dumps(items), encoding="utf-8")
+
+    with patch("lol_agent.instagram_publisher.upload_instagram_reel", return_value={"success": True, "media_id": "ig_ok"}) as mock_ig:
+        flushed = check_and_flush_scheduled_posts()
+        assert flushed == 1
+        assert mock_ig.call_count == 1
+
+    after = {it["id"]: it for it in json.loads(queue_file.read_text(encoding="utf-8"))}
+    assert after["ig_dup_pending"]["status"] == "skipped_duplicate"
+    assert after["ig_fresh_pending_1"]["status"] == "published"
+    assert after["ig_fresh_pending_2"]["status"] == "pending"
+    assert after["ig_fresh_pending_2"].get("next_retry_at") is not None
+
+
+def test_cleanup_published_video_respects_pending_queue_and_deletes_when_idle(tmp_path):
+    from lol_agent.temp_cleaner import cleanup_published_video_if_idle, cleanup_temp_directory
+
+    temp_dir = tmp_path / "lol_temp"
+    temp_dir.mkdir()
+    batches_dir = tmp_path / "overnight_batches"
+    batches_dir.mkdir()
+    q_file = tmp_path / "scheduled_social_queue.json"
+
+    mp4 = temp_dir / "short_test_clean.mp4"
+    thumb = temp_dir / "short_test_clean_thumb.jpg"
+    meta = temp_dir / "short_test_clean.meta.json"
+    mp4.write_bytes(b"video-bytes" * 100)
+    thumb.write_bytes(b"thumb")
+    meta.write_text(json.dumps({"published_at": "2026-11-22T18:00:00Z", "published_platforms": ["youtube", "tiktok"]}), encoding="utf-8")
+
+    # 1. Wpis 'pending' w kolejce chroni .mp4 przed usunięciem
+    q_file.write_text(json.dumps([
+        {"id": "tt_p", "platform": "tiktok", "status": "pending", "video_path": str(mp4), "thumbnail_path": str(thumb)}
+    ]), encoding="utf-8")
+
+    res_pending = cleanup_published_video_if_idle(str(mp4), queue_file=q_file)
+    assert res_pending["deleted"] is False
+    assert res_pending["reason"] == "pending_in_queue"
+    assert mp4.exists()
+
+    # Również cleanup_temp_directory nie kasuje oczekującego pliku
+    stats_pending = cleanup_temp_directory(temp_dir=temp_dir, queue_file=q_file, batches_dir=batches_dir)
+    assert stats_pending["removed_published"] == 0
+    assert mp4.exists()
+
+    # 2. Po zmianie kolejki na 'published' .mp4 znika, ale .meta.json i _thumb.jpg zostają
+    q_file.write_text(json.dumps([
+        {"id": "tt_p", "platform": "tiktok", "status": "published", "video_path": str(mp4), "thumbnail_path": str(thumb)}
+    ]), encoding="utf-8")
+    res_idle = cleanup_published_video_if_idle(str(mp4), queue_file=q_file)
+    assert res_idle["deleted"] is True
+    assert not mp4.exists()
+    assert meta.exists() and json.loads(meta.read_text(encoding="utf-8")).get("video_cleaned") is True
+    assert thumb.exists()
+
+
+def test_scheduled_queue_logs_tiktok_web_error_and_falls_back(tmp_path, monkeypatch, capsys):
+    from lol_agent.scheduled_queue import check_and_flush_scheduled_posts
+
+    queue_file = tmp_path / "scheduled_social_queue.json"
+    monkeypatch.setattr("lol_agent.scheduled_queue.QUEUE_FILE", queue_file)
+    monkeypatch.setenv("TIKTOK_USE_WEB_STUDIO", "1")
+
+    vid = tmp_path / "short_web_fallback.mp4"
+    vid.write_bytes(b"0" * 512)
+    queue_file.write_text(json.dumps([
+        {
+            "id": "tt_fb_1",
+            "platform": "tiktok",
+            "video_path": str(vid),
+            "caption": "Katarina Triple",
+            "publish_at": "2020-01-01T00:00:00Z",
+            "status": "pending",
+            "extra": {"hashtags": ["katarina", "fyp"]},
+        }
+    ]), encoding="utf-8")
+
+    with patch("lol_agent.tiktok_web_scheduler.schedule_tiktok_via_web_studio", return_value={"success": False, "error": "captcha_blocked"}):
+        with patch("lol_agent.tiktok_publisher.upload_tiktok_short", return_value={"success": True, "publish_id": "fb_api_1"}) as mock_api:
+            flushed = check_and_flush_scheduled_posts()
+            assert flushed == 1
+            assert mock_api.call_count == 1
+
+    out = capsys.readouterr().out
+    assert "captcha_blocked" in out
+    assert not vid.exists()  # Po sukcesie fallbacku plik .mp4 został automatycznie posprzątany!
+
+
+def test_clamp_cover_timestamp_ms_within_real_clip_duration(tmp_path):
+    from lol_agent.tiktok_publisher import _clamp_cover_timestamp_ms
+    import cv2
+
+    vid = tmp_path / "short_12s.mp4"
+    vid.write_bytes(b"mp4")
+
+    class _FakeCap:
+        def __init__(self, _p): pass
+        def get(self, prop):
+            if prop == cv2.CAP_PROP_FPS:
+                return 60.0
+            if prop == cv2.CAP_PROP_FRAME_COUNT:
+                return 718.0  # ~11.966s
+            return 0.0
+        def release(self): pass
+
+    with patch.object(cv2, "VideoCapture", _FakeCap):
+        # 25220ms na 11.96s klipie musi zostać przycięte do środka filmu (~5384ms)
+        clamped = _clamp_cover_timestamp_ms(vid, 25220)
+        assert 1000 <= clamped < 11500
+        assert _clamp_cover_timestamp_ms(vid, 3380) == 3380
+
+
 
 
 

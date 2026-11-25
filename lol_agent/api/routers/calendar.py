@@ -36,10 +36,18 @@ def get_calendar(
             }
         except Exception:
             pass
+        by_weekday = {}
+        try:
+            from ..youtube_uploader import get_weekly_peak_schedule_cet
+            by_weekday = get_weekly_peak_schedule_cet()
+        except Exception:
+            by_weekday = {}
         return {
             "slots": slots,
             "days": days,
             "total": len(slots),
+            "peak_hours_cet": calendar_manager.get_peak_hours_cet(),
+            "peak_hours_by_weekday_cet": by_weekday,
             "social_queue_summary": social_queue_summary,
         }
     except Exception as e:

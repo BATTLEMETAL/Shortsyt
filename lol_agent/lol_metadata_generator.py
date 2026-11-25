@@ -30,6 +30,16 @@ except ImportError:
         }
 
 
+try:
+    from lol_agent.synapsa_engine import strip_rank_prefix
+except ImportError:
+    try:
+        from synapsa_engine import strip_rank_prefix
+    except ImportError:
+        def strip_rank_prefix(title: str) -> str:
+            return re.sub(r'^(?:(?:master|diamond|challenger|grandmaster|emerald|platinum|gold|silver|bronze)\s*(?:tier|elo)?|tier)\s+', '', str(title or ''), flags=re.IGNORECASE).strip()
+
+
 def _build_hashtags(champion: str = "Katarina", action_type: str = "outplay") -> str:
     """Buduje bogaty zestaw viralowych hashtagów pod algorytm YouTube Shorts (kanoniczne małe litery)."""
     clean = re.sub(r"[^a-zA-Z0-9]", "", champion).lower() if champion else "katarina"
@@ -276,7 +286,7 @@ def generate_channel_title(
         templates = [
             f"From Nowhere to Double Kill – and Gone! 💨 #Shorts",
             f"They Came 2v1... Left in Graves 💀 {champ} Double 🔥 #Shorts",
-            f"They Ganked The Wrong Lane 😈 Clean Double Kill ⚡ #Shorts",
+            f"Greedy Chase Turned Around 😈 Clean Double Kill ⚡ #Shorts",
             f"Two Down in a Blink 💥 {champ} 2v1 Turnaround 💀 #Shorts",
             f"Two Resets in 1 Second ⚡ Clean Double Kill 🔥 #Shorts",
             f"They Tried to Pinch {champ}... Instant 2v1 Reversal 💀 #Shorts",
@@ -445,7 +455,7 @@ def build_channel_description(title: str, champion: str = "Katarina", action_typ
             f"⚡ New viral shorts and clutch moments every day!\n\n"
             f"👍 Drop a LIKE if this 1v1 was clean!\n"
             f"🔔 SUBSCRIBE to Dwannellenga so you never miss a clip!\n"
-            f"💬 Rate this Solo Bolo 1-10 in the comments below! 👇\n\n"
+            f"💬 Clean mechanics or greedy enemy mistake? Drop your take below! 👇\n\n"
             f"🌐 Connect with us across platforms:\n"
             f"📘 Facebook: https://www.facebook.com/Dwannellenga\n"
             f"📸 Instagram: https://www.instagram.com/dwannellenga\n"
@@ -460,7 +470,7 @@ def build_channel_description(title: str, champion: str = "Katarina", action_typ
         f"⚡ New viral shorts and clutch moments every day!\n\n"
         f"👍 Drop a LIKE if you enjoyed the outplay!\n"
         f"🔔 SUBSCRIBE to Dwannellenga so you never miss a clip!\n"
-        f"💬 Rate this play 1-10 in the comments below! 👇\n\n"
+        f"💬 Would you have chased here or backed off? Drop your take below! 👇\n\n"
         f"🌐 Connect with us across platforms:\n"
         f"📘 Facebook: https://www.facebook.com/Dwannellenga\n"
         f"📸 Instagram: https://www.instagram.com/dwannellenga\n"
@@ -501,7 +511,14 @@ def sanitize_pinned_comment(text: str, extra_context: Optional[dict] = None) -> 
     ).lower()
 
     low = cleaned.lower()
-    if any(b in low for b in ("rate 1-10", "rate this", "1 to 10", "part #", "road to")):
+    if len(cleaned) > 140:
+        return ""
+    bot_phrases = (
+        "rate 1-10", "rate this", "1 to 10", "part #", "road to",
+        "tell us what you think", "let us know", "in the comments below",
+        "what do you guys think", "drop a like and subscribe",
+    )
+    if any(b in low for b in bot_phrases):
         return ""
     if not spells_verified and any(sp in low for sp in ("flash", "flashed", "ignite", "exhaust", "zhonya", "tp ", "teleport")):
         return ""
@@ -892,8 +909,8 @@ def generate_metadata(
                 recent_titles=_recent_titles,
             )
             if best_a:
-                gen_title = _format_final_title(re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', best_a, flags=re.IGNORECASE).strip())
-                gen_title_b = _format_final_title(re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', best_b, flags=re.IGNORECASE).strip()) if best_b and best_b != best_a else generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone, variant="B", exclude_title=gen_title)
+                gen_title = _format_final_title(strip_rank_prefix(best_a))
+                gen_title_b = _format_final_title(strip_rank_prefix(best_b)) if best_b and best_b != best_a else generate_channel_title(action_type, champ, rank, map_zone_label=valid_zone, variant="B", exclude_title=gen_title)
                 hashtags = _build_hashtags(champ, action_type)
                 raw_desc = (syn_res.get("description") or "").strip()
                 social_block = (
@@ -934,7 +951,11 @@ def generate_metadata(
         print(f"   [Synapsa AI] Fallback na Gemini/Szablon ({_syn_err})")
 
     # Spróbuj wygenerować z Gemini AI (opcjonalny fallback)
-    if GEMINI_API_KEY:
+    allow_live_gemini = not (
+        os.environ.get("PYTEST_CURRENT_TEST")
+        and os.environ.get("ALLOW_LIVE_GEMINI_IN_TEST") != "1"
+    )
+    if GEMINI_API_KEY and allow_live_gemini:
         try:
             import google.genai as genai
 
@@ -1037,8 +1058,8 @@ GENERATE JSON ONLY (no markdown fences, raw json):
                         print(f"   [Gemini AI] ⚠️ Wykryto polskie słowa w tytule/opisie ({_detected_pl}) — ponawiam...")
                         continue
 
-                    # Usuń niechciane prefixy rangowe (np. "Master Katarina ...")
-                    _raw_title = re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', _raw_title, flags=re.IGNORECASE).strip()
+                    # Usuń niechciane prefixy rangowe (np. "Master Katarina ...", "Tier ...")
+                    _raw_title = strip_rank_prefix(_raw_title)
 
                     # Wymuś pełny zestaw viralowych tagów: #Shorts #LeagueOfLegends #LoL
                     gen_title = _format_final_title(_raw_title)
@@ -1217,6 +1238,143 @@ def generate_metadata_universal(
         )
     except Exception:
         return generate_metadata(action_type, subject_name or "Katarina", rank)
+
+
+def _fmt_mmss(sec: float) -> str:
+    s = max(0, int(round(float(sec or 0.0))))
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def generate_longform_metadata(
+    champion: str = "Katarina",
+    clips_meta: Optional[List[Dict[str, Any]]] = None,
+    duration_s: float = 240.0,
+    chapters: Optional[List[Dict[str, Any]]] = None,
+    tracks_used: Optional[List[str]] = None,
+    week_label: str = "",
+    use_local_ai: bool = True,
+) -> Dict[str, Any]:
+    """
+    Generuje metadane Long-Form 16:9 (`Etap 31.3`):
+      - narracyjny tytuł <=65 zn. (ZERO `#shorts`, ZERO AI-żargonu),
+      - auto-rozdziały WYŁĄCZNIE dla filmów >= 6 min (360s),
+      - dokładnie 3 hasztagi SEO + lista utworów NCS.
+    """
+    champ = (champion or "Katarina").strip() or "Katarina"
+    clean_champ = re.sub(r"[^a-zA-Z0-9]", "", champ) or "Katarina"
+    n_clips = len(clips_meta or []) or 5
+    actions = [str(c.get("action_type") or "outplay").replace("_", " ") for c in (clips_meta or [])]
+    top_act = actions[-1] if actions else "outplay"
+
+    ai_res: Optional[Dict[str, Any]] = None
+    in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST")) and os.environ.get("ALLOW_LIVE_SYNAPSA_IN_TEST") != "1"
+    if use_local_ai and not in_pytest:
+        try:
+            try:
+                from lol_agent.synapsa_engine import generate_with_synapsa
+            except ImportError:
+                from synapsa_engine import generate_with_synapsa
+            ai_res = generate_with_synapsa(
+                "lol_longform_metadata",
+                {
+                    "champion": champ,
+                    "clips_count": n_clips,
+                    "duration_s": round(float(duration_s), 1),
+                    "top_action": top_act,
+                    "week_label": week_label,
+                },
+                timeout=90,
+            )
+        except Exception:
+            ai_res = None
+
+    raw_title = str((ai_res or {}).get("title") or "").strip()
+    raw_title = re.sub(r"#\S+", "", raw_title).strip()
+    raw_title = strip_rank_prefix(raw_title)
+    _bad_lf = ("execution", "relentless", "reset chain", "pixel-perfect", "takedown", "rampage", "shorts")
+    if len(raw_title) < 12 or any(b in raw_title.lower() for b in _bad_lf):
+        title_pool = [
+            f"Why Nobody Steps Up To {champ} | Best Plays",
+            f"Top {n_clips} {champ} Outplays You Missed This Week",
+            f"They Grouped Straight Into {champ} | Weekly Highlights",
+        ]
+        raw_title = title_pool[n_clips % len(title_pool)]
+    title = raw_title[:65].strip()
+
+    thumb_headline = str((ai_res or {}).get("thumbnail_headline") or "").strip()
+    thumb_headline = re.sub(r"[^A-Za-z0-9!?%+\s-]", "", thumb_headline).upper().strip()
+    if not thumb_headline or any(b in thumb_headline.lower() for b in _bad_lf):
+        thumb_headline = "1 HP 1V4?!" if "clutch" in top_act or "quadra" in top_act else f"TOP {n_clips} PLAYS"
+    thumb_headline = " ".join(thumb_headline.split()[:3])
+
+    thumb_subline = str((ai_res or {}).get("thumbnail_subline") or "").strip().upper()
+    if not thumb_subline:
+        thumb_subline = f"{clean_champ.upper()} WEEKLY #1"
+
+    intro = str((ai_res or {}).get("description_intro") or "").strip()
+    intro = re.sub(r"(?<!\w)#shorts(?:feed)?\b", "", intro, flags=re.IGNORECASE).strip()
+    if len(intro) < 20 or any(b in intro.lower() for b in _bad_lf):
+        intro = (
+            f"The cleanest {champ} highlights from this week in League of Legends, "
+            f"counted down to the #1 play. Watch until the end to see which outplay took the top spot!"
+        )
+
+    lines: List[str] = [intro]
+    if float(duration_s) >= 360.0 and chapters:
+        lines.append("")
+        lines.append("Chapters:")
+        for ch in chapters:
+            t_str = _fmt_mmss(float(ch.get("time_s") or 0.0))
+            lbl = re.sub(r"#\S+", "", str(ch.get("label") or "Highlight")).strip()
+            lines.append(f"{t_str} - {lbl}")
+
+    if tracks_used:
+        pretty_tracks = ", ".join(str(t).replace("ncs_", "").replace("_", " ").title() for t in tracks_used)
+        lines.append("")
+        lines.append(f"Music Credits (NCS): {pretty_tracks}")
+
+    lines.extend([
+        "",
+        "Connect across platforms:",
+        "Facebook: https://www.facebook.com/Dwannellenga",
+        "Instagram: https://www.instagram.com/dwannellenga",
+        "TikTok: https://www.tiktok.com/@dwannellenga",
+        "",
+        f"#LeagueOfLegends #{clean_champ} #LoLMontage",
+    ])
+    description = "\n".join(lines).strip()
+
+    raw_tags = list((ai_res or {}).get("tags") or []) + [
+        champ.lower(),
+        "league of legends",
+        f"{champ.lower()} montage",
+        "league of legends montage",
+        "lol highlights",
+        "lol best plays",
+        f"{champ.lower()} highlights",
+        "outplays",
+    ]
+    clean_tags: List[str] = []
+    seen_t: set[str] = set()
+    for t in raw_tags:
+        s = re.sub(r"^#", "", str(t or "")).strip().lower()
+        if not s or s in ("shorts", "shortsfeed", "ytshots", "short") or s in seen_t:
+            continue
+        seen_t.add(s)
+        clean_tags.append(s)
+        if len(clean_tags) >= 15:
+            break
+
+    return {
+        "title": title,
+        "thumbnail_headline": thumb_headline,
+        "thumbnail_subline": thumb_subline[:28],
+        "description": description[:5000],
+        "tags": clean_tags,
+        "hashtags": ["#LeagueOfLegends", f"#{clean_champ}", "#LoLMontage"],
+        "chapters_included": bool(float(duration_s) >= 360.0 and chapters),
+        "video_format": "longform",
+    }
 
 
 if __name__ == "__main__":

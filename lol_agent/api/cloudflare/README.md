@@ -27,7 +27,7 @@ Skopiuj `config.yml.example` do `~/.cloudflared/config.yml` i uzupełnij UUID:
 
 ```yaml
 tunnel: TWOJ-UUID-TUNELU
-credentials-file: C:\Users\mz100\.cloudflared\TWOJ-UUID.json
+credentials-file: C:\Users\<YOUR_USER>\.cloudflared\TWOJ-UUID.json
 
 ingress:
   - hostname: shortsyt.twoja-domena.com

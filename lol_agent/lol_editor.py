@@ -404,7 +404,8 @@ def apply_editor_effects(input_path: str, output_path: str,
                          intermediate_peaks: list = None,
                          use_easing: bool = True,
                          timeline_out: Optional[dict] = None,
-                         fast_forward_kills: list = None) -> float:
+                         fast_forward_kills: list = None,
+                         fast_forward_speed: Optional[float] = None) -> float:
     """
     Stosuje pionowe kadrowanie, zoom-punch i spowolnienie (speed ramp)
     w jednym przebiegu za pomocą filter_complex w FFmpeg.
@@ -454,8 +455,9 @@ def apply_editor_effects(input_path: str, output_path: str,
     )
     if not time_segments:
         time_segments = [{"start": 0.0, "end": float(clip_duration), "speed": 1.0, "zoom": False}]
-    if fast_forward_kills:   # styl SPEED_RAMP_FLOW: martwy czas między killami szybciej, bez cięć
-        time_segments = TL.apply_fast_forward(time_segments, fast_forward_kills)
+    if fast_forward_kills:   # styl SPEED_RAMP_FLOW lub speed-bridge długiej przerwy (>4.5s): bez cięć
+        ff_spd = float(fast_forward_speed) if fast_forward_speed is not None else TL.FAST_FORWARD_SPEED
+        time_segments = TL.apply_fast_forward(time_segments, fast_forward_kills, speed=ff_spd)
     segs = [dict(ts, crop=(zoom_crop if ts["zoom"] else normal_crop)) for ts in time_segments]
     if timeline_out is not None:
         timeline_out["segments"] = time_segments
@@ -471,7 +473,7 @@ def apply_editor_effects(input_path: str, output_path: str,
         trim = f"trim=start={seg['start']:.3f}:end={seg['end']:.3f}"
         setpts1 = "setpts=PTS-STARTPTS"
         eq_filter = (
-            "eq=contrast=1.14:saturation=1.42:brightness=0.045"
+            "eq=contrast=1.18:saturation=1.45:brightness=0.065,vignette=angle=PI/7"
             if seg.get("zoom")
             else "eq=contrast=1.08:saturation=1.35:brightness=0.03"
         )
@@ -968,6 +970,7 @@ def build_dynamic_captions_filters(
                 "label": clean_label,
                 "style": style,
                 "t_in_clip": t_in_clip,
+                "t_raw": t_raw,
             })
 
     # Deduplikacja napisów: eliminacja nakładania się napisów z tej samej eliminacji (<1.4s)
@@ -1071,6 +1074,35 @@ def build_dynamic_captions_filters(
         )
         drawtext_filters.append(dt)
         print(f"   🗨️  {clean_label} (kill {idx+1}/{total_kills}) @ {item.get('t_in_clip', t_start):.1f}s (start {t_start:.1f}s) — {k_fsize}px")
+
+    # Pigułka telemetrii na finałowym killu (tylko szybkie multikille 0.4..5.5s lub clutch 1% HP)
+    if caption_items:
+        fin_item = caption_items[-1]
+        pill_txt = ""
+        if "clutch" in act_lower:
+            pill_txt = "1% HP SURVIVAL"
+        elif not is_solo and len(caption_items) >= 2:
+            raw_pts = [float(it["t_raw"]) for it in caption_items if isinstance(it.get("t_raw"), (int, float))]
+            span_s = round(max(raw_pts) - min(raw_pts), 1) if len(raw_pts) >= 2 else round(float(fin_item["t_in_clip"] - caption_items[0]["t_in_clip"]), 1)
+            if 0.4 <= span_s <= 5.5:
+                pill_txt = f"{expected_total} KILLS IN {span_s:.1f}S"
+        if pill_txt:
+            p_alpha = _alpha_fade_expr(fin_item["start"], fin_item["end"], fade_s=0.12)
+            p_safe = pill_txt.replace("'", "").replace("%", "%%")
+            drawtext_filters.append(
+                f"drawtext="
+                f"fontfile='{font_safe}'"
+                f":text='{p_safe}'"
+                f":x=(w-text_w)/2"
+                f":y=h*0.305"
+                f":fontsize=26"
+                f":fontcolor=0xFFD700"
+                f":box=1:boxcolor=black@0.58:boxborderw=8"
+                f":borderw=2"
+                f":bordercolor=black"
+                f":alpha='{p_alpha}'"
+                f":enable='between(t,{fin_item['start']:.2f},{fin_item['end']:.2f})'"
+            )
 
     progress_bar = (
         f"drawbox="
@@ -1831,6 +1863,68 @@ def apply_overlays_unified(
     return output_path
 
 
+def _detect_tab_scoreboard_start(
+    video_path: str,
+    clip_start: float,
+    clip_end: float,
+    last_peak_abs: float,
+) -> Optional[float]:
+    """Wykrywa pojawienie się pełnoekranowej tabeli wyników (TAB) po finale akcji w ogonie klipu."""
+    if not video_path or not os.path.isfile(video_path):
+        return None
+    tail_start = max(float(clip_start) + 1.0, float(last_peak_abs) + 0.65)
+    if float(clip_end) - tail_start < 0.35:
+        return None
+    try:
+        import cv2
+    except Exception:
+        return None
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return None
+    try:
+        def _center_stats(t_s: float) -> Optional[tuple]:
+            cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, float(t_s)) * 1000.0)
+            ret, frame = cap.read()
+            if not ret or frame is None or frame.size == 0:
+                return None
+            h, w = frame.shape[:2]
+            roi = frame[int(h * 0.22):int(h * 0.78), int(w * 0.22):int(w * 0.78)]
+            if roi.size == 0:
+                return None
+            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            mean_s = float(np.mean(hsv[:, :, 1]))
+            mean_v = float(np.mean(hsv[:, :, 2]))
+            sobel_y = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3))
+            h_edge_ratio = float(np.mean(sobel_y > 18.0))
+            return mean_v, mean_s, h_edge_ratio
+
+        ref_t = max(float(clip_start) + 0.2, min(float(last_peak_abs) - 0.3, float(clip_end) - 1.0))
+        ref_stats = _center_stats(ref_t)
+        ref_v = ref_stats[0] if ref_stats else 110.0
+
+        t_cur = tail_start
+        while t_cur <= float(clip_end) - 0.05:
+            st = _center_stats(t_cur)
+            if st is not None:
+                mean_v, mean_s, h_edge_ratio = st
+                if (
+                    mean_v < 78.0
+                    and mean_s < 62.0
+                    and h_edge_ratio > 0.085
+                    and (ref_v - mean_v >= 12.0 or mean_v < 65.0)
+                ):
+                    return round(float(t_cur), 2)
+            t_cur += 0.20
+    except Exception:
+        return None
+    finally:
+        cap.release()
+    return None
+
+
 def render_short(
     source_path: str,
     clip_start: float,
@@ -1853,6 +1947,8 @@ def render_short(
     objective_secured: bool = False,
     ally_banner_blocked: bool = False,
     drop_anchor: Optional[str] = None,
+    speed_bridge_gap_s: Optional[float] = None,
+    auto_trim_intro: bool = False,
 ) -> str:
     """
     Pipeline montażu v6 — Combat-Segment-Aware editing:
@@ -1936,6 +2032,54 @@ def render_short(
                 print(f"   ✂️  IN_MEDIA_RES: początek klipu +{_shift:.1f}s, pierwszy kill w {_lead:.1f}s")
         except Exception as _imr:
             print(f"   [editor] IN_MEDIA_RES pominięty: {_imr}")
+    elif auto_trim_intro and peaks and not combat_segments and clip_duration > 10.0 and action_type.lower() not in ("solo_bolo", "solo", "1v1"):
+        try:
+            _is_src_tl = any(float(tk) > clip_duration for (tk, _) in peaks)
+            _first_abs = min(
+                float(tk) if (_is_src_tl or (clip_start > 0.0 and float(tk) >= clip_start)) else clip_start + float(tk)
+                for (tk, _) in peaks
+            )
+            _first_rel = _first_abs - clip_start
+            _max_safe_shift = max(0.0, clip_duration - 8.0)
+            _shift = round(min(_first_rel - 2.4, _max_safe_shift), 2)
+            if _first_rel > 3.6 and _shift >= 0.8:
+                if not (_is_src_tl or (clip_start > 0.0 and peak_moment >= clip_start)):
+                    peak_moment = max(0.0, peak_moment - _shift)
+                peaks = [
+                    ((float(tk) if (_is_src_tl or (clip_start > 0.0 and float(tk) >= clip_start)) else max(0.0, float(tk) - _shift)), lbl)
+                    for (tk, lbl) in peaks
+                ]
+                clip_start += _shift
+                clip_duration = clip_end - clip_start
+                print(f"   ⚡ [Auto-Trim Intro] Usunięto {_shift:.1f}s martwego wstępu — 1. kill w ~{max(0.5, _first_rel - _shift):.1f}s!")
+        except Exception as _trim_err:
+            print(f"   [editor] Auto-Trim pominięty: {_trim_err}")
+
+    if source_path and os.path.isfile(source_path):
+        try:
+            _is_src_pk = any(float(tk) > clip_duration for (tk, _) in (peaks or []))
+            _pk_abs_list = [
+                float(tk) if (_is_src_pk or (clip_start > 0.0 and float(tk) >= clip_start)) else clip_start + float(tk)
+                for (tk, _) in (peaks or [])
+            ]
+            _last_pk_abs = max(_pk_abs_list) if _pk_abs_list else (
+                float(peak_moment) if (clip_start > 0.0 and peak_moment >= clip_start) else clip_start + float(peak_moment)
+            )
+            _tab_t = _detect_tab_scoreboard_start(source_path, clip_start, clip_end, _last_pk_abs)
+            if _tab_t is not None:
+                _new_end = max(_last_pk_abs + 0.85, _tab_t - 0.15)
+                if clip_start + 8.0 <= _new_end < clip_end - 0.25:
+                    clip_end = round(_new_end, 2)
+                    clip_duration = clip_end - clip_start
+                    if combat_segments:
+                        combat_segments = [
+                            (s, min(e, clip_end))
+                            for (s, e) in combat_segments
+                            if s < clip_end - 0.4
+                        ]
+                    print(f"   🛡️  [TAB Guard] Wykryto tabelę TAB @ {_tab_t:.2f}s — przycięto koniec klipu do {clip_end:.2f}s")
+        except Exception as _tab_err:
+            print(f"   [editor] TAB Guard pominięty: {_tab_err}")
 
     # Dla SOLO BOLO wykluczamy jakiekolwiek cięcia jump-cut — cała walka ma być płynna od wejścia do finału
     if action_type.lower() in ("solo_bolo", "solo", "1v1"):
@@ -2204,6 +2348,20 @@ def render_short(
     if _inter_peaks:
         print(f"   ⚡ Intermediate peaks (mini slow-mo): {[f'{p:.1f}s' for p in _inter_peaks]}")
 
+    _sorted_kills_rel = sorted(float(p) for p in (_all_kill_rel or []))
+    _max_kill_gap_rel = (
+        max((b - a for a, b in zip(_sorted_kills_rel, _sorted_kills_rel[1:])), default=0.0)
+        if len(_sorted_kills_rel) >= 2
+        else 0.0
+    )
+    _use_gap_bridge = (
+        use_speed_ramp
+        and speed_bridge_gap_s is not None
+        and _max_kill_gap_rel > float(speed_bridge_gap_s)
+    )
+    _ff_kills = _all_kill_rel if (_style == "SPEED_RAMP_FLOW" or _use_gap_bridge) else None
+    _ff_speed = None if _style == "SPEED_RAMP_FLOW" else (2.2 if _use_gap_bridge else None)
+
     _timeline = {}
     final_duration = apply_editor_effects(
         input_path=step1,
@@ -2217,7 +2375,8 @@ def render_short(
         slowmo_duration=_slowmo_dur,
         intermediate_peaks=_inter_peaks if use_speed_ramp else [],
         timeline_out=_timeline,
-        fast_forward_kills=_all_kill_rel if _style == "SPEED_RAMP_FLOW" else None,
+        fast_forward_kills=_ff_kills,
+        fast_forward_speed=_ff_speed,
     )
     _segments = _timeline.get("segments") or []
     # Cios na osi GOTOWEGO filmu (po zwolnieniach). Przed 11.11.2026 muzyka dostawała czas surowy

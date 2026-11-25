@@ -155,7 +155,7 @@ def _instagram_hashtags(champion: str, action_type: str) -> List[str]:
         "lolhighlights", "lolclips", "gamingclips", "reels", "gamingcommunity",
         f"{clean_low}gameplay", "esports",
     ]
-    return _dedup_preserve(raw)[:15]
+    return _dedup_preserve(raw)[:6]
 
 
 def _extract_clean_base_hook(base_metadata: Optional[Dict[str, Any]]) -> str:
@@ -183,18 +183,22 @@ def _call_gemini(prompt: str, max_retries: int = 2) -> str:
     Priorytet #1: Lokalna Synapsa (0 tokenów API).
     Fallback: Gemini API jeśli skonfigurowano GEMINI_API_KEY i Synapsa niedostępna.
     """
-    try:
+    in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    if not in_pytest or os.environ.get("ALLOW_LIVE_SYNAPSA_IN_TEST") == "1":
         try:
-            from lol_agent.synapsa_engine import generate_with_synapsa
-        except ImportError:
-            from synapsa_engine import generate_with_synapsa
-        syn = generate_with_synapsa("social_caption", {"prompt": prompt}, timeout=60)
-        if syn and isinstance(syn.get("caption"), str) and syn["caption"].strip():
-            return syn["caption"].strip()
-    except Exception:
-        pass
+            try:
+                from lol_agent.synapsa_engine import generate_with_synapsa
+            except ImportError:
+                from synapsa_engine import generate_with_synapsa
+            syn = generate_with_synapsa("social_caption", {"prompt": prompt}, timeout=60)
+            if syn and isinstance(syn.get("caption"), str) and syn["caption"].strip():
+                return syn["caption"].strip()
+        except Exception:
+            pass
 
     if not GENAI_OK or not GEMINI_API_KEY:
+        return ""
+    if in_pytest and os.environ.get("ALLOW_LIVE_GEMINI_IN_TEST") != "1":
         return ""
     models = [GEMINI_MODEL] + list(GEMINI_FALLBACK_MODELS)
     for attempt in range(max_retries):
@@ -364,7 +368,7 @@ def generate_instagram_copy(
     clean_base = _extract_clean_base_hook(base_metadata)
     if len(clean_base) >= 8:
         q_map = {
-            "pentakill": f"Rate this {champion} pentakill 1-10 below 👇",
+            "pentakill": f"Did the enemy team have any counterplay to that {champion} pentakill? 👇",
             "quadrakill": "Could enemy team actually stop that reset chain? 👇",
             "triple": "Did enemy squad clump up for free or was that unreactable? 👇",
             "double": "Greedy chase or clean bait? Drop your take below 👇",
@@ -390,11 +394,7 @@ def generate_instagram_copy(
         )
 
     tag_str = " ".join(f"#{t.lower()}" for t in tags)
-    funnel_cta = (
-        "🔗 Więcej akcji i powtórek na naszej stronie FB: facebook.com/Dwannellenga\n"
-        "🎬 TikTok: @dwannellenga | YouTube: Dwannellenga"
-    )
-    caption = f"{gemini_hook}\n\n{funnel_cta}\n\n.\n.\n.\n{tag_str}"
+    caption = f"{gemini_hook}\n\n.\n.\n.\n{tag_str}".strip()
 
     return {
         "platform": "instagram",
@@ -409,6 +409,7 @@ def generate_facebook_copy(
     action_type: str,
     yt_history: Optional[List[Dict]] = None,
     learning_state: Optional[Dict] = None,
+    base_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Facebook Page post copy — sentence-style, minimal hashtags.
@@ -424,22 +425,38 @@ def generate_facebook_copy(
         "clutch": "clutch win",
     }.get(action_type.lower(), action_type.lower())
 
-    prompt = (
-        f"Write a Facebook post for a League of Legends gaming page.\n"
-        f"Champion: {champion}. Action: {action_label}.\n"
-        f"Rules: conversational tone, 2-3 sentences max, ask a question at the end.\n"
-        f"No hashtag spam (max 1-2 hashtags at the very end). No quotation marks.\n"
-        f"Output ONLY the post text, nothing else."
-    )
-    gemini_text = _call_gemini(prompt).strip()
+    clean_champ = re.sub(r'[^a-zA-Z]', '', champion) or "lol"
+    clean_base = _extract_clean_base_hook(base_metadata)
+    if len(clean_base) >= 8:
+        fb_questions = {
+            "pentakill": "Who could actually stop that cleanup?",
+            "quadrakill": "Was the last reset fair or pure chaos?",
+            "triple": "Did enemy team walk into those daggers for free?",
+            "double": "Greedy chase by the enemy or clean spacing?",
+            "solo_bolo": f"Would you ever step up 1v1 against {champion} here?",
+            "clutch": "1 HP survival — lucky tick or calculated limit test?",
+        }
+        q_line = fb_questions.get(action_type.lower(), f"Was that enemy throw or pure {champion} mechanics?")
+        gemini_text = (
+            f"{clean_base[:90]}\n"
+            f"{q_line}\n\n"
+            f"#leagueoflegends #{clean_champ.lower()} #reels"
+        )
+    else:
+        prompt = (
+            f"Write a Facebook post for a League of Legends gaming page.\n"
+            f"Champion: {champion}. Action: {action_label}.\n"
+            f"Rules: conversational tone, 2-3 sentences max, ask a question at the end.\n"
+            f"No hashtag spam (max 1-2 hashtags at the very end). No quotation marks.\n"
+            f"Output ONLY the post text, nothing else."
+        )
+        gemini_text = _call_gemini(prompt).strip()
 
-    clean_champ = re.sub(r'[^a-zA-Z]', '', champion)
     if not gemini_text:
         gemini_text = (
-            f"Zobacz jak {champion} dominuje w tej akcji ({action_label})! 🔥\n"
-            f"Napisz w komentarzu kim teraz grasz w obecnej mecie! 👇\n"
-            f"Więcej skrótów i codziennych akcji znajdziesz też na naszym kanale YT i TikToku @dwannellenga\n\n"
-            f"#leagueoflegends #{clean_champ.lower()} #gaming"
+            f"Clean {champion} {action_label} before they could even react! 💀\n"
+            f"Did the enemy overextend here or was this pure mechanical diff?\n\n"
+            f"#leagueoflegends #{clean_champ.lower()} #reels"
         )
 
     return {
@@ -514,6 +531,7 @@ def generate_all_platform_copy(
             champion=champion,
             action_type=action_type,
             yt_history=yt_history,
+            base_metadata=base_metadata,
         )
 
     return result

@@ -682,7 +682,7 @@ def test_etap7_transcript_extractor_and_coding_sync(tmp_path):
                 {
                     "name": "edit_file",
                     "args": {
-                        "Path": json.dumps(r"c:\Users\mz100\OneDrive\Michal\Shortsyt\lol_agent\lol_timeline.py"),
+                        "Path": json.dumps(r"c:\Users\dev\workspace\Shortsyt\lol_agent\lol_timeline.py"),
                         "Target": json.dumps("tempo = ',atempo=0.55'\nreturn tempo"),
                         "Replacement": json.dumps("def fixed_warp(speed):\n    return f',asetrate=44100*{speed:.6f},aresample=44100'\n"),
                     },

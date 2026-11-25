@@ -71,7 +71,7 @@ async function ensureBackendRunning() {
   // Find python in venv across common dev and packaged locations
   const candidateVenvs = [
     // Absolute path — highest priority, always works on this machine
-    'C:\\Users\\mz100\\OneDrive\\Michal\\Shortsyt\\venv313\\Scripts\\python.exe',
+    path.join(process.env.USERPROFILE || '', 'OneDrive', 'Michal', 'Shortsyt', 'venv313', 'Scripts', 'python.exe'),
     path.join(process.cwd(), 'venv313', 'Scripts', 'python.exe'),
     path.resolve(__dirname, '../../venv313/Scripts/python.exe'),
     path.resolve(__dirname, '../../../venv313/Scripts/python.exe'),

@@ -129,17 +129,19 @@ def upload_facebook_reel(
     caption: str,
     publish_at: Optional[str] = None,
     thumbnail_path: Optional[str] = None,
-    timeout: int = 300
+    timeout: int = 300,
+    use_local_queue: bool = True,
 ) -> Dict[str, Any]:
     """
     Publikuje lub planuje wideo jako Facebook Reel na fanpage za pomocą Meta Video Reels API.
 
     Etapy:
-    1. Inicjalizacja uploadu (POST /{page_id}/video_reels?upload_phase=start).
-    2. Bezpośredni upload binarny na serwer rupload.facebook.com.
-    3. Finalizacja i publikacja lub planowanie (POST /{page_id}/video_reels?upload_phase=finish).
-    4. Wgranie i przypięcie dedykowanej miniaturki (POST /{video_id}/thumbnails).
-    5. Pobranie permalinku opublikowanego posta/reels.
+    1. Dla przyszłych dat (> 10 min) kolejkuje wpis w lokalnej kolejce 24/7 (zapobiega burstowi w Meta API).
+    2. Inicjalizacja uploadu (POST /{page_id}/video_reels?upload_phase=start).
+    3. Bezpośredni upload binarny na serwer rupload.facebook.com.
+    4. Finalizacja i publikacja lub planowanie (POST /{page_id}/video_reels?upload_phase=finish).
+    5. Wgranie i przypięcie dedykowanej miniaturki (POST /{video_id}/thumbnails).
+    6. Pobranie permalinku opublikowanego posta/reels.
     """
     vp = Path(video_path)
     if not vp.exists():
@@ -148,6 +150,34 @@ def upload_facebook_reel(
     file_size = vp.stat().st_size
     if file_size == 0:
         return {"success": False, "error": f"Plik wideo jest pusty: {video_path}", "platform": "facebook"}
+
+    if publish_at and use_local_queue:
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(publish_at.replace("Z", "+00:00"))
+            scheduled_ts = int(dt.timestamp())
+            if scheduled_ts > int(time.time()) + 600:
+                from lol_agent.scheduled_queue import queue_scheduled_post
+                entry = queue_scheduled_post(
+                    platform="facebook",
+                    video_path=str(vp),
+                    caption=caption,
+                    publish_at=publish_at,
+                    thumbnail_path=thumbnail_path,
+                )
+                print(f"⏰ Facebook Reel dodany do kolejki planowania na: {dt.isoformat()}")
+                return {
+                    "success": True,
+                    "queued": True,
+                    "is_scheduled": True,
+                    "publish_at": publish_at,
+                    "queue_id": entry["id"],
+                    "platform": "facebook",
+                    "page_name": "Queued",
+                    "message": f"Zaplanowano w kolejce publikacji FB na {dt.strftime('%Y-%m-%d %H:%M')}",
+                }
+        except Exception as _qe:
+            print(f"⚠️ Kolejka planowania Facebook ({publish_at}): {_qe}. Kontynuuję standardowy upload.")
 
     token_data = load_facebook_token()
     if not token_data:

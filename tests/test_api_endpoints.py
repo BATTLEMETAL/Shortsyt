@@ -491,5 +491,233 @@ def test_tiktok_creator_user_endpoints_and_inbox_publish(client, auth_headers, t
         assert captured["tiktok_post_mode"] == "inbox"
 
 
+def test_social_publish_blocks_duplicate_platforms_409_and_cleans_idle_mp4(client, auth_headers, tmp_path, monkeypatch):
+    """Verify HTTP 409 duplicate guard and post-publish cleanup respecting active queue."""
+    import json
+    vid = tmp_path / "short_dup_guard.mp4"
+    thumb = tmp_path / "short_dup_guard_thumb.jpg"
+    meta = tmp_path / "short_dup_guard.meta.json"
+    vid.write_bytes(b"0" * 2048)
+    thumb.write_bytes(b"jpg")
+    meta.write_text(json.dumps({"champion_name": "Katarina", "action_type": "triple"}), encoding="utf-8")
+
+    q_file = tmp_path / "scheduled_social_queue.json"
+    monkeypatch.setattr("lol_agent.scheduled_queue.QUEUE_FILE", q_file)
+    monkeypatch.setattr("lol_agent.temp_cleaner.DEFAULT_QUEUE_FILE", q_file)
+    monkeypatch.setattr("lol_agent.api.routers.social.LOL_TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("lol_agent.api.helpers.LOL_TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("lol_agent.api.routers.clips.LOL_TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("lol_agent.api.routers.social.PUBLISHED_VIDEOS_PATH", tmp_path / "published_videos.jsonl")
+
+    # 1. Publikacja z kolejką TikToka zostawia plik w LOL_TEMP, bo pending w kolejce, ale blokuje 2. próbę 409
+    def _mock_tt_queued(**_kw):
+        q_file.write_text(json.dumps([
+            {"id": "tt_q1", "platform": "tiktok", "status": "pending", "video_path": str(vid)}
+        ]), encoding="utf-8")
+        return {"tiktok": {"success": True, "is_scheduled": True, "publish_at": "2026-11-23T14:00:00Z"}}
+
+    with patch("lol_agent.api.routers.social.publish_multi_platform", side_effect=_mock_tt_queued):
+        r1 = client.post(
+            "/social/publish/short_dup_guard.mp4",
+            json={
+                "title": "Queued Once",
+                "platforms": ["tiktok"],
+                "privacy_tiktok": "PUBLIC_TO_EVERYONE",
+                "publish_at": "2026-11-23T14:00:00Z",
+            },
+            headers=auth_headers,
+        )
+        assert r1.status_code == 200
+    assert vid.exists()
+
+    dup_res = client.post(
+        "/social/publish/short_dup_guard.mp4",
+        json={
+            "title": "Queued Twice",
+            "platforms": ["tiktok"],
+            "privacy_tiktok": "PUBLIC_TO_EVERYONE",
+            "publish_at": "2026-11-23T14:00:00Z",
+        },
+        headers=auth_headers,
+    )
+    assert dup_res.status_code == 409
+
+    # 2. Publikacja natychmiastowa bez pending w kolejce usuwa .mp4, zostawiając miniaturę
+    vid2 = tmp_path / "short_idle_clean.mp4"
+    thumb2 = tmp_path / "short_idle_clean_thumb.jpg"
+    meta2 = tmp_path / "short_idle_clean.meta.json"
+    vid2.write_bytes(b"1" * 2048)
+    thumb2.write_bytes(b"jpg2")
+    meta2.write_text(json.dumps({"champion_name": "Katarina", "action_type": "double"}), encoding="utf-8")
+
+    with patch("lol_agent.api.routers.social.publish_multi_platform", return_value={"youtube": {"success": True, "video_id": "yt_idle_1", "url": "https://youtu.be/yt_idle_1"}}):
+        with patch("lol_agent.api.routers.social._archive_and_schedule_48h"):
+            r2 = client.post(
+                "/social/publish/short_idle_clean.mp4",
+                json={"title": "YT Immediate", "platforms": ["youtube"]},
+                headers=auth_headers,
+            )
+            assert r2.status_code == 200
+    assert not vid2.exists()
+    assert thumb2.exists()
+    assert meta2.exists()
+
+
+def test_regenerate_output_thumbnail_increments_variant_and_changes_file(client, auth_headers, tmp_path, monkeypatch):
+    """Kolejne wywołania POST /outputs/{filename}/thumbnail/regenerate zwiększają variant_index i dają inny JPG."""
+    import hashlib
+    import json
+    from pathlib import Path
+    import cv2
+    import numpy as np
+
+    out_empty = tmp_path / "out_empty"
+    out_empty.mkdir()
+    monkeypatch.setattr("lol_agent.api.routers.clips.LOL_TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("lol_agent.api.routers.clips.LOL_OUTPUT_DIR", str(out_empty))
+    monkeypatch.setattr("lol_agent.api.helpers.LOL_TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("lol_agent.api.helpers.LOL_OUTPUT_DIR", str(out_empty))
+    monkeypatch.setattr("lol_agent.synapsa_overnight_batch.load_latest_overnight_batch", lambda: {})
+    monkeypatch.setattr("lol_agent.synapsa_overnight_batch.update_overnight_item_thumbnail", lambda *_a, **_kw: None)
+
+    vid = tmp_path / "short_regen_variant_test.mp4"
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    vw = cv2.VideoWriter(str(vid), fourcc, 15.0, (1920, 1080))
+    palettes = [((30, 60, 220), (350, 400)), ((220, 180, 35), (850, 500)), ((40, 210, 90), (1400, 480))]
+    for i in range(90):
+        bgr, ctr = palettes[min(2, i // 30)]
+        fr = np.full((1080, 1920, 3), bgr, dtype=np.uint8)
+        cv2.circle(fr, ctr, 160, (25, 215, 255), -1)
+        vw.write(fr)
+    vw.release()
+
+    meta_fp = tmp_path / "short_regen_variant_test.meta.json"
+    meta_fp.write_text(json.dumps({
+        "action_type": "triple",
+        "champion_name": "Katarina",
+        "clip_start": 0.0,
+        "peak_moment": 2.0,
+    }), encoding="utf-8")
+
+    r1 = client.post("/outputs/short_regen_variant_test.mp4/thumbnail/regenerate", headers=auth_headers)
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert d1["variant_index"] == 1
+    thumb_fp = Path(d1["thumbnail_path"])
+    assert thumb_fp.is_file()
+    h1 = hashlib.sha256(thumb_fp.read_bytes()).hexdigest()
+
+    r2 = client.post("/outputs/short_regen_variant_test.mp4/thumbnail/regenerate", headers=auth_headers)
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["variant_index"] == 2
+    h2 = hashlib.sha256(thumb_fp.read_bytes()).hexdigest()
+    assert h1 != h2
+
+    saved_meta = json.loads(meta_fp.read_text(encoding="utf-8"))
+    assert saved_meta["thumbnail_variant_index"] == 2
+
+
+def test_partial_publish_failure_allows_retry_missing_platforms_without_deleting_mp4(client, auth_headers, tmp_path, monkeypatch):
+    """Gdy YT zawiedzie (np. token) przy sukcesie TT/IG/FB, .mp4 zostaje i /outputs pozwala ponowić brakujące YT."""
+    import json
+    from pathlib import Path
+    from unittest.mock import patch
+
+    out_empty = tmp_path / "out_empty"
+    out_empty.mkdir()
+    q_file = tmp_path / "scheduled_social_queue.json"
+    vid = tmp_path / "short_partial_retry.mp4"
+    meta_fp = tmp_path / "short_partial_retry.meta.json"
+    vid.write_bytes(b"0" * 2048)
+    meta_fp.write_text(json.dumps({"champion_name": "Katarina", "action_type": "double"}), encoding="utf-8")
+
+    monkeypatch.setattr("lol_agent.scheduled_queue.QUEUE_FILE", q_file)
+    monkeypatch.setattr("lol_agent.temp_cleaner.DEFAULT_QUEUE_FILE", q_file)
+    monkeypatch.setattr("lol_agent.api.routers.social.LOL_TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("lol_agent.api.routers.social.LOL_OUTPUT_DIR", str(out_empty))
+    monkeypatch.setattr("lol_agent.api.helpers.LOL_TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("lol_agent.api.helpers.LOL_OUTPUT_DIR", str(out_empty))
+    monkeypatch.setattr("lol_agent.api.routers.clips.LOL_TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("lol_agent.api.routers.clips.LOL_OUTPUT_DIR", str(out_empty))
+    monkeypatch.setattr("lol_agent.api.routers.social.PUBLISHED_VIDEOS_PATH", tmp_path / "published_videos.jsonl")
+
+    # 1. Próba publikacji na 4 platformy: YouTube pada (token expired), TT/IG/FB trafiają do kolejki
+    def _mock_partial_fail(**kwargs):
+        plats = kwargs.get("platforms") or []
+        res = {}
+        if "youtube" in plats:
+            res["youtube"] = {"success": False, "error": "invalid_grant: Token expired"}
+        for sp in ("tiktok", "instagram", "facebook"):
+            if sp in plats:
+                res[sp] = {"success": True, "is_scheduled": True, "publish_at": "2026-11-24T14:00:00Z"}
+        return res
+
+    with patch("lol_agent.api.routers.social.publish_multi_platform", side_effect=_mock_partial_fail):
+        r1 = client.post(
+            "/social/publish/short_partial_retry.mp4",
+            json={
+                "title": "Partial Retry Test",
+                "platforms": ["youtube", "tiktok", "instagram", "facebook"],
+                "privacy_tiktok": "PUBLIC_TO_EVERYONE",
+                "publish_at": "2026-11-24T14:00:00Z",
+            },
+            headers=auth_headers,
+        )
+        assert r1.status_code == 200
+
+    # .mp4 MUSI istnieć, a /outputs musi zgłaszać can_retry_publish=True, already_published=False
+    assert vid.is_file()
+    saved = json.loads(meta_fp.read_text(encoding="utf-8"))
+    assert "youtube" in (saved.get("failed_platforms") or {})
+    assert set(saved.get("published_platforms") or []) == {"tiktok", "instagram", "facebook"}
+
+    out_list = client.get("/outputs", headers=auth_headers).json()["outputs"]
+    rec = [o for o in out_list if o["filename"] == "short_partial_retry.mp4"][0]
+    assert rec["already_published"] is False
+    assert rec["partially_published"] is True
+    assert rec["can_retry_publish"] is True
+    assert rec["missing_platforms"] == ["youtube"]
+    assert "youtube" in rec["failed_platforms"]
+
+    # 2. Ponowienie publikacji samych brakujących (lub wszystkich 4 — pomija zrobione i wysyła wyłącznie YT!)
+    seen_retry_plats = []
+    def _mock_retry_yt(**kwargs):
+        seen_retry_plats.extend(kwargs.get("platforms") or [])
+        return {"youtube": {"success": True, "video_id": "yt_retry_ok", "url": "https://youtu.be/yt_retry_ok"}}
+
+    with patch("lol_agent.api.routers.social.publish_multi_platform", side_effect=_mock_retry_yt):
+        with patch("lol_agent.api.routers.social._archive_and_schedule_48h"):
+            r2 = client.post(
+                "/social/publish/short_partial_retry.mp4",
+                json={
+                    "title": "Partial Retry Test",
+                    "platforms": ["youtube", "tiktok", "instagram", "facebook"],
+                    "privacy_tiktok": "PUBLIC_TO_EVERYONE",
+                    "publish_at": "2026-11-24T14:00:00Z",
+                },
+                headers=auth_headers,
+            )
+            assert r2.status_code == 200
+            assert r2.json()["results"]["tiktok"].get("skipped_already_published") is True
+    assert seen_retry_plats == ["youtube"]
+    assert not vid.exists()  # teraz wszystkie przeszły i kolejka pusta -> plik posprzątany
+
+    saved_after = json.loads(meta_fp.read_text(encoding="utf-8"))
+    assert saved_after.get("failed_platforms") == {}
+    assert set(saved_after.get("published_platforms") or []) == {"facebook", "instagram", "tiktok", "youtube"}
+
+    # 3. Kolejna próba kiedy wszystko już opublikowane -> 409 Conflict
+    vid.write_bytes(b"0" * 1024)
+    r3 = client.post(
+        "/social/publish/short_partial_retry.mp4",
+        json={"title": "Dup", "platforms": ["youtube"]},
+        headers=auth_headers,
+    )
+    assert r3.status_code == 409
+
+
+
+
 
 

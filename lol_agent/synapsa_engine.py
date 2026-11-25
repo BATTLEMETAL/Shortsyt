@@ -27,11 +27,11 @@ _SYNAPSA_PROC_LOCK = threading.Lock()
 
 SYNAPSA_PYTHON = os.environ.get(
     "SYNAPSA_PYTHON",
-    r"C:\Users\mz100\PycharmProjects\Synapsa\venv\Scripts\python.exe",
+    str(Path.home() / "PycharmProjects" / "Synapsa" / "venv" / "Scripts" / "python.exe"),
 )
 SYNAPSA_ROOT = os.environ.get(
     "SYNAPSA_ROOT",
-    r"C:\Users\mz100\PycharmProjects\Synapsa",
+    str(Path.home() / "PycharmProjects" / "Synapsa"),
 )
 BASE_MODEL_NAME = os.environ.get(
     "SYNAPSA_BASE_MODEL",
@@ -46,12 +46,23 @@ _JSON_START = "<<<SYNAPSA_JSON_START>>>"
 _JSON_END = "<<<SYNAPSA_JSON_END>>>"
 
 _BANNED_TITLE_PHRASES = (
-    "bad idea", "hunting grounds", "massacre", "reset machine", "mistake", "regret",
+    "hunting grounds", "massacre", "reset machine", "mistake", "regret",
     "rate 1-10", "rate this", "1 to 10", "part #", "road to",
     "bolo de", "parte ", "em barão", "em barao", "ela pensou", "só havia",
 )
+_AI_JARGON_PHRASES = (
+    "relentless", "reset chain", "pixel-perfect", "pixel perfect", "rampage",
+    "takedown", "execution", "disrespected", "punished instantly", "no escape from resets",
+)
+_CONVERSATIONAL_HOOK_RE = re.compile(
+    r"\b(they|ego|run|running|1\s*hp|1%|free|vanished|bad idea|safe|surviving|never dive|grouped|4v1|3v1|2v1)\b",
+    re.I,
+)
 _SPELL_TERMS = ("flash", "flashed", "ignite", "exhaust", "zhonya", "teleport", "tower dive", "dived")
-_RANK_PREFIX_RE = re.compile(r"^(master|diamond|challenger|grandmaster|emerald|platinum|gold|silver|bronze)\s+", re.I)
+_RANK_PREFIX_RE = re.compile(
+    r"^(?:(?:master|diamond|challenger|grandmaster|emerald|platinum|gold|silver|bronze)\s*(?:tier|elo)?|tier)\s+",
+    re.I,
+)
 
 
 def _load_camera_shunpo_rule() -> Dict[str, Any]:
@@ -102,6 +113,22 @@ def _strip_tags_clean(title: str) -> str:
     return re.sub(r"#\S+", "", title or "").strip()
 
 
+def _sanitize_title_part_tag(title: str) -> str:
+    cleaned = re.sub(r"\s*\bpart\s*#?\s*\d+\b", "", title or "", flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+def strip_rank_prefix(title: str) -> str:
+    """Usuwa z początku tytułu rangi i osierocone prefiksy typu 'Master Tier ' / 'Tier '."""
+    cleaned = str(title or "").strip()
+    for _ in range(3):
+        nxt = _RANK_PREFIX_RE.sub("", cleaned).strip()
+        if nxt == cleaned:
+            break
+        cleaned = nxt
+    return cleaned
+
+
 def score_title_candidate(
     title: str,
     action_type: str = "outplay",
@@ -122,22 +149,30 @@ def score_title_candidate(
         return -500.0
 
     score = 50.0
+    raw_low = (title or "").lower()
     low = body.lower()
 
-    # 1. Twarda blokada halucynacji, zakazanych fraz, sprzecznych tierów i bełkotu
-    if any(bp in low for bp in _BANNED_TITLE_PHRASES):
+    # 1. Twarda blokada halucynacji, zakazanych fraz, AI-żargonu, sprzecznych tierów i bełkotu
+    if (
+        any(bp in raw_low for bp in _BANNED_TITLE_PHRASES)
+        or re.search(r"\bpart\s*#?\s*\d+\b", raw_low)
+        or re.search(r"\bpart\s*$", low)
+    ):
         score -= 100.0
+    jargon_hits = sum(1 for jp in _AI_JARGON_PHRASES if jp in low)
+    if jargon_hits:
+        score -= 35.0 * jargon_hits
     if _RANK_PREFIX_RE.match(body):
         score -= 100.0
 
     act_low = (action_type or "").lower()
-    if "quadra" in act_low and re.search(r"\b(triple|penta|pentakill|double)\b", low):
+    if "quadra" in act_low and re.search(r"\b(triple|penta|pentakill|double|five|fifth|5th)\b", low):
         score -= 120.0
     elif "penta" in act_low and re.search(r"\b(quadra|quadrakill|triple|double)\b", low):
         score -= 120.0
-    elif "triple" in act_low and re.search(r"\b(quadra|quadrakill|penta|pentakill|double)\b", low):
+    elif "triple" in act_low and re.search(r"\b(quadra|quadrakill|penta|pentakill|double|four|fourth|4th|five|fifth|5th)\b", low):
         score -= 120.0
-    elif "double" in act_low and re.search(r"\b(triple|quadra|quadrakill|penta|pentakill)\b", low):
+    elif "double" in act_low and re.search(r"\b(triple|quadra|quadrakill|penta|pentakill|three|third|3rd|four|fourth|4th|five|fifth|5th)\b", low):
         score -= 120.0
 
     if any(em in body for em in ("🧵", "🧶", "🪴", "🧺", "🪡", "🧷")) or "damage away" in low:
@@ -154,9 +189,11 @@ def score_title_candidate(
         if isinstance(_mz, dict)
         else str(_mz or "")
     ).lower()
-    if "baron" in low and "baron" not in z_label and "baron" not in (action_type or "").lower():
+    if "baron" in low and "baron" not in z_label and "baron" not in act_low:
         score -= 80.0
-    if "dragon" in low and "dragon" not in z_label and "dragon" not in (action_type or "").lower():
+    if "dragon" in low and "dragon" not in z_label and "dragon" not in act_low:
+        score -= 80.0
+    if re.search(r"\b(tower|turret)\b", low) and not any(t in act_low or t in z_label for t in ("tower", "turret", "dive")):
         score -= 80.0
 
     # 2. Dopasowanie do zwycięskich struktur i statystyk konwersji z learning_directive.json
@@ -170,6 +207,9 @@ def score_title_candidate(
 
     # 3. Słowa CTR i unikane (granice słów: 'KATA' nie karze 'KATARINA')
     low_words_clean = re.sub(r"[^\w\s]", " ", low)
+    word_count_clean = len(low_words_clean.split())
+    if word_count_clean <= 7 and _CONVERSATIONAL_HOOK_RE.search(low) and jargon_hits == 0:
+        score += 14.0
     for kw in (dir_data.get("winning_keywords") or [])[:10]:
         if kw and re.search(rf"\b{re.escape(str(kw).lower())}\b", low_words_clean):
             score += 4.5
@@ -232,8 +272,8 @@ def score_and_select_best_titles(
         key=lambda t: score_title_candidate(t, action_type, extra_context, directive, recent_titles),
         reverse=True,
     )
-    best_a = ranked[0]
-    best_b = ranked[1] if len(ranked) > 1 else ranked[0]
+    best_a = _sanitize_title_part_tag(ranked[0])
+    best_b = _sanitize_title_part_tag(ranked[1]) if len(ranked) > 1 else best_a
     return best_a, best_b
 
 
@@ -268,7 +308,7 @@ def build_synapsa_instruction(task_type: str, payload: Dict[str, Any]) -> str:
         return (
             "Generate YouTube Shorts metadata in ENGLISH ONLY as strict JSON. "
             "RULES: Use ONLY facts from telemetry; DO NOT invent Flash/Ignite/Exhaust/Tower Dive/Baron; "
-            "DO NOT use 'Master' prefix, 'Part #', 'Rate 1-10', 'Bad Idea', 'Regret', or facebook links.\n"
+            "DO NOT use 'Master' prefix, 'Part #', 'Rate 1-10', 'Regret', or facebook links.\n"
             f"TELEMETRY: {compact}\n"
             'Return JSON with keys: "title_candidates" (5 short punchy hooks <=48 chars without hashtags), '
             '"hook_text" (2-5 punchy ALL CAPS words tied to clip telemetry e.g. "DRAGON STEAL + QUADRA" or "3 KILLS IN 4.2S", NEVER generic "INSANE OUTPLAY!"), '
@@ -339,6 +379,34 @@ def build_synapsa_instruction(task_type: str, payload: Dict[str, Any]) -> str:
             f"OVERNIGHT_CANDIDATES: {compact}\n"
             'Return strict JSON ONLY: {"winner_id": "1", "summary_pl": "2 factual Polish sentences mentioning champion and scores", '
             '"notes_pl": {"1": "concise Polish note with score", "2": "concise Polish note", "3": "concise Polish note", "4": "concise Polish note", "5": "concise Polish note"}}'
+        )
+    if task_type == "niche_research_blueprint":
+        return (
+            "Analyze the measured YouTube Shorts reference videos and OpenCV cut telemetry for a local business DFY reel, "
+            "and synthesize a 100% ORIGINAL Polish creative plan (STRICT ANTI-PLAGIARISM: draw inspiration ONLY from pacing, cut rhythm and hook structure; "
+            "NEVER copy reference titles verbatim, NEVER mention competing channel/brand names, NEVER use gaming words or English calques).\n"
+            f"RESEARCH_AND_CLIENT: {compact}\n"
+            'Return strict JSON ONLY with keys: '
+            '"what_works_summary_pl" (list of 3-4 concrete Polish takeaways grounded in measured cut cadence/duration), '
+            '"original_titles_pl" (list of 5 natural Polish titles <=55 chars tailored to business_name/city/offer), '
+            '"opening_hook_pl" (2-5 ALL CAPS Polish words for 0-1.5s), '
+            '"caption_pl" (2-3 natural Polish sentences with local CTA), '
+            '"hashtags_pl" (list of 5-6 Polish hashtags), '
+            '"storyboard" (list of 5-7 objects: {"step": 1, "role": "HOOK|PROCES|DETAL|REAKCJA|FINAŁ_CTA", '
+            '"duration_s": 1.6, "visual_plan_pl": "...", "overlay_text_pl": "...", "camera_note_pl": "..."}), '
+            '"client_shot_list" (list of 5-6 concise vertical 9:16 phone filming instructions in Polish for the business owner).'
+        )
+    if task_type == "lol_longform_metadata":
+        return (
+            "Generate horizontal YouTube Long-Form compilation metadata in ENGLISH ONLY as strict JSON. "
+            "RULES: Narrative curiosity title <=65 chars; NEVER include '#shorts' or '#shortsfeed'; NEVER use AI-jargon "
+            "('Execution', 'Relentless', 'Reset Chain', 'Pixel-Perfect', 'Takedown', 'Rampage') or 'Master' rank prefixes.\n"
+            f"COMPILATION_DATA: {compact}\n"
+            'Return strict JSON ONLY with keys: "title" (<=65 chars, no hashtags), '
+            '"thumbnail_headline" (2-3 punchy ALL CAPS words e.g. "1 HP 1V4?!"), '
+            '"thumbnail_subline" (2-4 ALL CAPS words e.g. "KATARINA WEEKLY #1"), '
+            '"description_intro" (2 engaging English sentences summarizing the best moments), '
+            '"tags" (list of 8-12 lowercase SEO keywords without shorts).'
         )
     return f"TASK={task_type} DATA={compact}\nReturn strict JSON."
 
@@ -801,7 +869,7 @@ def _run_worker(task_type: str, input_file: str) -> None:
     instruction = build_synapsa_instruction(task_type, payload)
 
     adapter_cfg = Path(TITLE_ADAPTER_DIR) / "adapter_config.json"
-    use_adapter = adapter_cfg.is_file()
+    use_adapter = adapter_cfg.is_file() and task_type not in ("niche_research_blueprint", "lol_longform_metadata")
     base_name = BASE_MODEL_NAME
     if use_adapter:
         try:
@@ -843,12 +911,22 @@ def _run_worker(task_type: str, input_file: str) -> None:
             mu._lazy_sds.clear()
         gc.collect()
 
-    prompt_text = f"### Instruction:\n{instruction}\n\n### Response:\n"
+    if not use_adapter:
+        messages = [
+            {"role": "system", "content": "You are a helpful AI assistant. Respond strictly with valid JSON only, no markdown fences, no commentary."},
+            {"role": "user", "content": instruction},
+        ]
+        try:
+            prompt_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        except Exception:
+            prompt_text = f"<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
+    else:
+        prompt_text = f"### Instruction:\n{instruction}\n\n### Response:\n"
     inputs = tokenizer([prompt_text], return_tensors="pt").to(model.device)
-    is_deterministic = task_type in ("montage_director", "engineering_cause_effect", "overnight_rank")
+    is_deterministic = task_type in ("montage_director", "engineering_cause_effect", "overnight_rank", "niche_research_blueprint")
     gen_kwargs: Dict[str, Any] = {
-        "max_new_tokens": 520 if task_type == "overnight_rank" else (160 if is_deterministic else 320),
-        "repetition_penalty": 1.12 if is_deterministic else 1.18,
+        "max_new_tokens": 760 if task_type == "niche_research_blueprint" else (520 if task_type == "overnight_rank" else (160 if is_deterministic else 320)),
+        "repetition_penalty": 1.12 if is_deterministic else 1.15,
         "pad_token_id": tokenizer.eos_token_id,
     }
     if is_deterministic:

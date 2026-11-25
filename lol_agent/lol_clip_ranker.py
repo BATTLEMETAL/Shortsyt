@@ -182,7 +182,7 @@ def fast_kill_scan(video_path: str, sample_every_n_seconds: float = 0.5) -> list
         _TESS_CANDIDATES = [
             r"C:\Program Files\Tesseract-OCR\tesseract.exe",
             r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-            r"C:\Users\mz100\AppData\Local\Programs\Tesseract-OCR\tesseract.exe",
+            os.path.expanduser(r"~\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"),
         ]
         for _p in _TESS_CANDIDATES:
             if os.path.exists(_p):

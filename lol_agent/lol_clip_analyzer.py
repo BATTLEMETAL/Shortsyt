@@ -119,6 +119,8 @@ def _detect_champion_vision(video_path: str) -> str:
 
     if os.getenv("SYNAPSA_ALLOW_GEMINI_VISION") != "1":
         return ""
+    if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("ALLOW_LIVE_GEMINI_IN_TEST") != "1":
+        return ""
     if not GENAI_OK or not GEMINI_API_KEY:
         return ""
 

@@ -17,7 +17,7 @@ from PIL import Image, ImageOps
 
 from ..auth import verify_token, verify_token_flexible
 from ..config import LOL_INPUT_DIR, LOL_OUTPUT_DIR, LOL_TEMP_DIR
-from ..helpers import _load_meta, _save_meta
+from ..helpers import _load_meta, _save_meta, compute_publish_status_flags
 from ..models import AutoDetectRequest, SaveMetadataRequest, AnalyzeFragRequest
 
 try:
@@ -73,7 +73,7 @@ def scan_available_clips(folder: Optional[str] = None) -> list:
     else:
         search_dirs = [
             LOL_INPUT_DIR,
-            Path(r"C:\Users\mz100\Videos\Overwolf\Outplayed\League of Legends"),
+            Path.home() / "Videos" / "Overwolf" / "Outplayed" / "League of Legends",
             Path(r"C:\Medal\Edits"),
         ]
     seen_paths = set()
@@ -215,7 +215,7 @@ async def auto_detect_clip(req: AutoDetectRequest, payload: dict = Depends(verif
     if source_path and not Path(source_path).is_absolute() and not Path(source_path).exists():
         candidate_dirs = [
             LOL_INPUT_DIR,
-            Path(r"C:\Users\mz100\Videos\Overwolf\Outplayed\League of Legends"),
+            Path.home() / "Videos" / "Overwolf" / "Outplayed" / "League of Legends",
             Path(r"C:\Medal\Edits"),
         ]
         target_name = Path(source_path).name
@@ -350,18 +350,55 @@ def analyze_frag(req: AnalyzeFragRequest, payload: dict = Depends(verify_token_f
 
 @router.get("/outputs")
 def list_outputs(payload: dict = Depends(verify_token)):
-    """Lista gotowych Shortów."""
+    """Lista gotowych Shortów wraz ze statusem publikacji / kolejki i blokadą duplikatów."""
+    queued_by_path: dict[str, dict] = {}
+    try:
+        from ...scheduled_queue import QUEUE_FILE, _load_queue
+        if QUEUE_FILE.exists():
+            for q_it in _load_queue():
+                if q_it.get("status") not in ("pending", "processing", "published"):
+                    continue
+                q_vp = str(q_it.get("video_path") or "").strip()
+                if not q_vp:
+                    continue
+                try:
+                    key = str(Path(q_vp).resolve()).lower()
+                except Exception:
+                    key = q_vp.lower()
+                slot = queued_by_path.setdefault(key, {"platforms": set(), "scheduled": None})
+                plat = str(q_it.get("platform") or "").strip().lower()
+                if plat:
+                    slot["platforms"].add(plat)
+                if q_it.get("status") == "pending" and q_it.get("publish_at") and not slot["scheduled"]:
+                    slot["scheduled"] = q_it.get("publish_at")
+    except Exception:
+        pass
+
     outputs = []
     search_dirs = [LOL_TEMP_DIR, LOL_OUTPUT_DIR]
     for search_dir in search_dirs:
         if Path(search_dir).exists():
             for f in Path(search_dir).glob("*.mp4"):
                 if "short" in f.name.lower() or "test" in f.name.lower():
+                    meta = _load_meta(f.name) or {}
+                    try:
+                        f_key = str(f.resolve()).lower()
+                    except Exception:
+                        f_key = str(f).lower()
+                    q_info = queued_by_path.get(f_key, {})
+                    pub_flags = compute_publish_status_flags(
+                        meta,
+                        queued_plats=set(q_info.get("platforms") or set()),
+                        file_exists=True,
+                    )
                     outputs.append({
                         "filename": f.name,
                         "path": str(f),
                         "size_mb": round(f.stat().st_size / 1024 / 1024, 1),
                         "modified": f.stat().st_mtime,
+                        "scheduled_publish_at": meta.get("scheduled_publish_at") or q_info.get("scheduled"),
+                        "file_exists": True,
+                        **pub_flags,
                     })
     outputs.sort(key=lambda x: x["modified"], reverse=True)
     return {"outputs": outputs}
@@ -623,12 +660,18 @@ async def upload_output_thumbnail(
 @router.post("/outputs/{filename}/thumbnail/regenerate")
 def regenerate_output_thumbnail(
     filename: str,
+    variant: Optional[int] = None,
     payload: dict = Depends(verify_token),
 ):
-    """Generuje ponownie miniaturkę 9:16 z klatki akcji wyrenderowanego Shorta."""
+    """Generuje ponownie miniaturkę 9:16 z klatki akcji, rotując warianty przy kolejnych kliknięciach."""
     safe_video = _sanitize_single_filename(filename)
     video_fp = _find_output_video(safe_video)
     meta = _load_meta(safe_video) or {}
+    try:
+        prev_variant = int(meta.get("thumbnail_variant_index") or 0)
+    except (TypeError, ValueError):
+        prev_variant = 0
+    next_variant = max(0, int(variant)) if variant is not None else (prev_variant + 1)
 
     overnight_item = None
     try:
@@ -700,6 +743,7 @@ def regenerate_output_thumbnail(
             output_path=str(tmp_jpg),
             source_clip_path=str(src_path) if has_clean_src else None,
             source_peak_moment=src_peak,
+            variant_index=next_variant,
         )
         if not generated or not Path(generated).is_file():
             raise HTTPException(status_code=500, detail="Nie udało się wygenerować miniaturki z wideo.")
@@ -719,11 +763,13 @@ def regenerate_output_thumbnail(
 
     _cleanup_stale_thumbnails(dest.name, dest)
     _persist_thumbnail_links(safe_video, dest)
+    _save_meta(safe_video, {"thumbnail_variant_index": next_variant})
     return {
         "status": "ok",
         "thumbnail_filename": dest.name,
         "thumbnail_path": str(dest),
         "size_kb": round(dest.stat().st_size / 1024, 1),
+        "variant_index": next_variant,
     }
 
 

@@ -439,10 +439,10 @@ Return ONLY valid JSON (no markdown, no comments):
     # Priorytet #1: Lokalna Synapsa (Qwen2.5-7B-4bit + LoRA, 0 tokenów API)
     try:
         try:
-            from lol_agent.synapsa_engine import generate_with_synapsa, score_and_select_best_titles
+            from lol_agent.synapsa_engine import generate_with_synapsa, score_and_select_best_titles, strip_rank_prefix
             from lol_agent.lol_metadata_generator import _ensure_shorts_tag, _format_final_title, build_rich_youtube_tags
         except ImportError:
-            from synapsa_engine import generate_with_synapsa, score_and_select_best_titles
+            from synapsa_engine import generate_with_synapsa, score_and_select_best_titles, strip_rank_prefix
             from lol_metadata_generator import _ensure_shorts_tag, _format_final_title, build_rich_youtube_tags
 
         syn = generate_with_synapsa(
@@ -463,7 +463,7 @@ Return ONLY valid JSON (no markdown, no comments):
                 recent_titles=_recent_titles,
             )
             if best_a:
-                clean_a = re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', best_a, flags=re.IGNORECASE).strip()
+                clean_a = strip_rank_prefix(best_a)
                 return {
                     "title": _format_final_title(clean_a),
                     "description": _ensure_shorts_tag(syn.get("description", ""), champion_name, action_type),
@@ -479,7 +479,11 @@ Return ONLY valid JSON (no markdown, no comments):
     except Exception:
         pass
 
-    if not GEMINI_API_KEY:
+    allow_live_gemini = not (
+        os.environ.get("PYTEST_CURRENT_TEST")
+        and os.environ.get("ALLOW_LIVE_GEMINI_IN_TEST") != "1"
+    )
+    if not GEMINI_API_KEY or not allow_live_gemini:
         try:
             from lol_agent.lol_metadata_generator import generate_metadata
         except ImportError:
@@ -542,10 +546,17 @@ Return ONLY valid JSON (no markdown, no comments):
 
             # Strip rank prefix if any
             if "title" in data and data["title"]:
-                data["title"] = re.sub(r'^(Master|Diamond|Challenger|Grandmaster|Emerald|Platinum|Gold)\s+', '', data["title"], flags=re.IGNORECASE).strip()
+                try:
+                    from lol_agent.synapsa_engine import strip_rank_prefix as _srp
+                except ImportError:
+                    from synapsa_engine import strip_rank_prefix as _srp
+                data["title"] = _srp(data["title"])
 
-            # Reject banned tropes
-            BANNED_TROPES = ["bad idea", "hunting grounds", "massacre", "reset machine", "mistake", "regret"]
+            # Reject banned tropes & AI jargon cliches
+            BANNED_TROPES = [
+                "hunting grounds", "massacre", "reset machine", "mistake", "regret",
+                "relentless reset", "reset chain", "pixel-perfect", "no escape from resets", "rampage triple",
+            ]
             if any(bt in data.get("title", "").lower() for bt in BANNED_TROPES):
                 print(f"⚠️  Banned trope in title '{data.get('title')}' — trying next model / fallback")
                 continue

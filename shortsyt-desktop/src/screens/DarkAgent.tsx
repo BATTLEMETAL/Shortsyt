@@ -50,11 +50,11 @@ const DWANNELLENGA_RULES: InsightRule[] = [
   },
   {
     id: "peak_timing",
-    title: "Złote Okna Publikacji (11:00 & 21:30 CET)",
+    title: "Złote Okna Publikacji (15:00 & 21:30 CET)",
     category: "Timing",
-    impact: "+35% Wyśw. / 51.9% Eng.",
-    description: "Publikacja o 11:00 CET (19:00 KST/JST — główny peak Azji Wschodniej + południe EU) oraz 21:30 CET (wieczór EU + popołudnie USA/BR z najwyższym AVD) maksymalizuje retencję i wyświetlenia.",
-    metric: "Mediana: 2,553 wyśw.",
+    impact: "0% Wpadek <1k",
+    description: "Popołudniowe 15:00 CET spina EU + wieczór Azji + poranek USA (med. 2,214 w 60d, waga 1.22x), a 21:30 CET maksymalizuje prime EU+US/BR (med. 2,568 w 30d, AVD 110.7%, waga 1.23x). Poranne 11:00 zostało usunięte.",
+    metric: "Wagi: 1.22x & 1.23x",
   },
 ];
 
@@ -121,7 +121,7 @@ export default function DarkAgent() {
             <Award className="w-4 h-4 text-[#C8FF3A]" />
           </div>
           <div>
-            <div className="text-xl font-black text-[#FFFFFF] truncate">Katarina Multikill</div>
+            <div className="text-xl font-black text-[#FFFFFF] truncate" title={topVideoTitle}>{topVideoTitle}</div>
             <div className="text-xs text-[#2ECC71] font-semibold mt-1 truncate">{topVideoViews}</div>
           </div>
           <div className="text-[11px] text-[#686E78]">
@@ -163,8 +163,8 @@ export default function DarkAgent() {
             <Clock className="w-4 h-4 text-[#C8FF3A]" />
           </div>
           <div>
-            <div className="text-xl font-black text-[#FFFFFF]">11:00 &amp; 21:30 CET</div>
-            <div className="text-xs text-[#C8FF3A] font-semibold mt-1">Peak Azja / EU / US</div>
+            <div className="text-xl font-black text-[#FFFFFF]">15:00 &amp; 21:30 CET</div>
+            <div className="text-xs text-[#C8FF3A] font-semibold mt-1">Global Bridge / Prime EU+US</div>
           </div>
           <div className="text-[11px] text-[#686E78]">
             Najwyższa aktywność graczy League of Legends
@@ -272,7 +272,7 @@ export default function DarkAgent() {
               { name: "Smart Camera v25 (Universal Player Tracker + Flash Snap)", desc: "Śledzenie złotego paska HP gracza + natychmiastowy przeskok kamery przy Flashu/Shunpo.", status: "AKTYWNY" },
               { name: "AI Auto-Trim (OCR Kill Detection & Action Window)", desc: "Automatyczne wyznaczanie punktu startu 1.5s przed walką i cięcia końcowego.", status: "AKTYWNY" },
               { name: "Hero-Frame 9:16 Thumbnail Generator", desc: "Tworzenie pionowej miniatury w momencie kulminacji i automatyczny upload na YouTube.", status: "AKTYWNY" },
-              { name: "YouTube Peak-Hour Scheduler", desc: "Planowanie publikacji na sloty 11:00 i 21:30 CET (Peak Azja/EU/US) z wykorzystaniem YouTube Data API.", status: "AKTYWNY" },
+              { name: "YouTube Peak-Hour Scheduler", desc: "Planowanie publikacji na sloty 15:00 i 21:30 CET (Global Bridge + Prime EU/US) z wykorzystaniem YouTube Data API.", status: "AKTYWNY" },
               { name: "Dwannellenga Viral Title & Description Engine", desc: "Generowanie angażujących tytułów pod algorytm oraz automatyczne przypinanie komentarza.", status: "AKTYWNY" },
             ].map((mod, idx) => (
               <div key={idx} className="p-4 fk-cut-sm bg-[#050505] border border-[#272A2F] flex items-center justify-between gap-4">

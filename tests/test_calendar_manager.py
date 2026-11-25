@@ -49,7 +49,11 @@ class TestCalendarDBPersistence:
 class TestCalendarSlotLifecycle:
     """Tests for reserving, updating, and releasing publication slots."""
 
-    def test_reserve_slot_standard_peak_hour(self, mock_calendar_db):
+    def test_reserve_slot_standard_peak_hour(self, mock_calendar_db, monkeypatch):
+        monkeypatch.setattr(
+            "lol_agent.api.calendar_manager.get_peak_hours_cet",
+            lambda weekday=None: ["15:00", "21:30"],
+        )
         slot_id = "slot_2026-10-25_21-30"
         entry = reserve_slot(
             slot_id=slot_id,
@@ -194,3 +198,37 @@ class TestCalendarAutoFill:
         assert "c:/videos/candidate_solo.mp4" in assigned_paths
         assert "c:/videos/candidate_penta.mp4" in assigned_paths
         assert "c:/videos/already_pub.mp4" not in assigned_paths
+
+
+def test_calendar_uses_1500_and_2130_peak_hours_and_rejects_1100(mock_calendar_db, monkeypatch):
+    monkeypatch.setattr(
+        "lol_agent.api.calendar_manager.get_peak_hours_cet",
+        lambda: ["15:00", "21:30"],
+    )
+    monkeypatch.setattr(
+        "lol_agent.api.youtube_uploader.get_channel_videos_and_performance",
+        lambda *args, **kwargs: {"scheduled": {}, "published": [], "avg_views": 0},
+    )
+    slots = get_calendar_slots(start_date="2026-11-23", days=2)
+    peak_times = sorted({s["time"] for s in slots if s.get("is_peak")})
+    assert peak_times == ["15:00", "21:30"]
+    morning_entry = reserve_slot(slot_id="slot_2026-11-23_11-00", title="Morning Test")
+    afternoon_entry = reserve_slot(slot_id="slot_2026-11-23_15-00", title="Afternoon Peak")
+    assert morning_entry["is_peak"] is False
+    assert afternoon_entry["is_peak"] is True
+
+
+def test_calendar_supports_different_peak_hours_per_weekday(mock_calendar_db, monkeypatch):
+    monkeypatch.setattr(
+        "lol_agent.api.calendar_manager.get_peak_hours_cet",
+        lambda weekday=None: ["15:00", "20:00"] if weekday == 0 else ["09:00", "18:00"],
+    )
+    monkeypatch.setattr(
+        "lol_agent.api.youtube_uploader.get_channel_videos_and_performance",
+        lambda *args, **kwargs: {"scheduled": {}, "published": [], "avg_views": 0},
+    )
+    slots = get_calendar_slots(start_date="2026-11-23", days=2)
+    mon_times = sorted(s["time"] for s in slots if s.get("date") == "2026-11-23" and s.get("is_peak"))
+    tue_times = sorted(s["time"] for s in slots if s.get("date") == "2026-11-24" and s.get("is_peak"))
+    assert mon_times == ["15:00", "20:00"]
+    assert tue_times == ["09:00", "18:00"]

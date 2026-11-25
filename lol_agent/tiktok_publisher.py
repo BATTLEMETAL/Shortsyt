@@ -282,6 +282,50 @@ def _prepare_tiktok_video_with_cover(
     return video_path, None
 
 
+def _clamp_cover_timestamp_ms(video_path: Path, raw_ms: int) -> int:
+    """Pilnuje, aby timestamp okładki TikTok mieścił się wewnątrz realnego czasu trwania wideo."""
+    safe_raw = max(500, int(raw_ms or 2000))
+    try:
+        if not video_path.exists():
+            return safe_raw
+        import cv2
+        cap = cv2.VideoCapture(str(video_path))
+        try:
+            fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+            frames = float(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+        finally:
+            cap.release()
+        if fps <= 0.0 or frames <= 0.0:
+            return safe_raw
+        dur_ms = int((frames / fps) * 1000.0)
+        if dur_ms <= 1000:
+            return safe_raw
+        max_valid_ms = max(500, dur_ms - 400)
+        if safe_raw >= dur_ms - 400:
+            return max(500, min(max_valid_ms, int(dur_ms * 0.45)))
+        return max(500, min(safe_raw, max_valid_ms))
+    except Exception:
+        return safe_raw
+
+
+def _resolve_cover_timestamp_ms(
+    video_path: Path,
+    embed_intro: bool,
+    thumbnail_path: Optional[str],
+    peak_moment: Optional[float],
+    fallback_ms: int,
+) -> int:
+    """Wylicza bezpieczny moment klatki okładkowej TikTok (ms) po znormalizowaniu do długości MP4."""
+    if embed_intro and thumbnail_path and os.path.exists(thumbnail_path):
+        return 50
+    raw = (
+        max(500, int(float(peak_moment) * 1000))
+        if (peak_moment is not None and float(peak_moment) > 0)
+        else max(2000, int(fallback_ms or 2000))
+    )
+    return _clamp_cover_timestamp_ms(video_path, raw)
+
+
 def upload_tiktok_short(
     video_path: str,
     title: str,
@@ -335,13 +379,8 @@ def upload_tiktok_short(
                             "brand_organic_toggle": bool(brand_organic_toggle),
                             "brand_content_toggle": bool(brand_content_toggle),
                             "post_mode": normalized_post_mode,
-                            "video_cover_timestamp_ms": (
-                                50 if (embed_intro and thumbnail_path and os.path.exists(thumbnail_path))
-                                else (
-                                    max(500, int(float(peak_moment) * 1000))
-                                    if (peak_moment is not None and float(peak_moment) > 0)
-                                    else max(2000, int(video_cover_timestamp_ms or 2000))
-                                )
+                            "video_cover_timestamp_ms": _resolve_cover_timestamp_ms(
+                                vp, embed_intro, thumbnail_path, peak_moment, video_cover_timestamp_ms
                             ),
                         }
                     )
@@ -358,6 +397,29 @@ def upload_tiktok_short(
         except Exception as _dt_err:
             print(f"⚠️ Błąd parsowania publish_at ({publish_at}): {_dt_err}")
 
+    # Sprawdź natychmiastową wysyłkę przez TikTok Studio Web (pomija telefon gdy sesja Chrome działa)
+    if (
+        normalized_post_mode == "direct"
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+        and os.environ.get("TIKTOK_USE_WEB_STUDIO", "").strip() == "1"
+    ):
+        try:
+            from lol_agent.tiktok_web_scheduler import schedule_tiktok_via_web_studio
+            tag_str = " ".join(f"#{t.lstrip('#')}" for t in (hashtags or []) if t)
+            web_caption = f"{title.strip()} {tag_str}".strip()[:2200]
+            web_res = schedule_tiktok_via_web_studio(
+                video_path=str(vp),
+                caption=web_caption,
+                publish_at=None,
+                thumbnail_path=thumbnail_path,
+                headless=True,
+            )
+            if web_res.get("success"):
+                return web_res
+            print(f"⚠️ [TikTok] Web Studio nie powiódł się ({web_res.get('error')}) -> fallback na TikTok API")
+        except Exception as _web_exc:
+            print(f"⚠️ [TikTok] Błąd Web Studio ({_web_exc}) -> fallback na TikTok API")
+
     token_data = load_tiktok_token()
     if not token_data or not token_data.get("access_token"):
         return {
@@ -372,10 +434,8 @@ def upload_tiktok_short(
     else:
         upload_vp, temp_cover_path = vp, None
     has_embedded_cover = temp_cover_path is not None
-    effective_cover_ms = 50 if has_embedded_cover else (
-        max(500, int(float(peak_moment) * 1000))
-        if (peak_moment is not None and float(peak_moment) > 0)
-        else max(2000, int(video_cover_timestamp_ms or 2000))
+    effective_cover_ms = _resolve_cover_timestamp_ms(
+        upload_vp, has_embedded_cover, thumbnail_path, peak_moment, video_cover_timestamp_ms
     )
 
     try:

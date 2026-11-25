@@ -385,28 +385,31 @@ export default function ClipBrowser() {
         const isOnRunning = Boolean(overnightStatus?.status && ["scanning", "rendering", "evaluating"].includes(overnightStatus.status));
         const isOnDone = overnightStatus?.status === "done";
         return (
-          <div className="p-5 fk-cut bg-[#0E0F11] border border-indigo-400/35 space-y-3.5">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-400/40 flex items-center justify-center flex-shrink-0">
-                  <Moon className="w-4 h-4 text-indigo-300" />
+          <div className="p-5 fk-cut bg-[#0E0F11] border border-[#C8FF3A]/35 space-y-3.5">
+            {/* Wiersz 1: Nagłówek na 100% szerokości (zero ściskania tekstu w pionie) */}
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-lg bg-[#C8FF3A]/15 border border-[#C8FF3A]/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Moon className="w-4 h-4 text-[#C8FF3A]" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="text-sm font-black text-[#FFFFFF] flex items-center gap-2 flex-wrap">
+                  <span>OPCJA NOCNA — SKAN CAŁEGO FOLDERU</span>
+                  <span className="text-[9px] px-2 py-0.5 rounded bg-[#C8FF3A]/15 text-[#C8FF3A] border border-[#C8FF3A]/35 font-bold whitespace-nowrap">ZERO AUTO-UPLOADU</span>
                 </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-black text-[#FFFFFF] flex items-center gap-2 flex-wrap">
-                    OPCJA NOCNA — SKAN CAŁEGO FOLDERU
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-200 border border-indigo-400/35 font-bold">ZERO AUTO-UPLOADU</span>
-                  </div>
-                  <div className="text-[11px] text-[#A0A7B1] break-words">
-                    Skanuje <span className="text-[#FFFFFF] font-semibold">{selectedFolder || "Outplayed + Medal"}</span>, odrzuca przeciętne klipy, montuje Top {overnightTopN} i rano daje rekomendację #1 Synapsy.
-                  </div>
+                <div className="text-xs text-[#A0A7B1] leading-relaxed">
+                  Skanuje <span className="text-[#FFFFFF] font-semibold break-all">{selectedFolder || "Outplayed + Medal"}</span>, odrzuca przeciętne klipy, montuje Top {overnightTopN} i rano daje rekomendację #1 Synapsy.
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+            </div>
+
+            {/* Wiersz 2: Pasek sterowania w osobnym ciemnym kontenerze */}
+            <div className="p-2.5 rounded-lg bg-[#050505] border border-[#272A2F] flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
                 <select
                   value={overnightTierFilter}
                   disabled={isOnRunning}
                   onChange={e => setOvernightTierFilter(e.target.value as any)}
-                  className="px-2.5 py-1.5 rounded-lg bg-[#050505] border border-[#272A2F] text-xs font-bold text-[#FFFFFF] focus:outline-none focus:border-indigo-400">
+                  className="px-2.5 py-1.5 rounded-lg bg-[#0E0F11] border border-[#272A2F] text-xs font-bold text-[#FFFFFF] focus:outline-none focus:border-[#C8FF3A]">
                   <option value="auto">Auto (Multikille jeśli są)</option>
                   <option value="double_plus">Double Kill+</option>
                   <option value="triple_plus">Triple Kill+</option>
@@ -418,27 +421,29 @@ export default function ClipBrowser() {
                   value={overnightTopN}
                   disabled={isOnRunning}
                   onChange={e => setOvernightTopN(Number(e.target.value))}
-                  className="px-2.5 py-1.5 rounded-lg bg-[#050505] border border-[#272A2F] text-xs font-bold text-[#FFFFFF] focus:outline-none focus:border-indigo-400">
+                  className="px-2.5 py-1.5 rounded-lg bg-[#0E0F11] border border-[#272A2F] text-xs font-bold text-[#FFFFFF] focus:outline-none focus:border-[#C8FF3A]">
                   <option value={3}>Top 3 shorty</option>
                   <option value={5}>Top 5 shortów</option>
                 </select>
-                <label className="flex items-center gap-1.5 text-[11px] text-[#A0A7B1] px-2 py-1.5 rounded-lg bg-[#050505] border border-[#272A2F] cursor-pointer select-none">
-                  <input type="checkbox" checked={overnightOnlyChannelChamp} disabled={isOnRunning} onChange={e => setOvernightOnlyChannelChamp(e.target.checked)} className="accent-indigo-400" />
+                <label className="flex items-center gap-1.5 text-[11px] text-[#A0A7B1] px-2.5 py-1.5 rounded-lg bg-[#0E0F11] border border-[#272A2F] cursor-pointer select-none whitespace-nowrap">
+                  <input type="checkbox" checked={overnightOnlyChannelChamp} disabled={isOnRunning} onChange={e => setOvernightOnlyChannelChamp(e.target.checked)} className="accent-[#C8FF3A]" />
                   Tylko {champion || "Katarina"}
                 </label>
-                <label className="flex items-center gap-1.5 text-[11px] text-[#A0A7B1] px-2 py-1.5 rounded-lg bg-[#050505] border border-[#272A2F] cursor-pointer select-none">
-                  <input type="checkbox" checked={overnightSkipPub} disabled={isOnRunning} onChange={e => setOvernightSkipPub(e.target.checked)} className="accent-indigo-400" />
+                <label className="flex items-center gap-1.5 text-[11px] text-[#A0A7B1] px-2.5 py-1.5 rounded-lg bg-[#0E0F11] border border-[#272A2F] cursor-pointer select-none whitespace-nowrap">
+                  <input type="checkbox" checked={overnightSkipPub} disabled={isOnRunning} onChange={e => setOvernightSkipPub(e.target.checked)} className="accent-[#C8FF3A]" />
                   Pomiń opublikowane
                 </label>
+              </div>
+              <div className="flex items-center gap-2 ml-auto flex-shrink-0">
                 {!isOnRunning ? (
                   <button onClick={handleStartOvernight}
                     disabled={startingOvernight}
-                    className="px-4 py-2 fk-cut-sm bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white font-black text-xs flex items-center gap-1.5 transition-colors">
+                    className="px-4 py-2 fk-cut-sm bg-[#C8FF3A] hover:bg-[#AEE820] disabled:opacity-50 text-[#050505] font-black text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap">
                     <Sparkles className="w-3.5 h-3.5" />{startingOvernight ? "Uruchamiam..." : `Zostaw na noc (Montuj ${overnightTopN})`}
                   </button>
                 ) : (
                   <button onClick={handleStopOvernight}
-                    className="px-4 py-2 fk-cut-sm bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-300 font-bold text-xs flex items-center gap-1.5 transition-colors">
+                    className="px-4 py-2 fk-cut-sm bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-300 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap">
                     <Square className="w-3.5 h-3.5" />Zatrzymaj
                   </button>
                 )}
@@ -447,7 +452,7 @@ export default function ClipBrowser() {
 
             {catalog && (
               <div className="p-2.5 rounded-lg bg-[#050505] border border-[#272A2F] flex items-center gap-2 flex-wrap text-[11px]">
-                <span className="font-bold text-indigo-200 mr-1">Katalog Riot Outplayed ({catalog.matches_count} meczów, {catalog.total_clips} klipów):</span>
+                <span className="font-bold text-[#C8FF3A] mr-1">Katalog Riot Outplayed ({catalog.matches_count} meczów, {catalog.total_clips} klipów):</span>
                 {(catalog.tier_counts?.pentakill ?? 0) > 0 && (
                   <span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/40 text-red-300 font-bold">PENTA: {catalog.tier_counts.pentakill}</span>
                 )}
@@ -471,14 +476,14 @@ export default function ClipBrowser() {
             {overnightStatus && overnightStatus.status !== "idle" && (
               <div className="p-3 rounded-lg bg-[#050505] border border-[#272A2F] space-y-2">
                 <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="font-bold text-indigo-200 flex items-center gap-1.5 min-w-0 truncate">
-                    {isOnRunning && <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-300 flex-shrink-0" />}
+                  <span className="font-bold text-[#C8FF3A] flex items-center gap-1.5 min-w-0 truncate">
+                    {isOnRunning && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C8FF3A] flex-shrink-0" />}
                     <span className="truncate">{overnightStatus.phase}</span>
                   </span>
                   <span className="font-mono text-[#C8FF3A] font-bold flex-shrink-0">{overnightStatus.progress}%</span>
                 </div>
                 <div className="w-full h-1.5 bg-[#17191C] rounded-full overflow-hidden">
-                  <div className="h-full bg-indigo-400 transition-all duration-300" style={{ width: `${Math.min(100, Math.max(2, overnightStatus.progress || 0))}%` }} />
+                  <div className="h-full bg-[#C8FF3A] transition-all duration-300" style={{ width: `${Math.min(100, Math.max(2, overnightStatus.progress || 0))}%` }} />
                 </div>
                 <div className="flex items-center gap-3 text-[11px] text-[#A0A7B1] flex-wrap">
                   <span>Skan: {overnightStatus.scanned_clips}/{overnightStatus.total_clips}</span>

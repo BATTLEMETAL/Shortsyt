@@ -9,9 +9,9 @@
   "ocr_patterns": {},
   "event_tiers": {},
   "action_labels": {
-    "reveal": "MUST SEE ??",
-    "demo": "WAIT FOR IT...",
-    "cta": "LINK IN BIO ??"
+    "reveal": "ZOBACZ EFEKT",
+    "demo": "DETAL Z BLISKA",
+    "cta": "SPRAWDŹ TERAZ"
   },
   "motion_detection": {
     "enabled": true,

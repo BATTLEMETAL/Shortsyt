@@ -298,21 +298,29 @@ def ingest_youtube_metric(metric: Dict[str, Any], action_type: str, pub_ts: Opti
             elif views < 50 and views > 0:
                 weights[action_type.lower()] = round(max(0.7, cur - 0.02), 3)
 
-        # ── Peak Hours Correlation (Uczenie najlepszej godziny publikacji) ──
+        # ── Peak Hours Correlation (Uczenie najlepszej godziny publikacji w Europe/Warsaw) ──
         if pub_ts:
             try:
-                # Obsługa formatów ISO np. 2026-10-22T18:30:00
-                clean_ts = pub_ts.replace("Z", "+00:00")
+                from zoneinfo import ZoneInfo
+                tz_pl = ZoneInfo("Europe/Warsaw")
+            except Exception:
+                tz_pl = timezone(timedelta(hours=1))
+            try:
+                clean_ts = str(pub_ts).strip().replace("Z", "+00:00")
                 dt = datetime.fromisoformat(clean_ts)
-                hour = str(dt.hour)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt_pl = dt.astimezone(tz_pl)
+                hour = str(dt_pl.hour)
                 hour_stats = data.setdefault("publish_time", {}).setdefault("hour_stats", {})
                 h_entry = hour_stats.setdefault(hour, {"views_total": 0, "count": 0, "avg_views": 0.0})
                 h_entry["views_total"] += views
                 h_entry["count"] += 1
                 h_entry["avg_views"] = round(h_entry["views_total"] / h_entry["count"], 1)
 
-                # Wybierz godzinę z najwyższą średnią wyświetleń
-                best_h = max(hour_stats.items(), key=lambda x: x[1]["avg_views"] if x[1]["count"] >= 1 else 0)[0]
+                reliable_hours = [(h, st) for h, st in hour_stats.items() if st.get("count", 0) >= 3]
+                pool = reliable_hours if reliable_hours else list(hour_stats.items())
+                best_h = max(pool, key=lambda x: x[1].get("avg_views", 0.0))[0]
                 data["publish_time"]["best_hour"] = int(best_h)
             except Exception:
                 pass
@@ -335,7 +343,7 @@ def ingest_instagram_metric(metric: Dict[str, Any], action_type: str, pub_ts: Op
 
 
 def ingest_facebook_metric(metric: Dict[str, Any], action_type: str, pub_ts: Optional[str] = None) -> None:
-    """Aktualizuje learning_facebook.json o reakcje, komentarze i godziny."""
+    """Aktualizuje learning_facebook.json o reakcje, komentarze i godziny (Europe/Warsaw)."""
     def _updater(data: Dict[str, Any]) -> Dict[str, Any]:
         data["videos_analysed"] = data.get("videos_analysed", 0) + 1
         entries = data.setdefault("metrics_collected", {}).setdefault("entries", [])
@@ -344,10 +352,18 @@ def ingest_facebook_metric(metric: Dict[str, Any], action_type: str, pub_ts: Opt
 
         if pub_ts:
             try:
-                clean_ts = pub_ts.replace("Z", "+00:00")
+                from zoneinfo import ZoneInfo
+                tz_pl = ZoneInfo("Europe/Warsaw")
+            except Exception:
+                tz_pl = timezone(timedelta(hours=1))
+            try:
+                clean_ts = str(pub_ts).strip().replace("Z", "+00:00")
                 dt = datetime.fromisoformat(clean_ts)
-                hour = str(dt.hour)
-                day_name = dt.strftime("%A")
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt_pl = dt.astimezone(tz_pl)
+                hour = str(dt_pl.hour)
+                day_name = dt_pl.strftime("%A")
                 stats = data.setdefault("best_post_time", {}).setdefault("day_hour_stats", {})
                 key = f"{day_name}_{hour}:00"
                 e = stats.setdefault(key, {"views_total": 0, "count": 0, "avg_views": 0.0})
@@ -355,9 +371,12 @@ def ingest_facebook_metric(metric: Dict[str, Any], action_type: str, pub_ts: Opt
                 e["count"] += 1
                 e["avg_views"] = round(e["views_total"] / e["count"], 1)
 
-                best_k = max(stats.items(), key=lambda x: x[1]["avg_views"] if x[1]["count"] >= 1 else 0)[0]
-                data["best_post_time"]["best_hour"] = int(hour)
-                data["best_post_time"]["best_day"] = day_name
+                reliable_keys = [(k, st) for k, st in stats.items() if st.get("count", 0) >= 3]
+                pool = reliable_keys if reliable_keys else list(stats.items())
+                best_k = max(pool, key=lambda x: x[1].get("avg_views", 0.0))[0]
+                best_day_part, best_hour_part = best_k.rsplit("_", 1)
+                data["best_post_time"]["best_hour"] = int(best_hour_part.split(":")[0])
+                data["best_post_time"]["best_day"] = best_day_part
             except Exception:
                 pass
 

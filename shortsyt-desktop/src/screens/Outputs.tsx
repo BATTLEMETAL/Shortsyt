@@ -58,10 +58,10 @@ export default function Outputs() {
   const [selTt, setSelTt] = useState(true);
   const [selIg, setSelIg] = useState(true);
   const [selFb, setSelFb] = useState(true);
-  const [ttPrivacy, setTtPrivacy] = useState<string>("");
-  const [ttAllowComment, setTtAllowComment] = useState(false);
-  const [ttAllowDuet, setTtAllowDuet] = useState(false);
-  const [ttAllowStitch, setTtAllowStitch] = useState(false);
+  const [ttPrivacy, setTtPrivacy] = useState<string>("PUBLIC_TO_EVERYONE");
+  const [ttAllowComment, setTtAllowComment] = useState(true);
+  const [ttAllowDuet, setTtAllowDuet] = useState(true);
+  const [ttAllowStitch, setTtAllowStitch] = useState(true);
   const [ttDisclose, setTtDisclose] = useState(false);
   const [ttYourBrand, setTtYourBrand] = useState(false);
   const [ttBrandedContent, setTtBrandedContent] = useState(false);
@@ -72,6 +72,7 @@ export default function Outputs() {
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
   const [uploadVideoDurationSec, setUploadVideoDurationSec] = useState<number | null>(null);
   const [multiResults, setMultiResults] = useState<Record<string, any> | null>(null);
+  const [partialPublishInfo, setPartialPublishInfo] = useState<{ done: string[]; missing: string[]; failed: Record<string, string> } | null>(null);
 
   const handleSelectPlatformPreset = (preset: 'yt' | 'tt' | 'ig' | 'fb' | 'all') => {
     if (preset === 'yt') {
@@ -277,7 +278,7 @@ export default function Outputs() {
   const buildLocalFbCopy = (rawTitle: string, champion?: string) => {
     const clean = (rawTitle || "").replace(/#\S+/g, "").replace(/\s{2,}/g, " ").trim();
     const champTag = (champion || "katarina").replace(/['\s]/g, "").toLowerCase();
-    return `${clean} — sprawdź tę akcję! #LeagueOfLegends #${champTag} #Gaming`.trim();
+    return `${clean} — clean play! #LeagueOfLegends #${champTag} #LoL`.trim();
   };
 
   const openUploadModal = async (filename: string) => {
@@ -285,10 +286,41 @@ export default function Outputs() {
     setMultiResults(null);
     setThumbError(null);
     setTiktokCopied(false);
-    setTtPrivacy("");
-    setTtAllowComment(false);
-    setTtAllowDuet(false);
-    setTtAllowStitch(false);
+
+    const outMatch = outputs.find((o) => o.filename === filename);
+    const nightMatch = latestBatch?.items?.find((it) => it.output_filename === filename);
+    const donePlats = Array.from(
+      new Set(
+        [
+          ...(outMatch?.published_platforms || []),
+          ...(nightMatch?.published_platforms || []),
+        ].map((p) => String(p).toLowerCase())
+      )
+    ).filter(Boolean);
+    const failedMap: Record<string, string> = {
+      ...(outMatch?.failed_platforms || {}),
+      ...(nightMatch?.failed_platforms || {}),
+    };
+    const allPlats = ["youtube", "tiktok", "instagram", "facebook"] as const;
+    const missingPlats = allPlats.filter((p) => !donePlats.includes(p));
+    if (donePlats.length > 0 && missingPlats.length > 0) {
+      setSelYt(missingPlats.includes("youtube"));
+      setSelTt(missingPlats.includes("tiktok"));
+      setSelIg(missingPlats.includes("instagram"));
+      setSelFb(missingPlats.includes("facebook"));
+      setPartialPublishInfo({ done: donePlats, missing: [...missingPlats], failed: failedMap });
+    } else {
+      setSelYt(true);
+      setSelTt(true);
+      setSelIg(true);
+      setSelFb(true);
+      setPartialPublishInfo(null);
+    }
+
+    setTtPrivacy("PUBLIC_TO_EVERYONE");
+    setTtAllowComment(true);
+    setTtAllowDuet(true);
+    setTtAllowStitch(true);
     setTtDisclose(false);
     setTtYourBrand(false);
     setTtBrandedContent(false);
@@ -299,8 +331,25 @@ export default function Outputs() {
     setUploadVideoDurationSec(null);
     setUploadModal({ filename });
 
+    apiGetNextPeakSlot()
+      .then((s) => { if (s) setPeakSlot(s); })
+      .catch(() => {});
     apiGetTikTokCreatorInfo()
-      .then((info) => setTtCreatorInfo(info))
+      .then((info) => {
+        setTtCreatorInfo(info);
+        if (info?.ok) {
+          if (
+            Array.isArray(info.privacy_level_options) &&
+            info.privacy_level_options.length > 0 &&
+            !info.privacy_level_options.includes("PUBLIC_TO_EVERYONE")
+          ) {
+            setTtPrivacy(info.privacy_level_options[0]);
+          }
+          if (info.comment_disabled) setTtAllowComment(false);
+          if (info.duet_disabled) setTtAllowDuet(false);
+          if (info.stitch_disabled) setTtAllowStitch(false);
+        }
+      })
       .catch(() => setTtCreatorInfo(null))
       .finally(() => setTtCreatorLoading(false));
     apiGetOutputUrl(filename)
@@ -438,6 +487,10 @@ export default function Outputs() {
           url: results.youtube?.url || results.instagram?.url || results.facebook?.url || (results.tiktok?.publish_id ? `TikTok Publish ID: ${results.tiktok.publish_id}` : undefined),
           scheduledFor: scheduledLabel
         });
+        apiGetNextPeakSlot()
+          .then((s) => { if (s) setPeakSlot(s); })
+          .catch(() => {});
+        fetchOutputs().catch(() => {});
       } else {
         const firstErr = Object.values(results).map((r: any) => r?.error).filter(Boolean)[0] || "Błąd publikacji";
         setUploadResult({ ok: false, error: String(firstErr) });
@@ -609,6 +662,19 @@ export default function Outputs() {
               <button onClick={() => setUploadModal(null)} className="text-[#A0A7B1] hover:text-[#FFFFFF]"><X className="w-4 h-4"/></button>
             </div>
             <div className="text-xs text-[#A0A7B1] bg-[#050505] rounded-lg px-3 py-2 font-mono truncate">{uploadModal.filename}</div>
+
+            {partialPublishInfo && (
+              <div className="p-2.5 rounded-lg bg-amber-500/15 border border-amber-400/50 text-[11px] text-amber-200 space-y-0.5">
+                <div className="font-bold">
+                  ⚠️ Częściowo opublikowano ({partialPublishInfo.done.map((p) => p.toUpperCase()).join("+")}) — domyślnie zaznaczono tylko brakujące ({partialPublishInfo.missing.map((p) => p.toUpperCase()).join("+")}).
+                </div>
+                {Object.keys(partialPublishInfo.failed).length > 0 && (
+                  <div className="text-[10px] text-amber-300/90 font-mono truncate" title={JSON.stringify(partialPublishInfo.failed)}>
+                    Ostatni błąd: {Object.entries(partialPublishInfo.failed).map(([k, v]) => `${k.toUpperCase()}: ${v}`).join(" | ")}
+                  </div>
+                )}
+              </div>
+            )}
 
             {uploadPreviewUrl && (
               <div className="bg-[#050505] border border-[#272A2F] rounded-lg p-2 space-y-1">
@@ -1173,18 +1239,48 @@ export default function Outputs() {
                           </div>
                         )}
                         {multiResults.tiktok && (
-                          <div className={`break-words [overflow-wrap:anywhere] ${multiResults.tiktok.success ? "text-[#55E88D]" : "text-[#FFB347]"}`}>
-                            • TikTok: {multiResults.tiktok.success ? `✅ Opublikowano (${multiResults.tiktok.publish_id || "OK"})` : `⚠️ ${multiResults.tiktok.error}`}
+                          <div className={`break-words [overflow-wrap:anywhere] ${
+                            !multiResults.tiktok.success
+                              ? "text-[#FFB347]"
+                              : (multiResults.tiktok.queued || multiResults.tiktok.is_scheduled)
+                              ? "text-[#C8FF3A]"
+                              : "text-[#55E88D]"
+                          }`}>
+                            • TikTok: {multiResults.tiktok.success
+                              ? ((multiResults.tiktok.queued || multiResults.tiktok.is_scheduled)
+                                ? `🕒 Zakolejkowano (${multiResults.tiktok.publish_at || uploadResult.scheduledFor || "kolejka 24/7"})`
+                                : `✅ Opublikowano (${multiResults.tiktok.publish_id || "OK"})`)
+                              : `⚠️ ${multiResults.tiktok.error}`}
                           </div>
                         )}
                         {multiResults.instagram && (
-                          <div className={`break-words [overflow-wrap:anywhere] ${multiResults.instagram.success ? "text-[#55E88D]" : "text-[#FF5C5C]"}`}>
-                            • Instagram: {multiResults.instagram.success ? `✅ Reel opublikowany (${multiResults.instagram.url || "OK"})` : `❌ ${multiResults.instagram.error}`}
+                          <div className={`break-words [overflow-wrap:anywhere] ${
+                            !multiResults.instagram.success
+                              ? "text-[#FF5C5C]"
+                              : (multiResults.instagram.queued || multiResults.instagram.is_scheduled)
+                              ? "text-[#C8FF3A]"
+                              : "text-[#55E88D]"
+                          }`}>
+                            • Instagram: {multiResults.instagram.success
+                              ? ((multiResults.instagram.queued || multiResults.instagram.is_scheduled)
+                                ? `🕒 Zakolejkowano (${multiResults.instagram.publish_at || uploadResult.scheduledFor || "kolejka 24/7"})`
+                                : `✅ Reel opublikowany (${multiResults.instagram.url || "OK"})`)
+                              : `❌ ${multiResults.instagram.error}`}
                           </div>
                         )}
                         {multiResults.facebook && (
-                          <div className={`break-words [overflow-wrap:anywhere] ${multiResults.facebook.success ? "text-[#55E88D]" : "text-[#FF5C5C]"}`}>
-                            • Facebook: {multiResults.facebook.success ? `✅ Fanpage opublikowano (${multiResults.facebook.url || multiResults.facebook.video_id || "OK"})` : `❌ ${multiResults.facebook.error}`}
+                          <div className={`break-words [overflow-wrap:anywhere] ${
+                            !multiResults.facebook.success
+                              ? "text-[#FF5C5C]"
+                              : (multiResults.facebook.queued || multiResults.facebook.is_scheduled)
+                              ? "text-[#C8FF3A]"
+                              : "text-[#55E88D]"
+                          }`}>
+                            • Facebook: {multiResults.facebook.success
+                              ? ((multiResults.facebook.queued || multiResults.facebook.is_scheduled)
+                                ? `🕒 Zakolejkowano (${multiResults.facebook.publish_at || uploadResult.scheduledFor || "kolejka 24/7"})`
+                                : `✅ Fanpage opublikowano (${multiResults.facebook.url || multiResults.facebook.video_id || "OK"})`)
+                              : `❌ ${multiResults.facebook.error}`}
                           </div>
                         )}
                       </div>
@@ -1445,13 +1541,13 @@ export default function Outputs() {
 
       {/* NOCNA PACZKA SYNAPSY */}
       {latestBatch && latestBatch.items && latestBatch.items.length > 0 && (
-        <div className="p-5 fk-cut bg-[#0E0F11] border border-indigo-400/40 space-y-4">
+        <div className="p-5 fk-cut bg-[#0E0F11] border border-[#C8FF3A]/40 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
             <div className="min-w-0">
               <div className="text-sm font-black text-[#FFFFFF] flex items-center gap-2 flex-wrap">
-                <Moon className="w-4 h-4 text-indigo-300" />
+                <Moon className="w-4 h-4 text-[#C8FF3A]" />
                 Nocna Paczka Synapsy — Top {latestBatch.items.length} do Wyboru
-                <span className="text-[9px] px-2 py-0.5 rounded bg-indigo-500/20 border border-indigo-400/35 text-indigo-200 font-bold">ZERO AUTO-UPLOADU</span>
+                <span className="text-[9px] px-2 py-0.5 rounded bg-[#C8FF3A]/15 border border-[#C8FF3A]/35 text-[#C8FF3A] font-bold">ZERO AUTO-UPLOADU</span>
               </div>
               <div className="text-[11px] text-[#A0A7B1] mt-1">
                 Przeskanowano {latestBatch.scan_stats?.scanned_unpublished ?? 0} nieopublikowanych • Mocne: {latestBatch.scan_stats?.qualified_count ?? 0} • Odrzucono przeciętnych: {latestBatch.scan_stats?.rejected_count ?? 0} • Pominięto opubl.: {latestBatch.scan_stats?.skipped_published ?? 0}
@@ -1579,6 +1675,23 @@ export default function Outputs() {
                               <Star className="w-2.5 h-2.5 fill-current" />Ulubiony
                             </span>
                           )}
+                          {item.can_retry_publish ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-300 font-bold">
+                              ⚠️ Brak: {(item.missing_platforms || []).map(p => p.toUpperCase()).join("+") || "YT"}
+                            </span>
+                          ) : item.already_published && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2ECC71]/20 border border-[#2ECC71]/40 text-[#2ECC71] font-bold">
+                              ✅ {(item.published_platforms || []).length > 0 ? item.published_platforms!.join("+").toUpperCase() : "OPUBL./KOLEJKA"}
+                            </span>
+                          )}
+                          {item.publish_recommended === false && (
+                            <span
+                              title={(item.publish_block_reasons || []).join(", ")}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-[#FE2C55]/20 border border-[#FE2C55]/50 text-[#FF7A96] font-bold"
+                            >
+                              🚫 ODRADZANE DO PUBLIKACJI
+                            </span>
+                          )}
                           <span className="text-[10px] font-bold uppercase text-indigo-300">
                             {item.champion_name} • {item.action_type}
                           </span>
@@ -1618,15 +1731,30 @@ export default function Outputs() {
 
                   {item.render_ok && (
                     <div className="flex items-center gap-2 pt-2 border-t border-white/5">
-                      <button onClick={() => handlePlay(item.output_filename)}
-                        className="px-3 py-1.5 rounded-lg bg-[#272A2F] hover:bg-[#32363D] text-xs font-semibold text-[#FFFFFF] flex items-center gap-1.5">
-                        <Play className="w-3.5 h-3.5 fill-current" />Odtwórz
-                      </button>
-                      <button onClick={() => openUploadModal(item.output_filename)}
-                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 ${
-                          isWinner ? "bg-[#C8FF3A] hover:bg-[#AEE820] text-[#050505]" : "bg-[#17191C] hover:bg-[#272A2F] text-[#C8FF3A] border border-[#C8FF3A]/40"
+                      {item.file_exists !== false && (
+                        <button onClick={() => handlePlay(item.output_filename)}
+                          className="px-3 py-1.5 rounded-lg bg-[#272A2F] hover:bg-[#32363D] text-xs font-semibold text-[#FFFFFF] flex items-center gap-1.5">
+                          <Play className="w-3.5 h-3.5 fill-current" />Odtwórz
+                        </button>
+                      )}
+                      <button
+                        disabled={Boolean(item.already_published && !item.can_retry_publish)}
+                        onClick={() => openUploadModal(item.output_filename)}
+                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 disabled:opacity-55 disabled:cursor-not-allowed ${
+                          item.can_retry_publish
+                            ? "bg-amber-400 hover:bg-amber-300 text-[#050505]"
+                            : item.already_published
+                            ? "bg-[#17191C] text-[#2ECC71] border border-[#2ECC71]/40"
+                            : isWinner
+                            ? "bg-[#C8FF3A] hover:bg-[#AEE820] text-[#050505]"
+                            : "bg-[#17191C] hover:bg-[#272A2F] text-[#C8FF3A] border border-[#C8FF3A]/40"
                         }`}>
-                        <Share2 className="w-3.5 h-3.5" />Wybierz i Opublikuj
+                        <Share2 className="w-3.5 h-3.5" />
+                        {item.can_retry_publish
+                          ? `Wrzuć ponownie (brak: ${(item.missing_platforms || []).map(p => p.toUpperCase()).join("+") || "YT"})`
+                          : item.already_published
+                          ? "Już w kolejce / opublikowano"
+                          : "Wybierz i Opublikuj"}
                       </button>
                     </div>
                   )}
@@ -1697,8 +1825,17 @@ export default function Outputs() {
                       <div className="flex items-center gap-1.5 text-xs font-bold text-[#FFFFFF] truncate" title={out.filename}>
                         <Film className="w-3.5 h-3.5 text-[#2ECC71] flex-shrink-0"/><span className="truncate">{out.filename}</span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 text-[11px] text-[#A0A7B1]">
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-[#A0A7B1] flex-wrap">
                         <span>{out.size_mb} MB</span><span>•</span><span>{new Date(out.modified*1000).toLocaleDateString("pl-PL")}</span>
+                        {out.can_retry_publish ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-300 font-bold">
+                            ⚠️ Brak: {(out.missing_platforms || []).map(p => p.toUpperCase()).join("+") || "YT"}
+                          </span>
+                        ) : out.already_published && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2ECC71]/20 border border-[#2ECC71]/40 text-[#2ECC71] font-bold">
+                            ✅ {(out.published_platforms || []).length > 0 ? out.published_platforms!.join("+").toUpperCase() : "OPUBL./KOLEJKA"}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center flex-wrap gap-1.5 pt-2">
@@ -1737,8 +1874,23 @@ export default function Outputs() {
                     <button onClick={()=>openEditModal(out.filename)} className="text-xs bg-[#272A2F] hover:bg-[#272A2F] text-[#C8FF3A] hover:text-[#FFFFFF] font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 border border-[#C8FF3A]/30">
                       <Edit3 className="w-3.5 h-3.5"/>Edytuj
                     </button>
-                    <button onClick={()=>openUploadModal(out.filename)} className="text-xs bg-[#C8FF3A] hover:bg-[#C8FF3A] text-[#050505] font-bold px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5">
-                      <Share2 className="w-3.5 h-3.5"/>Publikuj
+                    <button
+                      disabled={Boolean(out.already_published && !out.can_retry_publish)}
+                      onClick={()=>openUploadModal(out.filename)}
+                      className={`text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-55 disabled:cursor-not-allowed ${
+                        out.can_retry_publish
+                          ? "bg-amber-400 hover:bg-amber-300 text-[#050505]"
+                          : out.already_published
+                          ? "bg-[#17191C] text-[#2ECC71] border border-[#2ECC71]/40"
+                          : "bg-[#C8FF3A] hover:bg-[#AEE820] text-[#050505]"
+                      }`}
+                    >
+                      <Share2 className="w-3.5 h-3.5"/>
+                      {out.can_retry_publish
+                        ? `Wrzuć ponownie (${(out.missing_platforms || []).map(p => p.toUpperCase()).join("+") || "YT"})`
+                        : out.already_published
+                        ? "W kolejce / opubl."
+                        : "Publikuj"}
                     </button>
                   </div>
                 </div>

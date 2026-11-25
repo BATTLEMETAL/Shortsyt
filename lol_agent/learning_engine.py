@@ -56,6 +56,12 @@ MIN_SAMPLE_FOR_STRUCTURE = 5   # struktura tytułu: poniżej → nie może wygra
 MIN_LEAD_TO_WIN = 0.15         # zwycięzca musi wyprzedzać drugiego o 15 %, inaczej "brak wyraźnego zwycięzcy"
 SHRINK_K = 10.0                # waga formatu ściągana do 1.0: w = 1 + (ratio - 1) * n / (n + SHRINK_K)
 BREAKOUT_VIEWS_RATIO = 1.5     # "świeży hit" = film z ostatnich 5 mający >= 1.5x mediany kanału albo >= 40 wyświetleń/h
+DEFAULT_RECOMMENDED_SLOTS_CET = ["15:00", "21:30"]
+PUB_HOUR_HALF_LIFE_DAYS = 60.0
+PUB_HOUR_KERNEL_SIGMA = 0.85
+PUB_HOUR_EB_PRIOR = 4.0
+PUB_HOUR_MIN_SLOT_GAP_H = 4
+PUB_HOUR_MIN_EFF_N = 4.0
 
 # ── Guard: filmy z ≤ threshold wyświetleń są uważane za błędy dystrybucji/testy ────────────
 ZERO_VIEWS_THRESHOLD = 50      # < 50 views = prawdopodobnie błąd tech / draft / prywatny
@@ -361,10 +367,193 @@ def _get_cet_tz():
         return timezone(timedelta(hours=1))
 
 
-def _analyze_best_pub_hour(all_videos: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _weighted_median(pairs: List[Tuple[float, float]]) -> float:
+    """Oblicza medianę ważoną ze zbioru par (wartość, waga)."""
+    if not pairs:
+        return 0.0
+    ordered = sorted(pairs, key=lambda p: p[0])
+    total_w = sum(w for _, w in ordered if w > 0)
+    if total_w <= 0:
+        return float(ordered[len(ordered) // 2][0])
+    acc = 0.0
+    for val, w in ordered:
+        if w <= 0:
+            continue
+        acc += w
+        if acc >= 0.5 * total_w:
+            return float(val)
+    return float(ordered[-1][0])
+
+
+def _score_pub_hour_bucket(
+    k_items: List[Tuple[Dict[str, Any], float]],
+    rec30_items: List[Tuple[Dict[str, Any], float]],
+    g_stats: Tuple[float, float, float, float, float, float],
+    prior_m: float,
+) -> Dict[str, Any]:
+    """Wspólny kalkulator wyniku i ryzyka wpadki Empirical Bayes dla okna godzinowego."""
+    g_med, g_cap, g_lt500, g_lt1k, g_ge2k, g_ge4k = g_stats
+    w_sum = sum(w for _, w in k_items)
+    w_sq = sum(w * w for _, w in k_items)
+    eff_n = (w_sum ** 2) / w_sq if w_sq > 0 else 0.0
+    if w_sum > 0:
+        w_med = _weighted_median([(float(s["views"]), w) for s, w in k_items])
+        w_cap = sum(min(float(s["views"]), 8000.0) * w for s, w in k_items) / w_sum
+        r_lt500 = sum(w for s, w in k_items if s["views"] < 500) / w_sum
+        r_lt1k = sum(w for s, w in k_items if s["views"] < 1000) / w_sum
+        r_ge2k = sum(w for s, w in k_items if s["views"] >= 2000) / w_sum
+        r_ge4k = sum(w for s, w in k_items if s["views"] >= 4000) / w_sum
+    else:
+        w_med, w_cap, r_lt500, r_lt1k, r_ge2k, r_ge4k = g_med, g_cap, g_lt500, g_lt1k, g_ge2k, g_ge4k
+
+    shrink = lambda val, g_val: (eff_n * val + prior_m * g_val) / (eff_n + prior_m)
+    eb_med = shrink(w_med, g_med)
+    eb_cap = shrink(w_cap, g_cap)
+    eb_lt500 = shrink(r_lt500, g_lt500)
+    eb_lt1k = shrink(r_lt1k, g_lt1k)
+    eb_ge2k = shrink(r_ge2k, g_ge2k)
+    eb_ge4k = shrink(r_ge4k, g_ge4k)
+
+    r30_wsum = sum(w for _, w in rec30_items)
+    rec30_lt1k = (
+        sum(w for s, w in rec30_items if s["views"] < 1000) / r30_wsum
+        if r30_wsum >= 1.5
+        else eb_lt1k
+    )
+
+    penalty = max(0.25, 1.0 - 0.55 * eb_lt500 - 0.45 * eb_lt1k - 0.35 * rec30_lt1k)
+    score = (0.45 * eb_med + 0.35 * eb_cap + 500.0 * eb_ge2k + 1500.0 * eb_ge4k) * penalty
+    return {
+        "score": score,
+        "eff_n": eff_n,
+        "eb_med": eb_med,
+        "eb_lt1k": eb_lt1k,
+        "rec30_lt1k": rec30_lt1k,
+        "eb_ge2k": eb_ge2k,
+        "eb_ge4k": eb_ge4k,
+    }
+
+
+def _load_omnichannel_hour_samples(yt_median_views: float, ref_now: datetime, tz_cet: Any) -> List[Dict[str, Any]]:
+    """Wczytuje opcjonalne dane TT i IG przeskalowane do mediany YT jako dodatkowe próbki pory publikacji."""
+    accounts_dir = LEARNING_DIR.parent / "accounts"
+    out: List[Dict[str, Any]] = []
+    if yt_median_views <= 0:
+        return out
+    specs = (
+        (accounts_dir / "tiktok_analytics_cache.json", "videos", 0.25, "tt"),
+        (accounts_dir / "instagram_analytics_cache.json", "reels", 0.15, "ig"),
+    )
+    for path, arr_key, plat_w, plat_tag in specs:
+        if not path.exists():
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            arr = [x for x in (raw.get(arr_key) or []) if isinstance(x, dict) and int(x.get("views") or 0) > 0]
+            if not arr:
+                continue
+            p_med = statistics.median(int(x["views"]) for x in arr)
+            if p_med <= 0:
+                continue
+            for item in arr:
+                dt = _extract_video_datetime({"published_at": item.get("timestamp") or item.get("create_time")})
+                if not dt:
+                    continue
+                dt_c = dt.astimezone(tz_cet)
+                age_d = max(0.0, (ref_now - dt_c).total_seconds() / 86400.0)
+                scaled_v = int(min(8000, (int(item["views"]) / p_med) * yt_median_views))
+                out.append({
+                    "hour": dt_c.hour,
+                    "hour_f": dt_c.hour + dt_c.minute / 60.0,
+                    "dow": dt_c.weekday(),
+                    "views": scaled_v,
+                    "w": plat_w * max(0.30, 0.5 ** (age_d / 75.0)),
+                    "age_d": age_d,
+                    "plat": plat_tag,
+                })
+        except Exception:
+            continue
+    return out
+
+
+def _compute_weekday_peak_schedule(
+    samples: List[Dict[str, Any]],
+    g_stats: Tuple[float, float, float, float, float, float],
+    global_hour_scores: Dict[int, float],
+) -> Tuple[Dict[str, List[str]], Dict[str, Dict[str, Any]]]:
     """
-    Nowa zmienna: Wyznacza najlepszą godzinę i dzień tygodnia publikacji (UTC oraz Europe/Warsaw CET)
-    na podstawie wyświetleń, AVD% i Engaged View Rate.
+    Wyznacza 2 optymalne sloty CET dla każdego dnia tygodnia (0=Pon..6=Nd) metodą hierarchicznego
+    Empirical Bayes (Wave 1: 09:00-15:30 Azja/Dzień, Wave 2: 18:00-22:30 UE+USA, odstęp >= 5h).
+    """
+    by_weekday_slots: Dict[str, List[str]] = {}
+    by_weekday_profiles: Dict[str, Dict[str, Any]] = {}
+    day_names = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"]
+
+    def _circ_dh(a: float, b: float) -> float:
+        d = abs(a - b)
+        return min(d, 24.0 - d)
+
+    for dw in range(7):
+        dw_samples = [s for s in samples if int(s.get("dow", -1)) == dw]
+        h_prof: Dict[int, Dict[str, Any]] = {}
+        for h in range(9, 24):
+            k_it = [
+                (s, s["w"] * math.exp(-0.5 * (_circ_dh(float(s["hour_f"]), h) / 1.1) ** 2))
+                for s in dw_samples
+                if _circ_dh(float(s["hour_f"]), h) <= 2.2
+            ]
+            r30_it = [
+                (s, 1.0 if _circ_dh(float(s["hour_f"]), h) <= 0.7 else 0.5)
+                for s in dw_samples
+                if s.get("plat") == "yt" and s["age_d"] <= 30.0 and _circ_dh(float(s["hour_f"]), h) <= 1.2
+            ]
+            b = _score_pub_hour_bucket(k_it, r30_it, g_stats, prior_m=2.0)
+            en = float(b["eff_n"])
+            g_sc = float(global_hour_scores.get(h, b["score"]))
+            hier_sc = (en * float(b["score"]) + 2.5 * g_sc) / (en + 2.5)
+            h_prof[h] = {
+                "score": hier_sc,
+                "eff_n": round(en, 1),
+                "eb_median_views": round(b["eb_med"]),
+                "hit_2k_pct": round(100.0 * b["eb_ge2k"], 1),
+                "flop_lt1k_pct": round(100.0 * b["eb_lt1k"], 1),
+            }
+
+        best_pair: Optional[Tuple[int, int]] = None
+        best_sum = -1.0
+        for h1 in range(9, 16):
+            for h2 in range(max(18, h1 + 5), 23):
+                ps = h_prof[h1]["score"] + h_prof[h2]["score"]
+                if best_pair is None or ps > best_sum:
+                    best_sum = ps
+                    best_pair = (h1, h2)
+
+        def _fmt_wave(hv: int, hi_max: int) -> str:
+            if hv < hi_max and (hv + 1) in h_prof and h_prof[hv + 1]["score"] >= h_prof[hv]["score"] * 0.975:
+                return f"{hv:02d}:30"
+            return f"{hv:02d}:00"
+
+        h1, h2 = best_pair or (15, 21)
+        slot1 = _fmt_wave(h1, 15)
+        slot2 = _fmt_wave(h2, 22)
+        key = str(dw)
+        by_weekday_slots[key] = [slot1, slot2]
+        by_weekday_profiles[key] = {
+            "day_name": day_names[dw],
+            "sample_count": len(dw_samples),
+            "slots": [slot1, slot2],
+            "slot_metrics": {slot1: h_prof[h1], slot2: h_prof[h2]},
+        }
+
+    return by_weekday_slots, by_weekday_profiles
+
+
+def _analyze_best_pub_hour(all_videos: List[Dict[str, Any]], include_omnichannel: bool = False) -> Dict[str, Any]:
+    """
+    Wyznacza optymalne okna publikacji i wagi godzinowe (Europe/Warsaw CET/CEST oraz UTC)
+    modelem Empirical Bayes z wygładzaniem jądrowym, wykładniczym ważeniem świeżości (60d),
+    karą za poranne/lokalne wpadki <1000 wyśw. z ostatnich 30 dni oraz bonusem za virale >=2k/>=4k,
+    a także harmonogram dwufalowy osobny dla każdego dnia tygodnia (Pon-Nd).
     """
     tz_cet = _get_cet_tz()
     hour_views: Dict[int, List[int]] = defaultdict(list)
@@ -373,15 +562,15 @@ def _analyze_best_pub_hour(all_videos: List[Dict[str, Any]]) -> Dict[str, Any]:
     weekday_names = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"]
 
     window_defs = [
-        ("08:00-08:59", lambda h: h == 8),
-        ("09:00-11:59", lambda h: 9 <= h < 12),
-        ("12:00-14:59", lambda h: 12 <= h < 15),
-        ("15:00-17:59", lambda h: 15 <= h < 18),
-        ("18:00-18:59", lambda h: h == 18),
-        ("19:00-20:59", lambda h: 19 <= h < 21),
-        ("21:00-23:59", lambda h: 21 <= h <= 23),
+        ("08:00-09:59", lambda h: 8 <= h <= 9),
+        ("10:00-11:59", lambda h: 10 <= h <= 11),
+        ("12:00-13:59", lambda h: 12 <= h <= 13),
+        ("14:00-16:59", lambda h: 14 <= h <= 16),
+        ("17:00-19:59", lambda h: 17 <= h <= 19),
+        ("20:00-23:59", lambda h: 20 <= h <= 23),
     ]
     window_cet_items: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    dated_valid: List[Tuple[datetime, int, Dict[str, Any]]] = []
 
     for v in all_videos:
         views = int(v.get("views", 0) or 0)
@@ -394,6 +583,7 @@ def _analyze_best_pub_hour(all_videos: List[Dict[str, Any]]) -> Dict[str, Any]:
             hour_views[dt_utc.hour].append(views)
             hour_cet_items[dt_cet.hour].append(v)
             weekday_views[dt_cet.weekday()].append(views)
+            dated_valid.append((dt_cet, views, v))
             for w_name, pred in window_defs:
                 if pred(dt_cet.hour):
                     window_cet_items[w_name].append(v)
@@ -455,8 +645,6 @@ def _analyze_best_pub_hour(all_videos: List[Dict[str, Any]]) -> Dict[str, Any]:
         rel = sorted((d["median_views"] for d in stats.values() if d.get("reliable")), reverse=True)
         return len(rel) >= 2 and rel[1] > 0 and best_val >= rel[1] * (1.0 + MIN_LEAD_TO_WIN)
 
-    # Zgodność: reszta systemu (kalendarz) dostaje liczbę jak dawniej. Gdy żaden slot nie ma MIN_SAMPLE_FOR_SLOT
-    # filmów, zwracamy najlepszy z tych, które mają >= 2 (stare zachowanie), ale z flagą clear = False.
     hour_clear = best_hour is not None and _clear(hour_stats, best_hour_avg)
     hour_cet_clear = best_hour_cet is not None and _clear(hour_stats_cet, best_hour_cet_med)
     weekday_clear = best_weekday is not None and _clear(weekday_stats, best_weekday_avg)
@@ -467,6 +655,134 @@ def _analyze_best_pub_hour(all_videos: List[Dict[str, Any]]) -> Dict[str, Any]:
     if best_weekday is None and weekday_stats:
         best_weekday = max(weekday_stats.items(), key=lambda kv: kv[1]["median_views"])[0]
 
+    # ── Model Empirical Bayes + Kernel Smoothing + Recency + 30d Flop Penalty (PL) ──
+    now_cet = datetime.now(tz_cet)
+    ref_now = max([now_cet] + [dt_c for dt_c, _, _ in dated_valid]) if dated_valid else now_cet
+    shorts_samples: List[Dict[str, Any]] = []
+    for dt_c, views, v in dated_valid:
+        title_l = str(v.get("title") or "").lower()
+        is_legacy_non_short = dt_c.year < 2024 and (
+            "montage" in title_l or (bool(title_l) and "#short" not in title_l)
+        )
+        if is_legacy_non_short:
+            continue
+        age_h = max(0.0, (ref_now - dt_c).total_seconds() / 3600.0)
+        age_d = age_h / 24.0
+        rw = 0.5 ** (age_d / PUB_HOUR_HALF_LIFE_DAYS)
+        mw = 0.35 if age_h < 12.0 else (0.75 if age_h < 24.0 else 1.0)
+        shorts_samples.append({
+            "hour": dt_c.hour,
+            "hour_f": dt_c.hour + dt_c.minute / 60.0,
+            "dow": dt_c.weekday(),
+            "views": views,
+            "w": rw * mw,
+            "age_d": age_d,
+            "plat": "yt",
+        })
+
+    hour_weights_cet: Dict[int, float] = {}
+    hour_profile_cet: Dict[int, Dict[str, Any]] = {}
+    avoid_hours_cet: List[int] = []
+    recommended_slots_cet = list(DEFAULT_RECOMMENDED_SLOTS_CET)
+    recommended_slots_source = "default_fallback"
+    recommended_slots_by_weekday_cet: Dict[str, List[str]] = {str(d): list(DEFAULT_RECOMMENDED_SLOTS_CET) for d in range(7)}
+    weekday_slot_profiles_cet: Dict[str, Dict[str, Any]] = {}
+
+    tot_w = sum(s["w"] for s in shorts_samples)
+    if tot_w > 0:
+        g_stats = (
+            _weighted_median([(float(s["views"]), s["w"]) for s in shorts_samples]),
+            sum(min(float(s["views"]), 8000.0) * s["w"] for s in shorts_samples) / tot_w,
+            sum(s["w"] for s in shorts_samples if s["views"] < 500) / tot_w,
+            sum(s["w"] for s in shorts_samples if s["views"] < 1000) / tot_w,
+            sum(s["w"] for s in shorts_samples if s["views"] >= 2000) / tot_w,
+            sum(s["w"] for s in shorts_samples if s["views"] >= 4000) / tot_w,
+        )
+
+        raw_prof: Dict[int, Dict[str, Any]] = {}
+        for h in range(24):
+            k_items: List[Tuple[Dict[str, Any], float]] = []
+            rec30_items: List[Tuple[Dict[str, Any], float]] = []
+            exact_count = 0
+            for s in shorts_samples:
+                if s["hour"] == h:
+                    exact_count += 1
+                dh = min((s["hour"] - h) % 24, (h - s["hour"]) % 24)
+                if dh <= 2:
+                    kw = math.exp(-0.5 * (dh / PUB_HOUR_KERNEL_SIGMA) ** 2)
+                    k_items.append((s, s["w"] * kw))
+                if dh <= 1 and s["age_d"] <= 30.0:
+                    rkw = 1.0 if dh == 0 else 0.5
+                    maturity = 0.5 if s["age_d"] < 0.5 else 1.0
+                    rec30_items.append((s, rkw * maturity))
+
+            b = _score_pub_hour_bucket(k_items, rec30_items, g_stats, prior_m=PUB_HOUR_EB_PRIOR)
+            raw_prof[h] = {
+                "score": b["score"],
+                "count": exact_count,
+                "eff_n": round(b["eff_n"], 1),
+                "eb_median_views": round(b["eb_med"]),
+                "flop_lt1k_pct": round(100.0 * b["eb_lt1k"], 1),
+                "recent30_lt1k_pct": round(100.0 * b["rec30_lt1k"], 1),
+                "hit_2k_pct": round(100.0 * b["eb_ge2k"], 1),
+                "hit_4k_pct": round(100.0 * b["eb_ge4k"], 1),
+            }
+
+        avg_score = statistics.mean(p["score"] for p in raw_prof.values())
+        for h in range(24):
+            p = raw_prof[h]
+            weight = round(max(0.50, min(1.50, p["score"] / avg_score)), 2) if avg_score > 0 else 1.0
+            hour_weights_cet[h] = weight
+            hour_profile_cet[h] = {
+                "weight": weight,
+                "score": round(p["score"]),
+                "count": p["count"],
+                "eff_n": p["eff_n"],
+                "eb_median_views": p["eb_median_views"],
+                "flop_lt1k_pct": p["flop_lt1k_pct"],
+                "recent30_lt1k_pct": p["recent30_lt1k_pct"],
+                "hit_2k_pct": p["hit_2k_pct"],
+                "hit_4k_pct": p["hit_4k_pct"],
+            }
+            if 8 <= h <= 23 and (weight <= 0.94 or (p["recent30_lt1k_pct"] >= 20.0 and weight < 1.05)):
+                avoid_hours_cet.append(h)
+
+        cands = [h for h in range(8, 24) if raw_prof[h]["eff_n"] >= PUB_HOUR_MIN_EFF_N]
+        if len(cands) >= 2:
+            best_pair: Optional[Tuple[int, int]] = None
+            best_pair_score = -1.0
+            for idx, h1 in enumerate(cands):
+                for h2 in cands[idx + 1:]:
+                    if h2 - h1 >= PUB_HOUR_MIN_SLOT_GAP_H:
+                        pair_sc = raw_prof[h1]["score"] + raw_prof[h2]["score"]
+                        if pair_sc > best_pair_score:
+                            best_pair_score = pair_sc
+                            best_pair = (h1, h2)
+
+            if best_pair is not None:
+                def _format_eb_slot(h_val: int) -> str:
+                    if h_val < 23 and raw_prof[h_val + 1]["score"] >= raw_prof[h_val]["score"] * 0.97:
+                        return f"{h_val:02d}:30"
+                    return f"{h_val:02d}:00"
+
+                recommended_slots_cet = [_format_eb_slot(best_pair[0]), _format_eb_slot(best_pair[1])]
+                recommended_slots_source = "empirical_bayes_60d"
+
+            best_day_h = max(cands, key=lambda h_val: raw_prof[h_val]["score"])
+            best_hour_cet = best_day_h
+            rel_day_scores = sorted((raw_prof[h_val]["score"] for h_val in cands), reverse=True)
+            hour_cet_clear = len(rel_day_scores) >= 2 and rel_day_scores[1] > 0 and rel_day_scores[0] >= rel_day_scores[1] * 1.05
+
+        # Hierarchiczny model dzienny Pon-Nd (Wave 1 Azja/Dzień + Wave 2 UE/USA z odstępem >=5h)
+        wd_samples = list(shorts_samples)
+        if include_omnichannel and wd_samples:
+            yt_med = statistics.median(float(s["views"]) for s in wd_samples)
+            wd_samples.extend(_load_omnichannel_hour_samples(yt_med, ref_now, tz_cet))
+        global_scores_map = {h: float(raw_prof[h]["score"]) for h in range(24)}
+        recommended_slots_by_weekday_cet, weekday_slot_profiles_cet = _compute_weekday_peak_schedule(
+            wd_samples, g_stats, global_scores_map
+        )
+
     return {
         "best_hour_utc": best_hour,
         "best_hour_cet": best_hour_cet,
@@ -476,11 +792,18 @@ def _analyze_best_pub_hour(all_videos: List[Dict[str, Any]]) -> Dict[str, Any]:
         "best_weekday_clear": weekday_clear,
         "hour_stats": hour_stats,
         "hour_stats_cet": hour_stats_cet,
+        "hour_weights_cet": hour_weights_cet,
+        "hour_profile_cet": hour_profile_cet,
         "window_stats_cet": window_stats_cet,
-        "recommended_slots_cet": ["11:00", "21:30"],
+        "avoid_hours_cet": avoid_hours_cet,
+        "recommended_slots_cet": recommended_slots_cet,
+        "recommended_slots_by_weekday_cet": recommended_slots_by_weekday_cet,
+        "weekday_slot_profiles_cet": weekday_slot_profiles_cet,
+        "recommended_slots_source": recommended_slots_source,
+        "scoring_method": "eb_kernel_60d_rec30_flop",
         "weekday_stats": weekday_stats,
-        "note": (f"Mediana wyświetleń per godzina/okno/dzień (UTC i CET). Slot wygrywa dopiero od {MIN_SAMPLE_FOR_SLOT} filmów "
-                 f"i przewagi {int(MIN_LEAD_TO_WIN * 100)} % nad drugim; best_*_clear mówi, czy zwycięzca jest wyraźny."),
+        "note": (f"Mediana wyświetleń per godzina/okno/dzień (UTC i CET) + wagi Empirical Bayes 60d z karą za wpadki 30d. "
+                 f"Slot bazowy musi mieć >= {MIN_SAMPLE_FOR_SLOT} filmów i odstęp >= {PUB_HOUR_MIN_SLOT_GAP_H}h."),
     }
 
 
@@ -1300,20 +1623,47 @@ def calibrate_quality_gate(
             if key:
                 recipe_by_vid[key] = rec
 
+    perf_by_id: Dict[str, Dict[str, Any]] = {}
+    try:
+        try:
+            from lol_agent.lol_performance_tracker import _load_performance_log
+        except ImportError:
+            from lol_performance_tracker import _load_performance_log
+        for row in _load_performance_log() or []:
+            r_vid = row.get("video_id")
+            if r_vid and str(r_vid) in by_id:
+                perf_by_id[str(r_vid)] = row
+    except Exception:
+        pass
+
     samples: List[Dict[str, Any]] = []
     for idx, v in enumerate(valid):
-        key = str(v.get("video_id") or _norm_match_key(v.get("title", "")) or idx)
+        vid_str = str(v.get("video_id") or "")
+        key = vid_str or _norm_match_key(v.get("title", "")) or idx
         rec = recipe_by_vid.get(key) or {}
+        perf_rec = perf_by_id.get(vid_str) or {}
         score = v.get("quality_score")
+        if score is None:
+            score = v.get("initial_qa_score")
+        if score is None:
+            score = perf_rec.get("quality_score")
         if score is None:
             score = rec.get("quality_score") or (rec.get("gate_quality") or {}).get("score")
         if score is None:
             continue
-        br = v.get("quality_breakdown") or rec.get("quality_breakdown") or (rec.get("gate_quality") or {}).get("breakdown") or {}
+        br = (
+            v.get("quality_breakdown")
+            or perf_rec.get("quality_breakdown")
+            or rec.get("quality_breakdown")
+            or (rec.get("gate_quality") or {}).get("breakdown")
+            or {}
+        )
+        evr_raw = v.get("engaged_view_rate_pct")
         samples.append({
             "score": float(score),
             "views": float(v.get("views") or 0),
             "avg_view_pct": float(v["avg_view_pct"]) if v.get("avg_view_pct") is not None else None,
+            "engaged_view_rate_pct": float(evr_raw) if evr_raw is not None and float(evr_raw or 0) > 0 else None,
             "breakdown": br if isinstance(br, dict) else {},
         })
 
@@ -1339,6 +1689,8 @@ def calibrate_quality_gate(
     corr_views = _pearson_corr(xs_all, ys_all)
     avd_pairs = [(s["score"], s["avg_view_pct"]) for s in samples if s["avg_view_pct"] is not None]
     corr_avd = _pearson_corr([p[0] for p in avd_pairs], [p[1] for p in avd_pairs]) if avd_pairs else None
+    evr_pairs = [(s["score"], s["engaged_view_rate_pct"]) for s in samples if s["engaged_view_rate_pct"] is not None]
+    corr_evr = _pearson_corr([p[0] for p in evr_pairs], [p[1] for p in evr_pairs]) if evr_pairs else None
 
     n = len(samples)
     if n < MIN_SAMPLE_FOR_BUCKET:
@@ -1350,6 +1702,7 @@ def calibrate_quality_gate(
             "recommended_threshold": float(current_threshold),
             "correlation_qs_views": corr_views,
             "correlation_qs_avd": corr_avd,
+            "correlation_qs_evr": corr_evr,
             "component_correlations": comp_corrs,
             "reason": f"Za mała próba ({n} < {MIN_SAMPLE_FOR_BUCKET})",
         }
@@ -1380,6 +1733,7 @@ def calibrate_quality_gate(
         "balanced_accuracy": round(best_bal_acc, 3) if best_bal_acc >= 0 else None,
         "correlation_qs_views": corr_views,
         "correlation_qs_avd": corr_avd,
+        "correlation_qs_evr": corr_evr,
         "component_correlations": comp_corrs,
         "reason": "ok",
     }
@@ -1832,7 +2186,7 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
     # ── KROK 7: Nowe analizy ────────────────────────────────────────────────────
     cadence_analysis = _detect_publication_cadence(all_analyzed)
     title_fatigue = _detect_title_fatigue(valid_videos)
-    pub_hour_analysis = _analyze_best_pub_hour(valid_videos)
+    pub_hour_analysis = _analyze_best_pub_hour(valid_videos, include_omnichannel=True)
     ab_title_analysis = analyze_ab_title_experiments(valid_videos)
 
     # ── KROK 8: Retencja przez YouTube Analytics API ─────────────────────────────

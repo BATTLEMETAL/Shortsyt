@@ -28,7 +28,7 @@ LOL_AGENT_DIR = Path(__file__).resolve().parent
 OVERNIGHT_DIR = LOL_AGENT_DIR / "overnight_batches"
 LATEST_BATCH_FILE = OVERNIGHT_DIR / "latest_batch.json"
 SCAN_CACHE_FILE = LOL_AGENT_DIR / "overnight_scan_cache.json"
-SCAN_CACHE_SCHEMA_VERSION = 3
+SCAN_CACHE_SCHEMA_VERSION = 5
 
 TIER_FILTER_MIN_RANK: Dict[str, int] = {
     "auto": -1,
@@ -335,7 +335,9 @@ def _score_and_classify_candidate(raw_entry: Dict[str, Any]) -> Dict[str, Any]:
     base_key = action_type if kill_count_in_win > 0 else "outplay"
     hype = _ACTION_BASE_HYPE.get(base_key, 34.0) if kill_count_in_win > 0 else 10.0
     if objective_secured:
-        hype += 10.0
+        hype += 6.0 if kill_count_in_win >= 2 else 10.0
+    if is_outplayed and (outplayed_rank or 0) >= 2:
+        hype += 3.0
     if is_clutch or min_hp <= 20.0:
         hype += 9.0
     elif min_hp <= 35.0 and kill_count_in_win >= 1:
@@ -353,6 +355,8 @@ def _score_and_classify_candidate(raw_entry: Dict[str, Any]) -> Dict[str, Any]:
     if 10.0 <= window_dur <= 24.0 and kill_count_in_win >= 1:
         hype += 3.0
 
+    if kill_count_in_win >= 2 and kill_span_s > 11.0:
+        hype -= min(10.0, round((kill_span_s - 11.0) * 1.5, 1))
     if player_died:
         hype -= 18.0
     if ally_blocked:
@@ -453,7 +457,16 @@ def _apply_outplayed_anchor(
     t_ev = max(0.0, min(duration, float(best_t)))
     t_rank = int(tier_rank)
     event_tier = str(clip_info.get("event_tier") or _TIER_BY_RANK.get(t_rank, raw_det))
+    try:
+        try:
+            from lol_agent.account_manager import get_target_duration_bounds
+        except ImportError:
+            from account_manager import get_target_duration_bounds  # type: ignore
+        min_dur, max_dur = get_target_duration_bounds(t_rank)
+    except Exception:
+        min_dur, max_dur = 11.0, (17.5 if t_rank >= 4 else 15.2)
 
+    cur_span = float(clip_end) - float(clip_start)
     ocr_in_win = [
         k for k in raw_kills
         if (clip_start - 0.6) <= float(k.get("timestamp", 0.0)) <= (clip_end + 0.6)
@@ -461,7 +474,7 @@ def _apply_outplayed_anchor(
     ocr_max_tier = max([int(k.get("tier") or 0) for k in ocr_in_win], default=0)
     window_covers_peak = (
         (clip_start + 1.5 <= t_ev <= clip_end - 1.0)
-        and (clip_end - clip_start) <= 28.0
+        and ((min_dur - 1.0) <= cur_span <= max(16.0, max_dur + 0.8))
         and ocr_max_tier >= t_rank
     )
     if window_covers_peak:
@@ -514,22 +527,51 @@ def _apply_outplayed_anchor(
         if isinstance(est_first_kill_s, (int, float))
         else burst_first
     )
+    has_distinct_first_kill = (
+        (anchor_start_k < anchor_end_k - 1.0 and burst_first < t_ev - 1.0)
+        or (isinstance(est_first_kill_s, (int, float)) and float(est_first_kill_s) < anchor_end_k - 1.5)
+    )
+    max_pre_first_kill = 3.2 if t_rank >= 4 else 3.0
+    default_pre_first_kill = 2.8 if t_rank >= 4 else 2.4
+
     if anchor_start_k < anchor_end_k - 1.0 and burst_first < t_ev - 1.0:
-        new_start = max(0.0, anchor_start_k - 3.5)
+        new_start = max(0.0, anchor_start_k - default_pre_first_kill)
     elif isinstance(est_first_kill_s, (int, float)) and float(est_first_kill_s) < anchor_end_k - 1.5:
-        new_start = max(0.0, float(est_first_kill_s) - 4.5)
+        new_start = max(0.0, float(est_first_kill_s) - default_pre_first_kill)
     else:
-        default_lead = 11.0 if t_rank >= 4 else (9.0 if t_rank == 3 else 8.0)
+        default_lead = min(9.5, max_dur - 3.5) if t_rank >= 4 else (4.2 if t_rank <= 2 else min(7.2, max_dur - 3.5))
         lead = float(best_past_s) if isinstance(best_past_s, (int, float)) and float(best_past_s) > 0 else default_lead
-        max_lead = 11.5 if t_rank >= 4 else 9.5
-        lead = max(7.0, min(max_lead, lead))
+        max_lead = min(11.5, max_dur - 3.0) if t_rank >= 4 else (4.6 if t_rank <= 2 else min(7.8, max_dur - 3.2))
+        min_lead = 3.2 if t_rank <= 2 else 6.0
+        lead = max(min_lead, min(max_lead, lead))
         new_start = max(0.0, t_ev - lead)
 
     is_merged_est = isinstance(est_last_kill_s, (int, float)) and float(est_last_kill_s) > t_ev + 0.5
-    tail_s = 2.0 if is_merged_est else max(2.8, min(4.2, float(best_future_s) if isinstance(best_future_s, (int, float)) and float(best_future_s) > 0 else 3.2))
-    new_end = min(duration, max(new_start + 10.0, anchor_end_k + tail_s))
-    if new_end - new_start > 24.0:
-        new_start = max(0.0, new_end - 22.0)
+    tail_s = 2.0 if is_merged_est else max(2.8, min(3.5, float(best_future_s) if isinstance(best_future_s, (int, float)) and float(best_future_s) > 0 else 3.2))
+    new_end = min(duration, anchor_end_k + tail_s)
+    # P0.2: Najpierw delikatny tail do 3.5s po ostatnim killu; wstecz cofamy wyłącznie do granicy max_pre_first_kill (bez 5-9s biegu)
+    if (new_end - new_start) < min_dur:
+        extra_tail_end = min(duration, anchor_end_k + 3.5)
+        if extra_tail_end > new_end:
+            new_end = min(extra_tail_end, new_start + min_dur)
+        if (new_end - new_start) < min_dur:
+            desired_start = max(0.0, new_end - min_dur)
+            if has_distinct_first_kill:
+                min_allowed_start = max(0.0, anchor_start_k - max_pre_first_kill)
+                new_start = max(desired_start, min_allowed_start)
+            elif t_rank <= 2:
+                min_allowed_single = max(0.0, t_ev - 4.6)
+                new_start = max(desired_start, min_allowed_single)
+            else:
+                new_start = desired_start
+        if (new_end - new_start) < min_dur and not has_distinct_first_kill and duration > new_end:
+            new_end = min(duration, new_start + min_dur)
+    # Zbyt długie okna skracamy wyłącznie od początku (tnąc wolne intro), zachowując 1. kill i finał
+    if (new_end - new_start) > max_dur:
+        safe_earliest_kill = max(0.0, anchor_start_k - 1.2)
+        trimmed_start = min(safe_earliest_kill, new_end - max_dur)
+        if trimmed_start > new_start:
+            new_start = trimmed_start
 
     anchored_peak_t = min(max(new_start + 0.5, anchor_end_k), new_end - 0.8)
 
@@ -1079,10 +1121,32 @@ def _extract_defects(insp: Dict[str, Any], ig_ready: bool, item: Optional[Dict[s
         defects.append("low_player_visibility")
     elif 0.0 < vis_r < 0.72:
         defects.append("player_offscreen_frames")
-    if float(insp.get("player_edge_clip_ratio") or 0.0) > 0.35:
+    edge_r = float(
+        insp.get("player_edge_clip_ratio")
+        if insp.get("player_edge_clip_ratio") is not None
+        else ((item or {}).get("player_edge_clip_ratio") or 0.0)
+    )
+    if edge_r > 0.35:
         defects.append("high_edge_clipping")
-    if insp.get("first_kill_out_sec") is not None and float(insp.get("first_kill_out_sec") or 0.0) > 4.8:
-        defects.append("slow_intro_gt_4.8s")
+    elif edge_r > 0.12:
+        defects.append("moderate_edge_clipping")
+    cam_step = float(insp.get("camera_peak_step_px") or (item or {}).get("camera_peak_step_px") or 0.0)
+    if cam_step >= 220.0:
+        defects.append("camera_jump_gt_220px")
+    gap_s = float(insp.get("longest_gap_out_sec") or (item or {}).get("longest_gap_out_sec") or 0.0)
+    if gap_s >= 3.8:
+        defects.append("dead_gap_gt_3.8s")
+    if insp.get("first_kill_out_sec") is not None:
+        fk_sec = float(insp.get("first_kill_out_sec") or 0.0)
+        if fk_sec > 4.8:
+            defects.append("slow_intro_gt_4.8s")
+        elif fk_sec > 3.5:
+            defects.append("slow_intro_gt_3.5s")
+    dur_s = float(insp.get("video_dur_s") or insp.get("duration_s") or 0.0)
+    if 0.0 < dur_s < 9.0:
+        defects.append("duration_too_short_lt_9s")
+    elif dur_s > 16.5:
+        defects.append("duration_too_long_gt_16.5s")
     if insp.get("hook_is_generic"):
         defects.append("generic_hook")
     if item and item.get("champion_mismatch"):
@@ -1101,7 +1165,7 @@ _SCORE_MENTION_RE = re.compile(
 
 
 def _is_clean_consistent_polish_note(note: str, item: Dict[str, Any]) -> bool:
-    """Weryfikuje poprawność językową, brak halucynacji tieru/wad i spójność liczb w notkach LoRA."""
+    """Weryfikuje poprawność językową, brak halucynacji tieru/wad/czasów i spójność liczb w notkach LoRA."""
     txt = str(note or "").strip()
     if len(txt) < 38:
         return False
@@ -1113,13 +1177,23 @@ def _is_clean_consistent_polish_note(note: str, item: Dict[str, Any]) -> bool:
     low = txt.lower()
     crit = bool(item.get("has_critical_defect"))
     real_defects = [d for d in (item.get("defects") or []) if d != "ig_needs_transcode_on_upload"]
-    praise_tokens = ("świetn", "idealn", "niesamow", "perfekc", "najlepsz", "bez wątpliwości")
+    praise_tokens = (
+        "świetn", "idealn", "niesamow", "perfekc", "najlepsz", "bez wątpliwości",
+        "bez wad", "brak wad", "zero wad", "bez defekt", "bez zarzut", "mistrzostw",
+    )
     if (crit or real_defects) and any(tok in low for tok in praise_tokens):
         return False
     if int(item.get("overnight_rank") or 1) >= 2 and any(tok in low for tok in ("najlepsz", "zwycięzc", "#1")):
         return False
     if (not real_defects) and "regresj" in low:
         return False
+    if item.get("champion_mismatch"):
+        req_ch = str(item.get("requested_champion") or "").strip().lower()
+        act_ch = str(item.get("champion_name") or "").strip().lower()
+        req_stem = req_ch[:5] if len(req_ch) >= 5 else req_ch
+        act_stem = act_ch[:5] if len(act_ch) >= 5 else act_ch
+        if req_stem and req_stem in low and (not act_stem or act_stem not in low):
+            return False
 
     act = str(item.get("action_type") or "").lower()
     if act == "triple" and re.search(r"\b(?:dwufrag\w*|double)\b", low):
@@ -1128,6 +1202,40 @@ def _is_clean_consistent_polish_note(note: str, item: Dict[str, Any]) -> bool:
         return False
     if act == "quadrakill" and re.search(r"\b(?:dwufrag\w*|tr[oó]jk\w*)\b", low):
         return False
+
+    # Ochrona przed halucynowanymi timestampami w sekundach (np. zapamiętany szablon "3.0s, 4.5s i 8.2s")
+    kill_ts_list = [
+        float(v) for v in (item.get("kill_timestamps_out") or [])
+        if isinstance(v, (int, float))
+    ]
+    if "3.0s, 4.5s" in low or "4.5s i 8.2s" in low:
+        has_all_template_ts = kill_ts_list and all(
+            any(abs(kt - target_t) <= 0.7 for kt in kill_ts_list)
+            for target_t in (3.0, 4.5, 8.2)
+        )
+        if not has_all_template_ts:
+            return False
+
+    ts_matches = re.findall(r"(?<!\d)(\d+(?:\.\d+)?)\s*s\b", txt, re.IGNORECASE)
+    if ts_matches:
+        has_kill_time_phrase = bool(
+            re.search(r"(?:w|czas(?:ie)?|zabójstw\w*\s+w)\s+\d+(?:\.\d+)?\s*s\b", low)
+        )
+        if len(ts_matches) >= 2 and not kill_ts_list:
+            return False
+        real_times = list(kill_ts_list)
+        for key in ("duration_s", "first_kill_out_sec", "kill_span_s", "longest_gap_out_sec"):
+            val = item.get(key)
+            if isinstance(val, (int, float)):
+                real_times.append(float(val))
+        if (len(ts_matches) >= 2 or has_kill_time_phrase) and real_times:
+            for ts_str in ts_matches:
+                try:
+                    mentioned_s = float(ts_str)
+                except ValueError:
+                    continue
+                if not any(abs(mentioned_s - rt) <= 0.7 for rt in real_times):
+                    return False
 
     fs = item.get("final_score")
     known_metrics = [
@@ -1184,11 +1292,21 @@ def _build_honest_short_comment_pl(item: Dict[str, Any]) -> str:
     hype = item.get("hype_score", 0)
     watch = item.get("watchability_score", 0)
     qa = item.get("qa_score", 0)
+    extra_parts: List[str] = []
+    if isinstance(item.get("duration_s"), (int, float)) and float(item["duration_s"]) > 0:
+        extra_parts.append(f"dur={float(item['duration_s']):.1f}s")
+    if isinstance(item.get("player_visible_ratio"), (int, float)):
+        extra_parts.append(f"vis={float(item['player_visible_ratio']):.2f}")
+    if isinstance(item.get("player_edge_clip_ratio"), (int, float)) and float(item["player_edge_clip_ratio"]) > 0:
+        extra_parts.append(f"edge_clip={float(item['player_edge_clip_ratio']):.2f}")
+    if isinstance(item.get("longest_gap_out_sec"), (int, float)) and float(item["longest_gap_out_sec"]) > 0:
+        extra_parts.append(f"gap={float(item['longest_gap_out_sec']):.1f}s")
+    extra_txt = f", {', '.join(extra_parts)}" if extra_parts else ""
     defects = [d for d in (item.get("defects") or []) if d != "ig_needs_transcode_on_upload"]
     defect_txt = f" | UWAGA wady: {', '.join(defects)}" if defects else " | brak defektów krytycznych"
     fb_txt = " [fallback słabszy 1-kill]" if item.get("fallback_mediocre") else ""
     return (
-        f"{champ} {act}{fb_txt}: hype={hype}, watch={watch}, qa={qa}, "
+        f"{champ} {act}{fb_txt}: hype={hype}, watch={watch}, qa={qa}{extra_txt}, "
         f"klatka0={'OK' if item.get('frame0_hook_legible', True) else 'NIE'} "
         f"({item.get('kill_overlay_zone', '?')}){defect_txt}."
     )
@@ -1221,12 +1339,31 @@ def rank_rendered_overnight_shorts(
         defects = list(item.get("defects") or [])
         has_crit = bool(item.get("has_critical_defect"))
 
-        raw_final = round(0.45 * hype + 0.40 * watch + 0.15 * qa, 1)
+        raw_final = round(0.35 * hype + 0.50 * watch + 0.15 * qa, 1)
         if item.get("champion_mismatch"):
             raw_final -= 6.0
+        if "dead_gap_gt_3.8s" in defects:
+            raw_final -= 4.5
+        if "moderate_edge_clipping" in defects:
+            raw_final -= 3.5
+        if "camera_jump_gt_220px" in defects:
+            cam_step = float(item.get("camera_peak_step_px") or 0.0)
+            raw_final -= 4.5 if cam_step >= 450.0 else 3.0
+        if "slow_intro_gt_4.8s" in defects:
+            raw_final -= 4.0
+        elif "slow_intro_gt_3.5s" in defects:
+            raw_final -= 2.0
+        if "duration_too_long_gt_16.5s" in defects:
+            raw_final -= 2.0
+        if "center_blocking_overlay" in defects:
+            raw_final -= 3.0
+
+        vis_r = float(item.get("player_visible_ratio") if item.get("player_visible_ratio") is not None else 1.0)
+        if 0.72 <= vis_r < 0.76:
+            raw_final -= 2.0
+
         if has_crit:
             raw_final = min(raw_final, 65.0)
-        vis_r = float(item.get("player_visible_ratio") if item.get("player_visible_ratio") is not None else 1.0)
         if (0.0 < vis_r < 0.55) or float(item.get("player_edge_clip_ratio") or 0.0) > 0.35:
             raw_final = min(raw_final, 68.0)
         elif 0.0 < vis_r < 0.72:
@@ -1266,12 +1403,17 @@ def rank_rendered_overnight_shorts(
                         "champion_name": x.get("champion_name"),
                         "champion_mismatch": bool(x.get("champion_mismatch")),
                         "action_type": x.get("action_type"),
+                        "event_tier": x.get("event_tier") or "",
                         "kill_count": x.get("kill_count"),
+                        "duration_s": x.get("duration_s"),
                         "hype_score": x.get("hype_score"),
                         "watchability_score": x.get("watchability_score"),
                         "qa_score": x.get("qa_score"),
                         "final_score": x.get("final_score"),
                         "player_visible_ratio": x.get("player_visible_ratio"),
+                        "player_edge_clip_ratio": x.get("player_edge_clip_ratio"),
+                        "camera_peak_step_px": x.get("camera_peak_step_px"),
+                        "longest_gap_out_sec": x.get("longest_gap_out_sec"),
                         "first_kill_out_sec": x.get("first_kill_out_sec"),
                         "black_end_frame": bool(x.get("black_end_frame")),
                         "frame0_hook_legible": bool(x.get("frame0_hook_legible", True)),
@@ -1330,6 +1472,31 @@ def rank_rendered_overnight_shorts(
         else:
             item["verdict"] = "NEEDS_TWEAK" if fs >= 50.0 else "SKIP"
 
+        block_reasons: List[str] = []
+        if crit:
+            block_reasons.append("has_critical_defect")
+        gap_v = item.get("longest_gap_out_sec")
+        if isinstance(gap_v, (int, float)) and float(gap_v) >= 5.5:
+            block_reasons.append(f"dead_gap_{float(gap_v):.1f}s>=5.5s")
+        fk_v = item.get("first_kill_out_sec")
+        if isinstance(fk_v, (int, float)) and float(fk_v) > 4.0:
+            block_reasons.append(f"slow_intro_{float(fk_v):.1f}s>4.0s")
+        vr_v = item.get("player_visible_ratio")
+        if isinstance(vr_v, (int, float)) and 0.0 < float(vr_v) < 0.72:
+            block_reasons.append(f"low_visibility_{float(vr_v):.2f}<0.72")
+        dur_v = item.get("duration_s")
+        if isinstance(dur_v, (int, float)) and float(dur_v) > 0.0:
+            if float(dur_v) < 10.5:
+                block_reasons.append(f"too_short_{float(dur_v):.1f}s<10.5s")
+            elif float(dur_v) > 17.0:
+                block_reasons.append(f"too_long_{float(dur_v):.1f}s>17.0s")
+        if fs < 76.0:
+            block_reasons.append(f"low_final_{fs:.1f}<76.0")
+        if item.get("fallback_mediocre"):
+            block_reasons.append("fallback_mediocre")
+        item["publish_block_reasons"] = block_reasons
+        item["publish_recommended"] = len(block_reasons) == 0
+
         orig_id = item_to_id.get(id(item), str(idx))
         raw_ai_comment = str(ai_notes.get(orig_id) or ai_per_short.get(str(item.get("output_filename") or ""), "") or "").strip()
         metrics_comment = _build_honest_short_comment_pl(item)
@@ -1349,6 +1516,8 @@ def rank_rendered_overnight_shorts(
 
     for fail_it in failed_items:
         fail_it["overnight_rank"] = len(ranked_all) + 1
+        fail_it["publish_recommended"] = False
+        fail_it["publish_block_reasons"] = ["render_error"]
         ranked_all.append(fail_it)
 
     ai_summary = str((ai_resp or {}).get("summary_pl") or "").strip()
@@ -1853,7 +2022,41 @@ def run_overnight_batch(
 
         if render_ok and out_path:
             try:
-                insp = inspect_rendered_short(str(out_path))
+                insp = dict(inspect_rendered_short(str(out_path)) or {})
+                out_meta: Dict[str, Any] = {}
+                meta_fp = Path(str(out_path)).with_suffix(".meta.json")
+                if meta_fp.is_file():
+                    try:
+                        out_meta = json.loads(meta_fp.read_text(encoding="utf-8"))
+                    except Exception:
+                        out_meta = {}
+                qa_det = out_meta.get("qa_details") if isinstance(out_meta.get("qa_details"), dict) else {}
+                rg_meas = ((qa_det.get("recipe_gate") or {}).get("measured") or {}) if isinstance(qa_det, dict) else {}
+                qar_checks = ((qa_det.get("qa_after_render") or {}).get("checks") or {}) if isinstance(qa_det, dict) else {}
+
+                if insp.get("longest_gap_out_sec") is None and rg_meas.get("longest_gap_out_sec") is not None:
+                    insp["longest_gap_out_sec"] = rg_meas.get("longest_gap_out_sec")
+                if insp.get("camera_peak_step_px") is None:
+                    cam_vel = (qar_checks.get("camera_velocity") or {}).get("peak_velocity_px")
+                    insp["camera_peak_step_px"] = (
+                        cam_vel if cam_vel is not None else rg_meas.get("camera_peak_step_px")
+                    )
+
+                raw_kills_out = (qar_checks.get("kill_timing") or {}).get("kills") or []
+                kill_timestamps_out: List[float] = []
+                for kr in raw_kills_out:
+                    if isinstance(kr, (list, tuple)) and len(kr) >= 1:
+                        try:
+                            kill_timestamps_out.append(round(float(kr[0]), 2))
+                        except (TypeError, ValueError):
+                            pass
+
+                if insp.get("longest_gap_out_sec") is not None:
+                    item_record["longest_gap_out_sec"] = float(insp["longest_gap_out_sec"])
+                if insp.get("camera_peak_step_px") is not None:
+                    item_record["camera_peak_step_px"] = float(insp["camera_peak_step_px"])
+                item_record["kill_timestamps_out"] = kill_timestamps_out
+
                 ig_info = _probe_ig_compliance(str(out_path))
                 defects, has_crit = _extract_defects(insp, bool(ig_info.get("ig_ready", True)), item=item_record)
                 item_record.update({
@@ -1870,6 +2073,8 @@ def run_overnight_batch(
                     "duration_s": float(insp.get("video_dur_s") or 0.0),
                     "camera_peak_step_px": insp.get("camera_peak_step_px"),
                     "first_kill_out_sec": insp.get("first_kill_out_sec"),
+                    "longest_gap_out_sec": insp.get("longest_gap_out_sec"),
+                    "kill_timestamps_out": kill_timestamps_out,
                     "ig_compliance": ig_info,
                     "defects": defects,
                     "has_critical_defect": has_crit,

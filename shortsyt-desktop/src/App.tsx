@@ -10,6 +10,8 @@ import FeedbackTuning from './screens/FeedbackTuning';
 import Settings from './screens/Settings';
 import Comments from './screens/Comments';
 import DarkAgent from './screens/DarkAgent';
+import NicheResearch from './screens/NicheResearch';
+import Compilations from './screens/Compilations';
 import { CalendarScheduler } from './screens/CalendarScheduler';
 import { apiHealthCheck, apiGetStatus } from './lib/api';
 import { PipelineStatusType } from './components/StatusBadge';
@@ -66,7 +68,9 @@ export default function App() {
               <Route path="/calendar" element={<CalendarScheduler />} />
               <Route path="/render" element={<RenderMonitor />} />
               <Route path="/outputs" element={<Outputs />} />
+              <Route path="/compilations" element={<Compilations />} />
               <Route path="/analytics" element={<Analytics />} />
+              <Route path="/research" element={<NicheResearch />} />
               <Route path="/dark" element={<DarkAgent />} />
               <Route path="/tuning" element={<FeedbackTuning />} />
               <Route path="/comments" element={<Comments />} />

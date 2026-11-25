@@ -41,6 +41,7 @@ from ...multi_publisher import publish_multi_platform
 from ..youtube_uploader import get_token_status as get_yt_token_status
 
 router = APIRouter(tags=["Social & Multi-Platform"])
+PUBLISHED_VIDEOS_PATH = Path(__file__).resolve().parent.parent.parent / "published_videos.jsonl"
 
 
 @router.get("/social/status")
@@ -558,6 +559,44 @@ async def publish_all(
             )
 
     meta = _load_meta(filename) or {}
+
+    # Twarda blokada duplikatów: sprawdź czy wszystkie wybrane platformy zostały już opublikowane lub zakolejkowane
+    done_plats: set[str] = set()
+    try:
+        done_plats = {str(p).strip().lower() for p in (meta.get("published_platforms") or []) if p}
+        if meta.get("youtube_id"):
+            done_plats.add("youtube")
+        from ...scheduled_queue import QUEUE_FILE as _Q_FILE, _load_queue as _load_q
+        if _Q_FILE.exists():
+            vp_resolved = str(Path(video_path).resolve()).lower()
+            for q_it in _load_q():
+                if q_it.get("status") not in ("pending", "processing", "published"):
+                    continue
+                q_vp = str(q_it.get("video_path") or "").strip()
+                if not q_vp:
+                    continue
+                try:
+                    q_resolved = str(Path(q_vp).resolve()).lower()
+                except Exception:
+                    q_resolved = q_vp.lower()
+                if q_resolved == vp_resolved:
+                    done_plats.add(str(q_it.get("platform") or "").strip().lower())
+        req_plats = {str(p).strip().lower() for p in (req.platforms or []) if p}
+        if req_plats and req_plats.issubset(done_plats):
+            raise HTTPException(
+                status_code=409,
+                detail="Ten klip został już opublikowany lub zakolejkowany na wszystkich wybranych platformach.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    skipped_plats = [str(p).strip().lower() for p in (req.platforms or []) if str(p).strip().lower() in done_plats]
+    active_plats = [str(p).strip().lower() for p in (req.platforms or []) if str(p).strip().lower() not in done_plats]
+    if not active_plats:
+        active_plats = list(req.platforms or [])
+
     champ = req.champion_name or meta.get("champion_name") or "Katarina"
     action = req.action_type or meta.get("action_type") or "pentakill"
     rnk = req.rank or meta.get("rank") or "Challenger"
@@ -614,7 +653,7 @@ async def publish_all(
                 champion=champ,
                 action_type=action,
                 base_metadata={"title": title_to_use, "description": desc_to_use, "tags": tags_to_use},
-                platforms=req.platforms,
+                platforms=active_plats,
             ) or {}
         except Exception:
             copy_override = {}
@@ -648,9 +687,9 @@ async def publish_all(
             description=desc_to_use,
             tags=tags_to_use,
             hashtags=req.hashtags,
-            platforms=req.platforms,
+            platforms=active_plats,
             privacy_yt=req.privacy_yt,
-            privacy_tiktok=tt_privacy if ("tiktok" in req.platforms and tt_post_mode == "direct") else (tt_privacy or "PUBLIC_TO_EVERYONE"),
+            privacy_tiktok=tt_privacy if ("tiktok" in active_plats and tt_post_mode == "direct") else (tt_privacy or "PUBLIC_TO_EVERYONE"),
             share_to_ig_feed=req.share_to_ig_feed,
             thumbnail_path=thumb_to_use,
             publish_at=req.publish_at,
@@ -668,6 +707,10 @@ async def publish_all(
             tiktok_post_mode=tt_post_mode,
         )
     )
+    if not isinstance(results, dict):
+        results = {}
+    for sp in skipped_plats:
+        results.setdefault(sp, {"success": True, "skipped_already_published": True, "message": "Już wcześniej opublikowano / w kolejce"})
 
     # Zapisz rezultaty w metadanych wideo oraz w historii publikacji
     try:
@@ -675,29 +718,52 @@ async def publish_all(
         meta["multi_results"] = results
         successful_platforms = []
 
-        if results.get("youtube", {}).get("success"):
+        if "youtube" in active_plats and results.get("youtube", {}).get("success"):
             meta["youtube_id"] = results["youtube"].get("video_id")
             meta["youtube_url"] = results["youtube"].get("url")
             successful_platforms.append("youtube")
-        if results.get("tiktok", {}).get("success"):
+        if "tiktok" in active_plats and results.get("tiktok", {}).get("success"):
             meta["tiktok_publish_id"] = results["tiktok"].get("publish_id")
             successful_platforms.append("tiktok")
-        if results.get("instagram", {}).get("success"):
+        if "instagram" in active_plats and results.get("instagram", {}).get("success"):
             meta["instagram_media_id"] = results["instagram"].get("media_id") or results["instagram"].get("id")
             meta["instagram_url"] = results["instagram"].get("url")
             successful_platforms.append("instagram")
-        if results.get("facebook", {}).get("success"):
+        if "facebook" in active_plats and results.get("facebook", {}).get("success"):
             meta["facebook_post_id"] = results["facebook"].get("post_id") or results["facebook"].get("video_id") or results["facebook"].get("id")
             meta["facebook_url"] = results["facebook"].get("url")
             successful_platforms.append("facebook")
 
+        newly_failed = {
+            p: str((results.get(p) or {}).get("error") or "Błąd publikacji")
+            for p in active_plats
+            if not (results.get(p) or {}).get("success")
+        }
+        existing_failed = {
+            str(k).strip().lower(): str(v)
+            for k, v in (meta.get("failed_platforms") or {}).items()
+            if k
+        }
+        for sp_ok in successful_platforms:
+            existing_failed.pop(sp_ok, None)
+        for sp_skip in skipped_plats:
+            existing_failed.pop(sp_skip, None)
+        existing_failed.update(newly_failed)
+
+        existing_plats = {str(p).strip().lower() for p in (meta.get("published_platforms") or []) if p}
+        if meta.get("youtube_id"):
+            existing_plats.add("youtube")
+        merged_plats = sorted(existing_plats | set(successful_platforms))
+
+        meta["failed_platforms"] = existing_failed
         if successful_platforms:
             meta["published_at"] = datetime.now(timezone.utc).isoformat()
-            meta["published_platforms"] = successful_platforms
+            meta["published_platforms"] = merged_plats
             if req.publish_at:
                 meta["scheduled_publish_at"] = req.publish_at
-            _save_meta(filename, meta)
+        _save_meta(filename, meta)
 
+        if successful_platforms:
             pub_log = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "video_id": results.get("youtube", {}).get("video_id") or meta.get("youtube_id"),
@@ -714,10 +780,10 @@ async def publish_all(
                 "qa_status": meta.get("qa_status", "PASS"),
                 "duration_s": float(meta.get("duration") or 15.0),
                 "hook_text": meta.get("hook_text", ""),
-                "platforms": successful_platforms,
+                "platforms": merged_plats,
                 "multi_results": results
             }
-            pub_path = Path(__file__).resolve().parent.parent.parent / "published_videos.jsonl"
+            pub_path = PUBLISHED_VIDEOS_PATH
             with open(pub_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(pub_log, ensure_ascii=False) + "\n")
 
@@ -744,6 +810,28 @@ async def publish_all(
                     )
             except Exception as arch_err:
                 print(f"⚠️ [social.publish] Błąd archiwizacji recipe / Bramki 48h: {arch_err}")
+
+            if ("youtube" in merged_plats) or (not existing_failed and bool(merged_plats)):
+                try:
+                    from ..helpers import record_processed_source_hash
+                    src_p = str(meta.get("source_path") or "")
+                    if src_p:
+                        record_processed_source_hash(
+                            src_p,
+                            video_id=results.get("youtube", {}).get("video_id") or meta.get("youtube_id") or meta.get("tiktok_publish_id"),
+                            url=pub_log.get("url"),
+                        )
+                except Exception:
+                    pass
+
+            if not existing_failed:
+                try:
+                    from lol_agent.temp_cleaner import cleanup_published_video_if_idle
+                    from ...scheduled_queue import QUEUE_FILE as _SQ_QUEUE_FILE
+                    cleanup_published_video_if_idle(video_path, queue_file=_SQ_QUEUE_FILE)
+                except Exception as clean_err:
+                    print(f"⚠️ [social.publish] Auto-czyszczenie .mp4 pominięte: {clean_err}")
+
             try:
                 from lol_agent.api.youtube_uploader import invalidate_publish_cache
                 invalidate_publish_cache()

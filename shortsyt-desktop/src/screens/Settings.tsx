@@ -903,7 +903,7 @@ const EMPTY_ACCOUNT_FORM: AccountFormState = {
   handle: '',
   content_mode: 'PRODUCT_ECOMMERCE_AD',
   language: 'pl',
-  peak_hours_text: '11:00, 19:30',
+  peak_hours_text: '15:00, 21:30',
   brand_voice: '',
   value_proposition: '',
   target_audience: '',
@@ -972,7 +972,7 @@ function AccountsManagerCard({ tokenReady, onAccountSwitched }: AccountsManagerC
       ...EMPTY_ACCOUNT_FORM,
       content_mode: defaultMode,
       language: p?.language || 'pl',
-      peak_hours_text: (p?.peak_hours_cet || ['11:00', '19:30']).join(', '),
+      peak_hours_text: (p?.peak_hours_cet || ['15:00', '21:30']).join(', '),
       brand_voice: p?.brand_voice || '',
       value_proposition: p?.value_proposition || '',
       cta_text: p?.cta_text || '',
@@ -1161,7 +1161,7 @@ function AccountsManagerCard({ tokenReady, onAccountSwitched }: AccountsManagerC
                 {acc.value_proposition && <div className="line-clamp-2"><span className="text-[#686E78]">Cel/Nisza:</span> {acc.value_proposition}</div>}
                 {acc.brand_voice && <div><span className="text-[#686E78]">Styl:</span> {acc.brand_voice}</div>}
                 <div>
-                  <span className="text-[#686E78]">Sloty CET:</span> {(acc.peak_hours_cet || []).join(' & ') || '11:00 & 21:30'}
+                  <span className="text-[#686E78]">Sloty CET:</span> {(acc.peak_hours_cet || []).join(' & ') || '15:00 & 21:30'}
                   {acc.location ? ` · 📍 ${acc.location}` : ''}
                 </div>
               </div>
@@ -1275,7 +1275,7 @@ function AccountsManagerCard({ tokenReady, onAccountSwitched }: AccountsManagerC
                   type="text"
                   value={form.peak_hours_text}
                   onChange={(e) => setForm({ ...form, peak_hours_text: e.target.value })}
-                  placeholder="11:00, 19:30"
+                  placeholder="15:00, 21:30"
                   className="w-full px-3 py-2 bg-[#0E0F11] border border-[#272A2F] text-xs text-[#FFFFFF]"
                 />
               </div>

@@ -119,6 +119,67 @@ def test_analyze_best_pub_hour():
     assert res["hour_stats"][8]["median_views"] == 3750
 
 
+def test_analyze_best_pub_hour_penalizes_morning_flops_and_picks_spaced_evening_slots():
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+
+    tz_pl = ZoneInfo("Europe/Warsaw")
+    now_pl = datetime.now(tz_pl).replace(minute=0, second=0, microsecond=0)
+    videos = []
+
+    # 5 ostatnich porannych wrzutek o 11:00 PL z niskim zasięgiem (<1000)
+    for i, views in enumerate([660, 720, 810, 900, 740], start=2):
+        ts = (now_pl - timedelta(days=i)).replace(hour=11).astimezone(timezone.utc)
+        videos.append({"published_at": ts.isoformat(), "views": views, "title": f"Morn {i} #Shorts"})
+
+    # 5 popołudniowych o 15:00 PL z wysokimi zasięgami
+    for i, views in enumerate([2200, 2400, 2100, 2350, 2500], start=2):
+        ts = (now_pl - timedelta(days=i)).replace(hour=15).astimezone(timezone.utc)
+        videos.append({"published_at": ts.isoformat(), "views": views, "title": f"Aft {i} #Shorts"})
+
+    # 5 wieczornych o 21:30 PL (w tym viral >4k)
+    for i, views in enumerate([2600, 2900, 6100, 2450, 2700], start=2):
+        ts = (now_pl - timedelta(days=i)).replace(hour=21, minute=30).astimezone(timezone.utc)
+        videos.append({"published_at": ts.isoformat(), "views": views, "title": f"Eve {i} #Shorts"})
+
+    res = _analyze_best_pub_hour(videos)
+    weights = res["hour_weights_cet"]
+    assert weights[15] > weights[11]
+    assert weights[21] > weights[11]
+    assert 11 in res["avoid_hours_cet"]
+    assert res["recommended_slots_source"] == "empirical_bayes_60d"
+    slots = res["recommended_slots_cet"]
+    assert len(slots) == 2
+    h1 = int(slots[0].split(":")[0])
+    h2 = int(slots[1].split(":")[0])
+    assert h2 - h1 >= 4
+    assert h1 >= 14 and h2 >= 20
+
+
+def test_calibrate_quality_gate_reads_initial_qa_score_and_evr_corr():
+    from lol_agent.learning_engine import calibrate_quality_gate
+    from lol_agent.lol_metadata_generator import sanitize_pinned_comment
+
+    videos = [
+        {
+            "video_id": f"qa_{i}",
+            "initial_qa_score": 60 + i * 3,
+            "views": 900 if i < 5 else 2800 + i * 100,
+            "avg_view_pct": 80.0 if i < 5 else 108.0,
+            "engaged_view_rate_pct": 25.0 + i * 2.5,
+        }
+        for i in range(10)
+    ]
+    cal = calibrate_quality_gate(videos, current_threshold=70.0)
+    assert cal["sample_size"] == 10
+    assert cal["reliable"] is True
+    assert cal["correlation_qs_evr"] is not None and cal["correlation_qs_evr"] > 0.8
+
+    assert sanitize_pinned_comment("Nice play! Tell us what you think! 👇", {}) == ""
+    assert sanitize_pinned_comment("X" * 145, {}) == ""
+    assert "daggers" in sanitize_pinned_comment("Did they walk right onto Katarina daggers here? 👇", {})
+
+
 def test_analyze_ab_title_experiments():
     from lol_agent.learning_engine import analyze_ab_title_experiments
     videos = [
@@ -196,4 +257,35 @@ def test_legacy_pentakill_protection_and_viral_blueprint(tmp_path, monkeypatch):
     assert bp_solo["hook_type"] == "QUESTION"
     assert bp_solo["pacing_bucket"] == "ultra_fast_<=12s"
     assert bp_solo["recommended_drop_anchor"] == "climax_final_kill"
+
+
+def test_analyze_best_pub_hour_per_weekday_adapts_by_day():
+    """Harmonogram 7-dniowy dopasowuje sloty indywidualnie pod rozkład Wtorku vs Piątku."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    tz_pl = ZoneInfo("Europe/Warsaw")
+    # Wtorki (2026-11-03, 10, 17) mocne o 09:00 i 18:00, słabe o 21:30; Piątki (2026-11-06, 13, 20) mocne o 10:00 i 21:30, słabe o 18:00
+    videos = []
+    for day_str in ("2026-11-03", "2026-11-10", "2026-11-17"):
+        base = datetime.fromisoformat(f"{day_str}T00:00:00").replace(tzinfo=tz_pl)
+        for h, vw in ((9, 3600), (14, 1400), (18, 3900), (21, 550)):
+            videos.append({"published_at": base.replace(hour=h).astimezone(timezone.utc).isoformat(), "views": vw, "title": "Tue #Shorts"})
+    for day_str in ("2026-11-06", "2026-11-13", "2026-11-20"):
+        base = datetime.fromisoformat(f"{day_str}T00:00:00").replace(tzinfo=tz_pl)
+        for h, vw in ((10, 3800), (13, 1300), (18, 600), (21, 4600)):
+            videos.append({"published_at": base.replace(hour=h, minute=30 if h == 21 else 0).astimezone(timezone.utc).isoformat(), "views": vw, "title": "Fri #Shorts"})
+
+    res = _analyze_best_pub_hour(videos, include_omnichannel=False)
+    weekly = res["recommended_slots_by_weekday_cet"]
+    assert len(weekly) == 7
+    assert all(len(weekly[str(d)]) == 2 for d in range(7))
+    tue_slots = weekly["1"]
+    fri_slots = weekly["4"]
+    assert tue_slots != fri_slots
+    tue_h1, tue_h2 = int(tue_slots[0][:2]), int(tue_slots[1][:2])
+    fri_h1, fri_h2 = int(fri_slots[0][:2]), int(fri_slots[1][:2])
+    assert tue_h2 - tue_h1 >= 5 and fri_h2 - fri_h1 >= 5
+    assert tue_h2 in (18, 19)
+    assert fri_h2 in (21, 22)
 

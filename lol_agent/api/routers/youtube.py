@@ -82,6 +82,12 @@ async def yt_upload(filename: str, req: YouTubeUploadRequest, payload: dict = De
         except Exception as pe:
             print(f"[YouTube] ⚠️ Błąd zapisywania historii publikacji: {pe}")
 
+        try:
+            from lol_agent.temp_cleaner import cleanup_published_video_if_idle
+            cleanup_published_video_if_idle(video_path)
+        except Exception as ce:
+            print(f"[YouTube] ⚠️ Auto-czyszczenie .mp4 pominięte: {ce}")
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

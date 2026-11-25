@@ -396,8 +396,101 @@ def exchange_auth_code(code: str) -> Dict[str, Any]:
     return get_token_status()
 
 
-# ── Harmonogram Publikacji: 2 Shortsy dziennie (Asia+EU Peak 11:00 + Evening+US Peak 21:30 CET) ──
-DAILY_PEAK_SLOTS_CET = ["11:00", "21:30"]
+# ── Harmonogram Publikacji: 2 Shortsy dziennie (domyślnie 15:00 Global Bridge + 21:30 CET Prime) ──
+DAILY_PEAK_SLOTS_CET = ["15:00", "21:30"]
+
+
+def _clean_valid_hhmm_slots(raw_slots: Any) -> List[str]:
+    import re
+    valid_hhmm = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    if not isinstance(raw_slots, list):
+        return []
+    return sorted(set(str(h).strip() for h in raw_slots if valid_hhmm.match(str(h).strip())))
+
+
+def get_active_peak_slots_cet(weekday: Optional[int] = None) -> List[str]:
+    """
+    Zwraca aktualne 2 optymalne sloty publikacji (Europe/Warsaw HH:MM):
+    Gdy podano weekday (0=Pon .. 6=Nd), najpierw sprawdza harmonogram tygodniowy (peak_hours_by_weekday_cet).
+    Następnie:
+    1. Konfiguracja aktywnego konta z profiles_registry.json (peak_hours_cet)
+    2. Rekomendacja z learning_directive.json -> best_pub_hour_analysis.recommended_slots_cet
+    3. Fallback DAILY_PEAK_SLOTS_CET (["15:00", "21:30"]).
+    """
+    if weekday is not None:
+        try:
+            weekly = get_weekly_peak_schedule_cet()
+            day_slots = _clean_valid_hhmm_slots(weekly.get(str(int(weekday) % 7)))
+            if day_slots:
+                return day_slots
+        except Exception:
+            pass
+
+    try:
+        try:
+            from lol_agent.account_manager import get_active_account
+        except ImportError:
+            from account_manager import get_active_account
+        acc = get_active_account()
+        cleaned = _clean_valid_hhmm_slots(acc.get("peak_hours_cet") if isinstance(acc, dict) else None)
+        if cleaned:
+            return cleaned
+    except Exception:
+        pass
+
+    try:
+        directive_path = LOL_AGENT_DIR / "learning_directive.json"
+        if directive_path.exists():
+            import json as _json
+            ld = _json.loads(directive_path.read_text(encoding="utf-8"))
+            cleaned = _clean_valid_hhmm_slots(((ld.get("best_pub_hour_analysis") or {}).get("recommended_slots_cet")) or [])
+            if cleaned:
+                return cleaned
+    except Exception:
+        pass
+
+    return list(DAILY_PEAK_SLOTS_CET)
+
+
+def get_weekly_peak_schedule_cet() -> Dict[str, List[str]]:
+    """
+    Zwraca mapę 2 optymalnych slotów CET na każdy dzień tygodnia ("0"=Pon .. "6"=Nd).
+    Kolejność źródeł: profiles_registry.peak_hours_by_weekday_cet -> learning_directive -> fallback globalny.
+    """
+    raw_map: Optional[Dict[str, Any]] = None
+    try:
+        try:
+            from lol_agent.account_manager import get_active_account
+        except ImportError:
+            from account_manager import get_active_account
+        acc = get_active_account()
+        if isinstance(acc, dict) and isinstance(acc.get("peak_hours_by_weekday_cet"), dict):
+            raw_map = acc["peak_hours_by_weekday_cet"]
+    except Exception:
+        pass
+
+    if not raw_map:
+        try:
+            directive_path = LOL_AGENT_DIR / "learning_directive.json"
+            if directive_path.exists():
+                import json as _json
+                ld = _json.loads(directive_path.read_text(encoding="utf-8"))
+                cand = (ld.get("best_pub_hour_analysis") or {}).get("recommended_slots_by_weekday_cet")
+                if isinstance(cand, dict) and cand:
+                    raw_map = cand
+        except Exception:
+            pass
+
+    fallback = get_active_peak_slots_cet(weekday=None)
+    schedule: Dict[str, List[str]] = {}
+    for dw in range(7):
+        key = str(dw)
+        day_raw = raw_map.get(key) if isinstance(raw_map, dict) else None
+        if day_raw is None and isinstance(raw_map, dict):
+            day_raw = raw_map.get(dw)  # type: ignore[arg-type]
+        cleaned = _clean_valid_hhmm_slots(day_raw)
+        schedule[key] = cleaned if cleaned else list(fallback)
+    return schedule
 
 
 def infer_frag_type_from_title(title: str) -> str:
@@ -770,49 +863,48 @@ def get_occupied_publish_slots(force_refresh: bool = True) -> Dict[str, Dict[str
 
 def get_next_optimal_publish_time() -> Dict[str, Any]:
     """
-    Inteligentny dyspozytor harmonogramu (2 Shortsy dziennie: 11:00 i 21:30 CET).
-    Pobiera listę zajętych slotów (z YouTube i lokalnie) i wybiera NAJBLIŻSZY WOLNY SLOT.
-    Jeśli dzisiejsze sloty minęły lub są już zajęte, automatycznie przeskakuje na:
-      - Jutro o 11:00 CET (Asia+EU Peak 🌅)
-      - Jutro o 21:30 CET (Evening+US Peak ⚡)
-      - Kolejne wolne dni w przód (Pojutrze itd.)
-    Gwarantuje brak nakładania się filmów na ten sam slot.
+    Inteligentny dyspozytor harmonogramu (2 Shortsy dziennie, zależnie od dnia tygodnia Pon-Nd).
+    Pobiera listę zajętych slotów (z YouTube i lokalnie) oraz tygodniowy rozkład slotów konta/dyrektywy
+    i wybiera NAJBLIŻSZY WOLNY SLOT z co najmniej 30-minutowym wyprzedzeniem.
     """
     try:
         from zoneinfo import ZoneInfo
         tz_cet = ZoneInfo("Europe/Warsaw")
     except Exception:
-        tz_cet = timezone(timedelta(hours=2))
+        tz_cet = timezone(timedelta(hours=1))
 
     now_cet = datetime.now(tz_cet)
-    # Bufor bezpieczeństwa: slot musi być co najmniej 30 minut w przyszłości
     min_lead_time = timedelta(minutes=30)
     cutoff = now_cet + min_lead_time
 
-    # Pobierz aktualne zajęte sloty na żywo
+    weekly_schedule = get_weekly_peak_schedule_cet()
     occupied = get_occupied_publish_slots(force_refresh=True)
 
-    # Szukaj najbliższego wolnego slotu przez kolejne 14 dni
+    def _slot_label_desc(h_val: int) -> str:
+        if h_val < 13:
+            return "Poranny / Azja Prime 🌅"
+        if h_val < 18:
+            return "Afternoon Global Bridge 🔥"
+        return "Evening+US Prime Peak ⚡"
+
     for day_offset in range(14):
         check_date = (now_cet + timedelta(days=day_offset)).date()
-        for slot in DAILY_PEAK_SLOTS_CET:
+        day_slots = get_active_peak_slots_cet(weekday=check_date.weekday())
+        for slot in day_slots:
             h, m = map(int, slot.split(":"))
             slot_dt_cet = datetime(check_date.year, check_date.month, check_date.day, h, m, 0, tzinfo=tz_cet)
 
-            # Czy slot jest wystarczająco w przyszłości?
             if slot_dt_cet <= cutoff:
                 continue
 
             slot_key = slot_dt_cet.strftime("%Y-%m-%d %H:%M")
-            # Czy slot jest już zajęty przez inny film?
             if slot_key in occupied:
                 continue
 
-            # Znaleziono pierwszy wolny slot!
             slot_utc = slot_dt_cet.astimezone(timezone.utc)
             iso_utc = slot_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-            slot_type = "Asia+EU Peak 🌅" if h < 15 else "Evening+US Peak ⚡"
+            slot_type = _slot_label_desc(h)
             if day_offset == 0:
                 label = f"Dzisiaj o {slot} CET ({slot_type})"
             elif day_offset == 1:
@@ -824,23 +916,30 @@ def get_next_optimal_publish_time() -> Dict[str, Any]:
                 weekday = days_pl[slot_dt_cet.weekday()]
                 label = f"{weekday}, {slot_dt_cet.strftime('%d.%m')} o {slot} CET ({slot_type})"
 
-            _safe_print(f"[Scheduling] 🎯 Najbliższy wolny slot (2x/dzień): {label} ({slot_key} CET) | Zajętych slotów: {len(occupied)}")
+            _safe_print(f"[Scheduling] 🎯 Najbliższy wolny slot (Pon-Nd): {label} ({slot_key} CET) | Zajętych slotów: {len(occupied)}")
 
             return {
                 "publish_at": iso_utc,
                 "label": label,
                 "local_time": slot_key,
-                "peak_slots": DAILY_PEAK_SLOTS_CET,
+                "peak_slots": day_slots,
+                "weekday": check_date.weekday(),
+                "weekday_schedule": weekly_schedule,
                 "occupied_count": len(occupied),
             }
 
-    # Fallback awaryjny
-    fallback_dt = (now_cet + timedelta(days=1)).replace(hour=11, minute=0, second=0)
+    tomorrow = (now_cet + timedelta(days=1)).date()
+    fb_slots = get_active_peak_slots_cet(weekday=tomorrow.weekday())
+    fb_slot = fb_slots[0] if fb_slots else "15:00"
+    fb_h, fb_m = map(int, fb_slot.split(":"))
+    fallback_dt = datetime(tomorrow.year, tomorrow.month, tomorrow.day, fb_h, fb_m, 0, tzinfo=tz_cet)
     return {
         "publish_at": fallback_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "label": "Jutro o 11:00 CET (Asia+EU Peak 🌅)",
+        "label": f"Jutro o {fb_slot} CET ({_slot_label_desc(fb_h)})",
         "local_time": fallback_dt.strftime("%Y-%m-%d %H:%M"),
-        "peak_slots": DAILY_PEAK_SLOTS_CET,
+        "peak_slots": fb_slots,
+        "weekday": tomorrow.weekday(),
+        "weekday_schedule": weekly_schedule,
         "occupied_count": len(occupied),
     }
 
@@ -855,8 +954,10 @@ def upload_video(
     pinned_comment: Optional[str] = None,
     thumbnail_path: Optional[str] = None,
     publish_at: Optional[str] = None,
+    is_short: bool = True,
+    source_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Upload wideo na YouTube z automatycznym komentarzem, miniaturką oraz opcjonalnym planowaniem (Peak Hours)."""
+    """Upload wideo na YouTube (Short 9:16 lub Long-Form 16:9 gdy is_short=False) z miniaturką i komentarzem."""
     creds = get_valid_credentials(require_token=True)
     youtube = build("youtube", "v3", credentials=creds)
 
@@ -883,31 +984,55 @@ def upload_video(
     else:
         status_body["privacyStatus"] = privacy
 
-    # Gwarancja viralowych hashtagów w tytule: #shorts #leagueoflegends #lol
-    try:
-        from lol_agent.lol_metadata_generator import _format_final_title
-    except ImportError:
-        from lol_metadata_generator import _format_final_title
-    title = _format_final_title(title)
-
-    # Gwarancja obecności bogatych hashtagów w opisie YouTube Shorts (wyłącznie małe litery)
     import re
-    description = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", description)
-    if "#leagueoflegends" not in description.lower() or description.count("#") < 3:
+    latest_lf_file = LOL_AGENT_DIR / "latest_longform_video.json"
+    if is_short:
+        # Gwarancja viralowych hashtagów w tytule: #shorts #leagueoflegends #lol
         try:
-            from lol_agent.lol_metadata_generator import _build_hashtags
-            extra_tags = _build_hashtags()
-        except Exception:
-            extra_tags = "#shorts #shortsfeed #leagueoflegends #lol #gaming #lolhighlights"
-        description = f"{description.strip()}\n\n{extra_tags}"
+            from lol_agent.lol_metadata_generator import _format_final_title
+        except ImportError:
+            from lol_metadata_generator import _format_final_title
+        title = _format_final_title(title)
 
-    # Gwarancja pełnego zestawu bogatych tagów (max 500 znaków)
-    if not tags or len(tags) < 10:
+        # Lejek Shorts -> Long-Form w opisie
         try:
-            from lol_agent.lol_metadata_generator import build_rich_youtube_tags
-            tags = build_rich_youtube_tags()
+            if latest_lf_file.is_file():
+                import json as _lfj
+                lf_info = _lfj.loads(latest_lf_file.read_text(encoding="utf-8", errors="ignore"))
+                lf_url = str(lf_info.get("url") or "").strip()
+                if lf_url and lf_url not in description:
+                    description = f"{description.strip()}\n\n🎬 Watch Full Weekly Montage: {lf_url}"
         except Exception:
             pass
+
+        # Gwarancja obecności bogatych hashtagów w opisie YouTube Shorts (wyłącznie małe litery)
+        description = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", description)
+        if "#leagueoflegends" not in description.lower() or description.count("#") < 3:
+            try:
+                from lol_agent.lol_metadata_generator import _build_hashtags
+                extra_tags = _build_hashtags()
+            except Exception:
+                extra_tags = "#shorts #shortsfeed #leagueoflegends #lol #gaming #lolhighlights"
+            description = f"{description.strip()}\n\n{extra_tags}"
+
+        # Gwarancja pełnego zestawu bogatych tagów (max 500 znaków)
+        if not tags or len(tags) < 10:
+            try:
+                from lol_agent.lol_metadata_generator import build_rich_youtube_tags
+                tags = build_rich_youtube_tags()
+            except Exception:
+                pass
+    else:
+        # Film poziomy Long-Form 16:9: brak #shorts w tytule, opisie i tagach
+        title = re.sub(r"\s*#shorts\b", "", str(title or ""), flags=re.IGNORECASE).strip()
+        description = re.sub(r"(?<!\w)#shorts(?:feed)?\b", "", str(description or ""), flags=re.IGNORECASE).strip()
+        tags = [
+            str(t).lstrip("#").strip()
+            for t in (tags or [])
+            if str(t).strip() and str(t).lstrip("#").strip().lower() not in ("shorts", "shortsfeed")
+        ]
+        if not tags:
+            tags = ["league of legends", "katarina montage", "lol highlights", "best plays"]
 
     body = {
         "snippet": {
@@ -1016,15 +1141,90 @@ def upload_video(
             print(f"[YouTube] 📝 Komentarz zapisany do kolejki (film zaplanowany/prywatny) — zostanie opublikowany po upublicznieniu: '{clean_comment[:60]}'")
 
     invalidate_publish_cache()
+    video_url = f"https://www.youtube.com/shorts/{video_id}" if is_short else f"https://www.youtube.com/watch?v={video_id}"
+
+    if not is_short:
+        try:
+            import json as _lfj
+            lf_payload = {
+                "video_id": video_id,
+                "url": video_url,
+                "title": response["snippet"]["title"],
+                "published_at": datetime.now(timezone.utc).isoformat(),
+            }
+            (LOL_AGENT_DIR / "latest_longform_video.json").write_text(
+                _lfj.dumps(lf_payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+    elif source_path:
+        try:
+            from lol_agent.viral_vault import stage_short_original
+            stage_short_original(
+                source_path,
+                yt_video_id=video_id,
+                metadata={"title": response["snippet"]["title"]},
+            )
+        except Exception:
+            pass
 
     return {
         "video_id": video_id,
-        "url": f"https://www.youtube.com/shorts/{video_id}",
+        "url": video_url,
+        "video_format": "short" if is_short else "longform",
         "title": response["snippet"]["title"],
         "status": response["status"]["privacyStatus"],
         "publish_at": response["status"].get("publishAt"),
         "comment_id": comment_id,
         "comment_pending": comment_pending,
+    }
+
+
+def get_related_video_studio_links(limit: int = 10) -> Dict[str, Any]:
+    """
+    Zwraca listę ostatnich Shortsów wraz z linkami 1-klik do YouTube Studio (`Related Video`),
+    ponieważ YouTube Data API v3 nie obsługuje programistycznego ustawiania pola Related Video.
+    """
+    import json as _json
+    target = None
+    lf_file = LOL_AGENT_DIR / "latest_longform_video.json"
+    if lf_file.is_file():
+        try:
+            target = _json.loads(lf_file.read_text(encoding="utf-8", errors="ignore"))
+        except Exception:
+            target = None
+
+    shorts: List[Dict[str, Any]] = []
+    pub_file = LOL_AGENT_DIR / "published_videos.jsonl"
+    seen_ids: set[str] = set()
+    if pub_file.is_file():
+        lines = pub_file.read_text(encoding="utf-8", errors="ignore").splitlines()
+        for line in reversed(lines):
+            s = line.strip()
+            if not s:
+                continue
+            try:
+                rec = _json.loads(s)
+            except Exception:
+                continue
+            vid = str(rec.get("video_id") or "").strip()
+            if not vid or vid in seen_ids or rec.get("video_format") == "longform":
+                continue
+            seen_ids.add(vid)
+            shorts.append({
+                "video_id": vid,
+                "title": str(rec.get("title") or ""),
+                "published_at": str(rec.get("timestamp") or rec.get("published_at") or ""),
+                "watch_url": f"https://www.youtube.com/shorts/{vid}",
+                "studio_edit_url": f"https://studio.youtube.com/video/{vid}/edit",
+            })
+            if len(shorts) >= int(limit):
+                break
+    return {
+        "target_longform": target,
+        "shorts": shorts,
+        "api_limitation_note": "YouTube Data API v3 nie wspiera ustawiania Related Video w Shorts — kliknij link Studio Edit, aby przypiąć film 16:9.",
     }
 
 

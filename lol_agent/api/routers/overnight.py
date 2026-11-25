@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..auth import verify_token
+from ..helpers import _load_meta, compute_publish_status_flags
 
 try:
     from lol_agent import synapsa_overnight_batch as _ob
@@ -102,8 +103,85 @@ def overnight_stop(payload: dict = Depends(verify_token)):
 
 @router.get("/overnight/latest")
 def overnight_latest(payload: dict = Depends(verify_token)):
-    """Zwraca manifest ostatniej paczki nocnej z rekomendacją Synapsy #1..#5."""
-    return {"batch": _ob.load_latest_overnight_batch()}
+    """Zwraca manifest ostatniej paczki nocnej wzbogacony o stan publikacji/kolejki i istnienie pliku .mp4."""
+    import json
+    from pathlib import Path
+    from ..helpers import _load_meta
+
+    batch = _ob.load_latest_overnight_batch()
+    if not isinstance(batch, dict):
+        return {"batch": batch}
+
+    pub_sources: dict[str, dict] = {}
+    try:
+        pub_file = Path(__file__).resolve().parent.parent.parent / "published_videos.jsonl"
+        if pub_file.is_file():
+            for line in pub_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                sp = str(rec.get("source_path") or "").strip().lower()
+                if sp:
+                    pub_sources[sp] = rec
+                    pub_sources[Path(sp).name.lower()] = rec
+    except Exception:
+        pass
+
+    queue_by_name: dict[str, dict] = {}
+    try:
+        from ...scheduled_queue import QUEUE_FILE, _load_queue
+        if QUEUE_FILE.exists():
+            for q_it in _load_queue():
+                if q_it.get("status") not in ("pending", "processing", "published"):
+                    continue
+                q_name = Path(str(q_it.get("video_path") or "")).name.lower()
+                if not q_name:
+                    continue
+                slot = queue_by_name.setdefault(q_name, {"platforms": set(), "scheduled": None})
+                plat = str(q_it.get("platform") or "").strip().lower()
+                if plat:
+                    slot["platforms"].add(plat)
+                if q_it.get("status") == "pending" and q_it.get("publish_at") and not slot["scheduled"]:
+                    slot["scheduled"] = q_it.get("publish_at")
+    except Exception:
+        pass
+
+    for it in (batch.get("items") or []):
+        if not isinstance(it, dict):
+            continue
+        out_name = str(it.get("output_filename") or "")
+        out_path = str(it.get("output_path") or "")
+        meta = _load_meta(out_name) or {} if out_name else {}
+        q_info = queue_by_name.get(out_name.lower(), {})
+        extra_plats = set(q_info.get("platforms") or set())
+
+        src_raw = str(it.get("source_path") or meta.get("source_path") or "").strip().lower()
+        src_name = Path(src_raw).name.lower() if src_raw else str(it.get("source_filename") or "").strip().lower()
+        pub_rec = pub_sources.get(src_raw) or pub_sources.get(src_name)
+        if pub_rec:
+            for p_k in (pub_rec.get("platforms") or []):
+                extra_plats.add(str(p_k).lower())
+            if pub_rec.get("video_id"):
+                extra_plats.add("youtube")
+
+        file_exists = bool(out_path and Path(out_path).is_file())
+        pub_flags = compute_publish_status_flags(
+            meta,
+            queued_plats=extra_plats,
+            file_exists=file_exists,
+        )
+        it["file_exists"] = file_exists
+        it["scheduled_publish_at"] = (
+            meta.get("scheduled_publish_at")
+            or q_info.get("scheduled")
+            or (pub_rec or {}).get("scheduled_publish_at")
+        )
+        it.update(pub_flags)
+
+    return {"batch": batch}
 
 
 @router.get("/overnight/batches")

@@ -27,47 +27,136 @@ def _norm_path(p: Any) -> str:
     return os.path.normcase(os.path.abspath(str(p)))
 
 
-def _add_with_siblings(protected: Set[str], raw_path: Any) -> None:
+def _is_meta_published(meta_path: Path) -> bool:
+    """Zwraca True, jeśli plik .meta.json oznacza film już opublikowany na co najmniej jednej platformie."""
+    if not meta_path.is_file():
+        return False
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return False
+        return bool(data.get("published_at") or data.get("published_platforms"))
+    except Exception:
+        return False
+
+
+def _add_with_siblings(protected: Set[str], raw_path: Any, include_video: bool = True) -> None:
     if not raw_path:
         return
     p = Path(str(raw_path))
-    protected.add(_norm_path(p))
+    if include_video:
+        protected.add(_norm_path(p))
     if p.suffix.lower() == ".mp4":
         protected.add(_norm_path(p.with_suffix(".meta.json")))
         protected.add(_norm_path(p.with_suffix(".recipe.json")))
         protected.add(_norm_path(p.with_name(f"{p.stem}_thumb.jpg")))
 
 
-def collect_protected_paths(
-    queue_file: Path = DEFAULT_QUEUE_FILE,
-    batches_dir: Path = DEFAULT_BATCHES_DIR,
-) -> Set[str]:
-    """Zbiera zbiór znormalizowanych ścieżek chronionych przed rotacją."""
-    protected: Set[str] = set()
+def is_video_referenced_in_active_queue(
+    video_path: str,
+    queue_file: Optional[Path] = None,
+) -> bool:
+    """Sprawdza, czy podany plik wideo nadal czeka w aktywnej kolejce publikacji ('pending'/'processing')."""
+    q_file = Path(queue_file) if queue_file is not None else Path(DEFAULT_QUEUE_FILE)
+    if not video_path or not q_file.exists():
+        return False
+    target_norm = _norm_path(video_path)
+    try:
+        items = json.loads(q_file.read_text(encoding="utf-8"))
+        if not isinstance(items, list):
+            return False
+        for item in items:
+            if item.get("status") not in ("pending", "processing"):
+                continue
+            vp = item.get("video_path")
+            if vp and _norm_path(vp) == target_norm:
+                return True
+    except Exception:
+        return True  # Ostrożność przy uszkodzonym odczycie — nie kasuj
+    return False
 
-    if queue_file.exists():
+
+def cleanup_published_video_if_idle(
+    video_path: str,
+    queue_file: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Bezpiecznie usuwa ciężki wyrenderowany plik .mp4 po publikacji, jeśli żadna platforma
+    nie czeka z tym plikiem w aktywnej kolejce. Zostawia .meta.json, .recipe.json i _thumb.jpg.
+    """
+    q_file = Path(queue_file) if queue_file is not None else Path(DEFAULT_QUEUE_FILE)
+    if not video_path:
+        return {"deleted": False, "reason": "empty_path", "freed_mb": 0.0}
+    vp = Path(str(video_path))
+    if not vp.is_file():
+        return {"deleted": False, "reason": "missing", "freed_mb": 0.0}
+    if is_video_referenced_in_active_queue(str(vp), queue_file=q_file):
+        return {"deleted": False, "reason": "pending_in_queue", "freed_mb": 0.0}
+
+    freed_bytes = 0
+    for cand in (vp, vp.with_name(f"{vp.stem}_tkcover.mp4")):
+        if cand.is_file():
+            try:
+                sz = cand.stat().st_size
+                cand.unlink()
+                freed_bytes += sz
+            except OSError as err:
+                return {"deleted": False, "reason": f"unlink_error:{err}", "freed_mb": 0.0}
+
+    meta_p = vp.with_suffix(".meta.json")
+    if meta_p.is_file():
         try:
-            items = json.loads(queue_file.read_text(encoding="utf-8"))
-            if isinstance(items, list):
-                for item in items:
-                    if item.get("status") in ("pending", "processing"):
-                        _add_with_siblings(protected, item.get("video_path"))
-                        _add_with_siblings(protected, item.get("thumbnail_path"))
+            meta_obj = json.loads(meta_p.read_text(encoding="utf-8"))
+            if isinstance(meta_obj, dict):
+                meta_obj["video_cleaned"] = True
+                meta_obj["video_cleaned_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                tmp_meta = meta_p.with_suffix(".meta.tmp")
+                tmp_meta.write_text(json.dumps(meta_obj, ensure_ascii=False, indent=2), encoding="utf-8")
+                os.replace(tmp_meta, meta_p)
         except Exception:
             pass
 
-    if batches_dir.exists():
+    return {
+        "deleted": True,
+        "reason": "published_idle",
+        "freed_mb": round(freed_bytes / (1024 * 1024), 2),
+    }
+
+
+def collect_protected_paths(
+    queue_file: Optional[Path] = None,
+    batches_dir: Optional[Path] = None,
+) -> Set[str]:
+    """Zbiera zbiór znormalizowanych ścieżek chronionych przed rotacją (opublikowane .mp4 nie są chronione)."""
+    q_file = Path(queue_file) if queue_file is not None else Path(DEFAULT_QUEUE_FILE)
+    b_dir = Path(batches_dir) if batches_dir is not None else Path(DEFAULT_BATCHES_DIR)
+    protected: Set[str] = set()
+
+    if q_file.exists():
+        try:
+            items = json.loads(q_file.read_text(encoding="utf-8"))
+            if isinstance(items, list):
+                for item in items:
+                    if item.get("status") in ("pending", "processing"):
+                        _add_with_siblings(protected, item.get("video_path"), include_video=True)
+                        _add_with_siblings(protected, item.get("thumbnail_path"), include_video=True)
+        except Exception:
+            pass
+
+    if b_dir.exists():
         try:
             batches = sorted(
-                batches_dir.glob("batch_*.json"),
+                b_dir.glob("batch_*.json"),
                 key=lambda f: f.stat().st_mtime,
                 reverse=True,
             )
             if batches:
                 latest = json.loads(batches[0].read_text(encoding="utf-8"))
                 for it in (latest.get("items") or []):
-                    _add_with_siblings(protected, it.get("output_path"))
-                    _add_with_siblings(protected, it.get("thumbnail_path"))
+                    out_p = it.get("output_path")
+                    is_pub = bool(out_p and _is_meta_published(Path(str(out_p)).with_suffix(".meta.json")))
+                    _add_with_siblings(protected, out_p, include_video=not is_pub)
+                    _add_with_siblings(protected, it.get("thumbnail_path"), include_video=True)
         except Exception:
             pass
 
@@ -144,6 +233,7 @@ def cleanup_temp_directory(
 
     removed_inter = 0
     removed_stale = 0
+    removed_pub = 0
     freed_bytes = 0
 
     for entry in list(target_dir.rglob("*")):
@@ -162,6 +252,8 @@ def cleanup_temp_directory(
         reason: Optional[str] = None
         if is_intermediate_artifact(entry) and st.st_mtime < inter_cutoff:
             reason = "intermediate"
+        elif entry.suffix.lower() == ".mp4" and _is_meta_published(entry.with_suffix(".meta.json")):
+            reason = "published"
         elif st.st_mtime < stale_cutoff:
             reason = "stale"
 
@@ -178,6 +270,8 @@ def cleanup_temp_directory(
         freed_bytes += size_b
         if reason == "intermediate":
             removed_inter += 1
+        elif reason == "published":
+            removed_pub += 1
         else:
             removed_stale += 1
 
@@ -192,7 +286,7 @@ def cleanup_temp_directory(
 
     after_stats = (
         {
-            "files": max(0, before_stats["files"] - (removed_inter + removed_stale)),
+            "files": max(0, before_stats["files"] - (removed_inter + removed_stale + removed_pub)),
             "size_mb": round(max(0.0, before_stats["size_mb"] - freed_bytes / (1024 * 1024)), 2),
         }
         if dry_run
@@ -203,8 +297,9 @@ def cleanup_temp_directory(
         "before_files": before_stats["files"],
         "before_size_mb": before_stats["size_mb"],
         "removed_intermediate": removed_inter,
+        "removed_published": removed_pub,
         "removed_stale": removed_stale,
-        "removed_total": removed_inter + removed_stale,
+        "removed_total": removed_inter + removed_stale + removed_pub,
         "freed_mb": round(freed_bytes / (1024 * 1024), 2),
         "after_files": after_stats["files"],
         "after_size_mb": after_stats["size_mb"],

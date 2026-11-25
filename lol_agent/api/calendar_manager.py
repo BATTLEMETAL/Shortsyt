@@ -1,6 +1,6 @@
 """
 Shortsyt API — Kalendarz Publikacji i Rezerwacja Pipeline
-Zarządza harmonogramem publikacji na YouTube Shorts w oparciu o Peak Hours (11:00 i 21:30 CET)
+Zarządza harmonogramem publikacji na YouTube Shorts w oparciu o dynamiczne Peak Hours (domyślnie 15:00 i 21:30 CET)
 oraz rezerwacjami slotów produkcyjnych.
 """
 import os
@@ -14,10 +14,45 @@ try:
     from zoneinfo import ZoneInfo
     TZ_CET = ZoneInfo("Europe/Warsaw")
 except Exception:
-    TZ_CET = timezone(timedelta(hours=2))
+    TZ_CET = timezone(timedelta(hours=1))
 
 CALENDAR_FILE = Path(__file__).resolve().parent.parent / "publishing_calendar.json"
-PEAK_HOURS_CET = ["11:00", "21:30"]
+PEAK_HOURS_CET = ["15:00", "21:30"]
+
+
+def get_peak_hours_cet(weekday: Optional[int] = None) -> List[str]:
+    """Pobiera aktualne 2 okna Peak Hours CET z aktywnego profilu/dyrektywy (opcjonalnie per dzień tygodnia 0..6)."""
+    try:
+        from .youtube_uploader import get_active_peak_slots_cet
+        slots = get_active_peak_slots_cet(weekday=weekday)
+        if slots:
+            return slots
+    except TypeError:
+        try:
+            from .youtube_uploader import get_active_peak_slots_cet
+            slots = get_active_peak_slots_cet()
+            if slots:
+                return slots
+        except Exception:
+            pass
+    except Exception:
+        try:
+            from youtube_uploader import get_active_peak_slots_cet
+            slots = get_active_peak_slots_cet(weekday=weekday)
+            if slots:
+                return slots
+        except Exception:
+            pass
+    return list(PEAK_HOURS_CET)
+
+
+def _resolve_day_peak_hours(weekday: int) -> List[str]:
+    """Wywołuje get_peak_hours_cet(weekday), zachowując zgodność z testowym monkeypatch 0-argumentowym."""
+    try:
+        slots = get_peak_hours_cet(weekday)
+    except TypeError:
+        slots = get_peak_hours_cet()
+    return slots or list(PEAK_HOURS_CET)
 
 
 def _load_calendar_db() -> Dict[str, Any]:
@@ -42,14 +77,15 @@ def _save_calendar_db(data: Dict[str, Any]):
 
 def get_calendar_slots(start_date: Optional[str] = None, days: int = 14, force_refresh: bool = False) -> List[Dict[str, Any]]:
     """
-    Zwraca siatkę slotów publikacji na zadany okres (2 Shortsy dziennie: 11:00 i 21:30 CET).
+    Zwraca siatkę slotów publikacji na zadany okres (2 Shortsy dziennie wg aktywnych Peak Hours CET, domyślnie 15:00 i 21:30).
     Łączy:
     1. Opublikowane filmy z YouTube z historycznymi statystykami i Wskaźnikiem Skuteczności
     2. Zaplanowane filmy na YouTube (status 'scheduled')
-    3. Przyszłe okna Peak Hours (11:00 i 21:30 CET) z zapisanymi rezerwacjami
+    3. Przyszłe okna Peak Hours z zapisanymi rezerwacjami
     """
     db = _load_calendar_db()
     now_cet = datetime.now(TZ_CET)
+    peak_hours = get_peak_hours_cet()
 
     # 1. Pobierz dane z YouTube Data API (zaplanowane + opublikowane ze statystykami)
     try:
@@ -77,13 +113,21 @@ def get_calendar_slots(start_date: Optional[str] = None, days: int = 14, force_r
             continue
         seen_video_ids.add(vid)
 
+        pub_is_peak = pub.get("time") in peak_hours
+        if pub.get("date"):
+            try:
+                pub_wd = datetime.fromisoformat(str(pub["date"])).weekday()
+                pub_is_peak = pub.get("time") in _resolve_day_peak_hours(pub_wd)
+            except Exception:
+                pass
+
         slots.append({
             "slot_id": f"pub_{vid}",
             "date": pub.get("date"),
             "time": pub.get("time"),
             "datetime_local": pub.get("datetime_local"),
             "datetime_utc": pub.get("datetime_utc"),
-            "is_peak": pub.get("time") in PEAK_HOURS_CET,
+            "is_peak": pub_is_peak,
             "is_past": True,
             "status": "published",
             "title": pub.get("title", ""),
@@ -108,7 +152,7 @@ def get_calendar_slots(start_date: Optional[str] = None, days: int = 14, force_r
             "created_at": pub.get("datetime_utc"),
         })
 
-    # 3. Wygeneruj sloty na dziś i kolejne dni (dokładnie 2 okna dziennie: 11:00 i 21:30 CET)
+    # 3. Wygeneruj sloty na dziś i kolejne dni (aktywne okna Peak Hours CET per dzień tygodnia)
     if start_date:
         try:
             start_dt = datetime.fromisoformat(start_date).replace(tzinfo=TZ_CET)
@@ -120,8 +164,9 @@ def get_calendar_slots(start_date: Optional[str] = None, days: int = 14, force_r
     for day_offset in range(days):
         day = start_dt + timedelta(days=day_offset)
         date_str = day.strftime("%Y-%m-%d")
+        day_peak_hours = _resolve_day_peak_hours(day.weekday())
 
-        for time_str in PEAK_HOURS_CET:
+        for time_str in day_peak_hours:
             h, m = map(int, time_str.split(":"))
             slot_dt = day.replace(hour=h, minute=m, second=0, microsecond=0)
             slot_id = f"slot_{date_str}_{h:02d}-{m:02d}"
@@ -305,7 +350,7 @@ def reserve_slot(
         "time": h_m,
         "datetime_local": dt_obj.strftime("%Y-%m-%d %H:%M CET"),
         "datetime_utc": publish_at_iso,
-        "is_peak": h_m in PEAK_HOURS_CET,
+        "is_peak": h_m in _resolve_day_peak_hours(dt_obj.weekday()),
         "status": "ready" if output_video else "reserved",
         "title": title,
         "champion": champion,

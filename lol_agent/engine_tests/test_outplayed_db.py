@@ -636,3 +636,67 @@ def test_thumbnail_upload_regenerate_and_overnight_backfill(monkeypatch, tmp_pat
             assert reg_img.size == (1080, 1920)
         assert not list(temp_dir.glob("*.tmp"))
         assert not list(temp_dir.glob("*.regen_*"))
+
+
+def test_apply_outplayed_anchor_clamps_to_profile_sweet_spot(monkeypatch):
+    """Kotwiczenie nocne docina za długie double/triple z przodu do <=15.2s i rozszerza krótkie wycinki do >=11.0s."""
+    monkeypatch.setattr(
+        "lol_agent.account_manager.get_target_duration_bounds",
+        lambda tier_rank=2: (11.0, 17.5 if int(tier_rank or 0) >= 4 else 15.2),
+    )
+
+    # 1. Za krótkie okno z późnego double killa -> rozszerza się wstecz do >= 11.0s bez pustego outro
+    short_info = {
+        "event_source": "outplayed_backup",
+        "event_tier": "double",
+        "event_tier_rank": 2,
+        "best_event_time_s": 22.0,
+        "est_first_kill_s": 20.5,
+        "est_last_kill_s": 22.0,
+        "events_summary": [
+            {"type": "kill", "label": "kill", "time_s": 20.5},
+            {"type": "kill", "label": "double_kill", "time_s": 22.0},
+        ],
+    }
+    _k1, _d1, cs1, ce1, _p1, _s1 = ob._apply_outplayed_anchor(
+        clip_info=short_info,
+        raw_kills=[],
+        raw_det="double",
+        clip_start=18.0,
+        clip_end=24.0,
+        peak_moment=22.0,
+        combat_segs=None,
+        duration=35.0,
+    )
+    # P0.2: nie dokleja 5-9s martwego intra wstecz — max 3.2s przed 1. killem i delikatny tail max 3.5s
+    assert 8.0 <= (ce1 - cs1) <= 15.2
+    assert cs1 >= 20.5 - 3.25
+    assert ce1 <= 25.55
+
+    # 2. Za długie wejście przed triple -> obcina martwe intro zachowując 1. kill i mieszcząc się w <=15.2s
+    long_info = {
+        "event_source": "outplayed_backup",
+        "event_tier": "triple",
+        "event_tier_rank": 3,
+        "best_event_time_s": 32.0,
+        "best_event_past_s": 11.0,
+        "best_event_future_s": 3.0,
+        "events_summary": [
+            {"type": "kill", "label": "kill", "time_s": 22.5},
+            {"type": "kill", "label": "kill", "time_s": 26.5},
+            {"type": "kill", "label": "triple_kill", "time_s": 32.0},
+        ],
+    }
+    _k2, _d2, cs2, ce2, _p2, _s2 = ob._apply_outplayed_anchor(
+        clip_info=long_info,
+        raw_kills=[{"timestamp": 22.5, "tier": 3, "label": "TRIPLE"}],
+        raw_det="triple",
+        clip_start=15.0,
+        clip_end=35.0,
+        peak_moment=32.0,
+        combat_segs=None,
+        duration=45.0,
+    )
+    assert (ce2 - cs2) <= 15.25
+    assert cs2 <= 22.5 - 1.0
+    assert ce2 >= 34.5

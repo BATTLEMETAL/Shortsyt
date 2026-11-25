@@ -143,3 +143,28 @@ class TestFacebookUpload:
         assert res["video_id"] == "fb_vid_999"
         assert res["platform"] == "facebook"
         assert "fb_vid_999" in res["url"]
+
+    def test_upload_facebook_reel_future_publish_at_uses_local_queue(self, tmp_path, monkeypatch):
+        from datetime import datetime, timedelta, timezone
+        queue_file = tmp_path / "scheduled_social_queue.json"
+        monkeypatch.setattr("lol_agent.scheduled_queue.QUEUE_FILE", queue_file)
+
+        fake_video = tmp_path / "fb_future.mp4"
+        fake_video.write_bytes(b"dummy fb future video")
+        future_iso = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        with patch("requests.post") as mock_post:
+            res = upload_facebook_reel(
+                str(fake_video),
+                "Clean Katarina Triple Kill",
+                publish_at=future_iso,
+            )
+            mock_post.assert_not_called()
+
+        assert res["success"] is True
+        assert res["queued"] is True
+        assert res["is_scheduled"] is True
+        assert res["publish_at"] == future_iso
+        items = json.loads(queue_file.read_text(encoding="utf-8"))
+        assert len(items) == 1
+        assert items[0]["platform"] == "facebook"

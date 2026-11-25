@@ -13,6 +13,8 @@ import {
   Calendar,
   Users,
   MessageSquare,
+  Compass,
+  Clapperboard,
 } from 'lucide-react';
 import { apiListAccounts, AccountProfile } from '../lib/api';
 
@@ -54,7 +56,9 @@ export default function Sidebar({ backendConnected, pipelineRunning = false }: S
     { to: '/calendar', label: 'Kalendarz & Sloty', shortLabel: 'Sloty', icon: Calendar, badge: 'Peak ⚡' },
     { to: '/render', label: 'Render Monitor', shortLabel: 'Render', icon: Cpu, activeGlow: pipelineRunning },
     { to: '/outputs', label: 'Biblioteka Shorts', shortLabel: 'Shorts', icon: Video },
+    { to: '/compilations', label: 'Kompilacje 16:9', shortLabel: 'Filmy', icon: Clapperboard, badge: '16:9' },
     { to: '/analytics', label: 'Analityka Kanału', shortLabel: 'Wyniki', icon: BarChart3 },
+    { to: '/research', label: 'Research & Klienci', shortLabel: 'Klienci', icon: Compass, badge: 'DFY' },
     { to: '/dark', label: 'Strategia & Wnioski', shortLabel: 'Engine', icon: Brain, badge: 'Engine' },
     { to: '/tuning', label: 'Styl & Feedback', shortLabel: 'Styl', icon: SlidersHorizontal },
     { to: '/comments', label: 'Komentarze', shortLabel: 'Komentarze', icon: MessageSquare },

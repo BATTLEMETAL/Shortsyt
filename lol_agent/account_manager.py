@@ -20,8 +20,8 @@ CONTENT_MODE_PRESETS: Dict[str, Dict[str, Any]] = {
         "label": "Kanał Gamingowy / Konto Poboczne Sandbox",
         "game_type": "lol",
         "language": "en",
-        "peak_hours_cet": ["11:00", "21:30"],
-        "target_duration_range": [13.5, 17.5],
+        "peak_hours_cet": ["15:00", "21:30"],
+        "target_duration_range": [11.0, 15.2],
         "camera_mode": "yellow_hp_bar",
         "brand_voice": "Aggressive Hype Gaming / Ego Check",
         "value_proposition": "High-elo mechanical outplays, 1v1 solo bolo and multikills",
@@ -76,6 +76,36 @@ CONTENT_MODE_PRESETS: Dict[str, Dict[str, Any]] = {
         "forbidden_words": ["Katarina", "League of Legends"],
         "yt_category_id": "28",
     },
+    "FOOD_GASTRO": {
+        "label": "Gastro / Kebab / Street Food / Kawiarnia",
+        "game_type": "product_ad",
+        "language": "pl",
+        "peak_hours_cet": ["11:30", "18:30"],
+        "target_duration_range": [10.0, 16.0],
+        "camera_mode": "face_and_center_subject",
+        "brand_voice": "Apetyczny, dynamiczne cięcia 1.0-1.8s, zmysłowy detal krojenia, sosu i chrupiącej porcji",
+        "value_proposition": "Pokaż świeże przygotowanie na żywo, zbliżenie detalu i lokalny adres bez lania wody",
+        "cta_text": "Wpadnij dzisiaj lub sprawdź adres w opisie",
+        "cta_url": "",
+        "mandatory_hashtags": ["#shorts", "#jedzenie", "#streetfood", "#gastro"],
+        "forbidden_words": ["Katarina", "League of Legends", "Pentakill", "Outplayed", "Master Tier"],
+        "yt_category_id": "22",
+    },
+    "NAILS_BEAUTY": {
+        "label": "Paznokcie / Manicure / Salon Kosmetyczny",
+        "game_type": "product_ad",
+        "language": "pl",
+        "peak_hours_cet": ["10:00", "19:00"],
+        "target_duration_range": [9.0, 15.0],
+        "camera_mode": "face_and_center_subject",
+        "brand_voice": "Efekt przed/po, czysty kadr dłoni, makro błysku lakieru i precyzji zdobień",
+        "value_proposition": "Krótka metamorfoza stylizacji paznokci i jasne zaproszenie do rezerwacji wizyty",
+        "cta_text": "Zarezerwuj termin — link w bio",
+        "cta_url": "",
+        "mandatory_hashtags": ["#shorts", "#paznokcie", "#manicure", "#hybryda"],
+        "forbidden_words": ["Katarina", "League of Legends", "Pentakill", "Outplayed", "Master Tier"],
+        "yt_category_id": "26",
+    },
 }
 
 
@@ -96,8 +126,8 @@ def _build_default_accounts() -> Dict[str, Any]:
         "tt_token_file": "tiktok_token.json",
         "ig_token_file": "instagram_token.json",
         "fb_token_file": "facebook_token.json",
-        "peak_hours_cet": ["11:00", "21:30"],
-        "target_duration_range": [13.5, 17.5],
+        "peak_hours_cet": ["15:00", "21:30"],
+        "target_duration_range": [11.0, 15.2],
         "camera_mode": "yellow_hp_bar",
         "brand_voice": "Aggressive Hype Gaming / Ego Check",
         "value_proposition": "High-elo Katarina mechanical outplays, 1v1 solo bolo and multikills",
@@ -212,6 +242,23 @@ def get_active_account() -> Dict[str, Any]:
     return _enrich_account_view(acc, active_id)
 
 
+def get_target_duration_bounds(tier_rank: int = 2) -> tuple[float, float]:
+    """Zwraca docelowy zakres (min_s, max_s) dla aktywnego profilu (Quadra/Penta dopuszcza do 17.5s)."""
+    min_dur, max_dur = 11.0, 15.2
+    try:
+        rng = get_active_account().get("target_duration_range")
+        if isinstance(rng, (list, tuple)) and len(rng) >= 2:
+            lo = float(rng[0])
+            hi = float(rng[1])
+            if 6.0 <= lo < hi <= 60.0:
+                min_dur, max_dur = lo, hi
+    except Exception:
+        pass
+    if int(tier_rank or 0) >= 4:
+        max_dur = max(max_dur, 17.5)
+    return min_dur, max_dur
+
+
 def set_active_account(account_id: str) -> Dict[str, Any]:
     """Przełącza aktywne konto aplikacji."""
     reg = _load_registry()
@@ -258,7 +305,23 @@ def upsert_account(data: Dict[str, Any]) -> Dict[str, Any]:
             items = list(fallback)
         return items or list(fallback)
 
+    def _clean_weekday_hours(val: Any, fallback: Any) -> Optional[Dict[str, List[str]]]:
+        raw = val if isinstance(val, dict) else (fallback if isinstance(fallback, dict) else None)
+        if not isinstance(raw, dict):
+            return None
+        valid_hhmm = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+        out: Dict[str, List[str]] = {}
+        for dw in range(7):
+            key = str(dw)
+            slots_raw = raw.get(key) if key in raw else raw.get(dw)
+            if isinstance(slots_raw, list):
+                cleaned = sorted(set(str(s).strip() for s in slots_raw if valid_hhmm.match(str(s).strip())))
+                if cleaned:
+                    out[key] = cleaned
+        return out or None
+
     default_token = "lol_token.pickle" if acc_id == "dwannellenga" else f"{acc_id}_token.pickle"
+    weekday_hours = _clean_weekday_hours(data.get("peak_hours_by_weekday_cet"), existing.get("peak_hours_by_weekday_cet"))
     merged = {
         "account_id": acc_id,
         "display_name": data.get("display_name") or existing.get("display_name") or acc_id,
@@ -285,12 +348,62 @@ def upsert_account(data: Dict[str, Any]) -> Dict[str, Any]:
         "yt_category_id": str(data.get("yt_category_id") or existing.get("yt_category_id") or preset.get("yt_category_id", "22")),
         "builtin": bool(existing.get("builtin", False)),
     }
+    if weekday_hours:
+        merged["peak_hours_by_weekday_cet"] = weekday_hours
+    sched_upd = data.get("schedule_updated_at") or existing.get("schedule_updated_at")
+    if sched_upd:
+        merged["schedule_updated_at"] = sched_upd
+    if existing.get("schedule_metadata") and "schedule_metadata" not in data:
+        merged["schedule_metadata"] = existing["schedule_metadata"]
+    elif isinstance(data.get("schedule_metadata"), dict):
+        merged["schedule_metadata"] = data["schedule_metadata"]
 
     reg.setdefault("accounts", {})[acc_id] = merged
     if data.get("set_active"):
         reg["active_account_id"] = acc_id
     _save_registry(reg)
     return _enrich_account_view(merged, reg.get("active_account_id", "dwannellenga"))
+
+
+def update_account_weekly_schedule(
+    peak_hours_by_weekday_cet: Dict[str, List[str]],
+    account_id: Optional[str] = None,
+    peak_hours_cet: Optional[List[str]] = None,
+    schedule_metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Atomowo zapisuje tygodniowy harmonogram godzin publikacji (Pon-Nd) w profilu konta bez nadpisywania reszty pól."""
+    reg = _load_registry()
+    accounts = reg.setdefault("accounts", {})
+    target_id = _slugify_account_id(account_id) if account_id else reg.get("active_account_id", "dwannellenga")
+    if target_id not in accounts:
+        raise KeyError(f"Konto '{target_id}' nie istnieje")
+
+    valid_hhmm = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    cleaned_map: Dict[str, List[str]] = {}
+    for dw in range(7):
+        key = str(dw)
+        raw_slots = peak_hours_by_weekday_cet.get(key) if isinstance(peak_hours_by_weekday_cet, dict) else None
+        if raw_slots is None and isinstance(peak_hours_by_weekday_cet, dict):
+            raw_slots = peak_hours_by_weekday_cet.get(dw)  # type: ignore[arg-type]
+        if isinstance(raw_slots, list):
+            cleaned = sorted(set(str(s).strip() for s in raw_slots if valid_hhmm.match(str(s).strip())))
+            if cleaned:
+                cleaned_map[key] = cleaned
+    if len(cleaned_map) != 7:
+        raise ValueError("Harmonogram tygodniowy musi zawierać prawidłowe sloty HH:MM dla wszystkich 7 dni (0..6).")
+
+    acc = dict(accounts[target_id])
+    acc["peak_hours_by_weekday_cet"] = cleaned_map
+    if peak_hours_cet:
+        cleaned_global = [str(s).strip() for s in peak_hours_cet if valid_hhmm.match(str(s).strip())]
+        if cleaned_global:
+            acc["peak_hours_cet"] = cleaned_global
+    acc["schedule_updated_at"] = datetime.now(timezone.utc).isoformat()
+    if schedule_metadata is not None:
+        acc["schedule_metadata"] = schedule_metadata
+    accounts[target_id] = acc
+    _save_registry(reg)
+    return _enrich_account_view(acc, reg.get("active_account_id", "dwannellenga"))
 
 
 def delete_account(account_id: str) -> bool:
@@ -421,7 +534,11 @@ def generate_account_aware_metadata(
         except Exception:
             pass
 
-    if gemini_key:
+    allow_live_gemini = not (
+        os.environ.get("PYTEST_CURRENT_TEST")
+        and os.environ.get("ALLOW_LIVE_GEMINI_IN_TEST") != "1"
+    )
+    if gemini_key and allow_live_gemini:
         try:
             from google import genai
             client = genai.Client(api_key=gemini_key)

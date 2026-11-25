@@ -72,6 +72,47 @@ def _load_meta(filename: str) -> dict:
     return {}
 
 
+_ALL_PUBLISH_PLATFORMS = ("youtube", "tiktok", "instagram", "facebook")
+
+
+def compute_publish_status_flags(
+    meta: dict,
+    queued_plats: Optional[set] = None,
+    file_exists: bool = True,
+) -> dict:
+    """
+    Wylicza spójne flagi publikacji i ponowienia dla /outputs oraz /overnight/latest.
+    Klip częściowo opublikowany (np. TT+IG+FB bez YouTube) lub z failed_platforms
+    pozostaje odblokowany do ponowienia, dopóki istnieje plik .mp4.
+    """
+    meta_d = meta if isinstance(meta, dict) else {}
+    plats = {str(p).strip().lower() for p in (meta_d.get("published_platforms") or []) if p}
+    if queued_plats:
+        plats |= {str(p).strip().lower() for p in queued_plats if p}
+    if meta_d.get("youtube_id"):
+        plats.add("youtube")
+
+    raw_failed = meta_d.get("failed_platforms") or {}
+    failed_platforms = {
+        str(k).strip().lower(): str(v)
+        for k, v in raw_failed.items()
+        if str(k).strip().lower() not in plats
+    } if isinstance(raw_failed, dict) else {}
+
+    missing_platforms = [p for p in _ALL_PUBLISH_PLATFORMS if p not in plats] if file_exists else []
+    can_retry_publish = bool(file_exists and (failed_platforms or (plats and "youtube" not in plats)))
+    partially_published = bool(plats and can_retry_publish)
+    already_published = bool((plats or meta_d.get("published_at") or meta_d.get("video_cleaned")) and not can_retry_publish)
+    return {
+        "already_published": already_published,
+        "partially_published": partially_published,
+        "can_retry_publish": can_retry_publish,
+        "published_platforms": sorted(plats),
+        "failed_platforms": failed_platforms,
+        "missing_platforms": missing_platforms,
+    }
+
+
 def _archive_and_schedule_48h(video_path: str, vid_id: str, result: dict, title: str, meta: dict,
                               platform_ids: Optional[dict] = None) -> None:
     """Archiwizuje .recipe.json (z ID wszystkich platform) i planuje Bramkę 48h. Wspólne dla /youtube/upload i /social/publish-all."""
@@ -194,40 +235,65 @@ def _record_publication(video_path: str, filename: str, result: dict, req: YouTu
 
     vid_id = result.get("video_id")
     if vid_id:
+        try:
+            from lol_agent.state_db import record_published_video_db
+            record_published_video_db({**pub_log, "video_format": "longform" if result.get("video_format") == "longform" else "short"})
+        except Exception:
+            pass
         _archive_and_schedule_48h(video_path, vid_id, result, result.get("title", req.title), meta)
 
     if source_path and Path(source_path).exists():
+        record_processed_source_hash(source_path, video_id=result.get("video_id"), url=result.get("url"))
         try:
-            try:
-                from lol_agent.run_lol_agent import _clip_hash, _extract_clip_stem
-            except ImportError:
-                from run_lol_agent import _clip_hash, _extract_clip_stem
-            h = _clip_hash(source_path)
-            stem = _extract_clip_stem(Path(source_path).name)
-            processed_path = Path(__file__).parent.parent / "processed_hashes.json"
-            processed = {}
-            if processed_path.exists():
-                with open(processed_path, "r", encoding="utf-8") as f:
-                    processed = json.load(f)
-            processed[h] = {
-                "source": Path(source_path).name,
-                "stem": stem,
-                "uploaded_at": datetime.now(timezone.utc).isoformat(),
-                "video_id": result.get("video_id"),
-                "url": result.get("url"),
-            }
-            _proc_tmp = processed_path.with_suffix(".tmp")
-            with open(_proc_tmp, "w", encoding="utf-8") as f:
-                json.dump(processed, f, ensure_ascii=False, indent=2)
-            os.replace(_proc_tmp, processed_path)
-        except Exception as e:
-            print(f"[Publish] Warning: could not update processed_hashes.json: {e}")
+            from lol_agent.viral_vault import stage_short_original
+            stage_short_original(
+                source_path,
+                yt_video_id=str(vid_id or ""),
+                metadata={**meta, "title": result.get("title", req.title)},
+            )
+        except Exception:
+            pass
 
     try:
         from .youtube_uploader import invalidate_publish_cache
         invalidate_publish_cache()
     except Exception:
         pass
+
+
+def record_processed_source_hash(source_path: str, video_id: Optional[str] = None, url: Optional[str] = None) -> bool:
+    """Atomowo zapisuje hash źródłowego nagrania w processed_hashes.json, blokując powtórne wybranie klipu."""
+    if not source_path or not Path(str(source_path)).exists():
+        return False
+    try:
+        try:
+            from lol_agent.run_lol_agent import _clip_hash, _extract_clip_stem
+        except ImportError:
+            from run_lol_agent import _clip_hash, _extract_clip_stem
+        sp_str = str(source_path)
+        h = _clip_hash(sp_str)
+        stem = _extract_clip_stem(Path(sp_str).name)
+        processed_path = Path(__file__).parent.parent / "processed_hashes.json"
+        with _META_LOCK:
+            processed = {}
+            if processed_path.exists():
+                with open(processed_path, "r", encoding="utf-8") as f:
+                    processed = json.load(f)
+            processed[h] = {
+                "source": Path(sp_str).name,
+                "stem": stem,
+                "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                "video_id": video_id,
+                "url": url,
+            }
+            _proc_tmp = processed_path.with_suffix(".tmp")
+            with open(_proc_tmp, "w", encoding="utf-8") as f:
+                json.dump(processed, f, ensure_ascii=False, indent=2)
+            os.replace(_proc_tmp, processed_path)
+        return True
+    except Exception as e:
+        print(f"[Publish] Warning: could not update processed_hashes.json: {e}")
+        return False
 
     try:
         if not ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("TESTING") == "true"):
@@ -400,6 +466,13 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
 
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(payload_data, f, indent=2, ensure_ascii=False)
+
+                if not os.environ.get("PYTEST_CURRENT_TEST"):
+                    try:
+                        from lol_agent.lol_performance_tracker import sync_performance_log_with_live_videos
+                        sync_performance_log_with_live_videos(videos)
+                    except Exception:
+                        pass
 
                 return payload_data
         except Exception as e:

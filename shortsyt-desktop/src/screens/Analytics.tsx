@@ -67,6 +67,7 @@ export default function Analytics() {
     channel?: ChannelInfo;
     synced_at?: string;
     videos: VideoMetric[];
+    top_videos?: VideoMetric[];
   }>({
     count: 0,
     total_views: 0,
@@ -143,71 +144,117 @@ export default function Analytics() {
     loadActiveData();
   }, [activePlatform, timeRange]);
 
-  // Derived YouTube Breakdown
-  const soloBolos = ytData.videos.filter((v) =>
-    (v.action_type || '').toLowerCase().includes('solo') || (v.action_type || '').toLowerCase().includes('1v1') || v.title.toLowerCase().includes('solo') || v.title.toLowerCase().includes('1v1')
-  );
-  const outplays = ytData.videos.filter((v) =>
-    (v.action_type || '').toLowerCase().includes('outplay') || (v.action_type || '').toLowerCase().includes('clutch') || v.title.toLowerCase().includes('outplay') || v.title.toLowerCase().includes('dive')
-  );
-  const triples = ytData.videos.filter((v) =>
-    (v.action_type || '').toLowerCase().includes('triple') || v.title.toLowerCase().includes('triple') || v.title.toLowerCase().includes('3')
-  );
-  const doubles = ytData.videos.filter((v) =>
-    (v.action_type || '').toLowerCase().includes('double') || v.title.toLowerCase().includes('double')
-  );
-  const pentakills = ytData.videos.filter((v) =>
-    (v.action_type || '').toLowerCase().includes('penta') || v.title.toLowerCase().includes('penta')
-  );
+  // Derived YouTube Breakdown — wzajemnie rozłączna klasyfikacja (suma = ytData.videos.length)
+  type FormatBucketKey = 'solo_bolo' | 'outplay' | 'triple' | 'double' | 'quadra_penta' | 'other';
 
-  const calcAvg = (list: VideoMetric[]) => {
-    if (list.length === 0) return '0';
-    const sum = list.reduce((acc, curr) => acc + (curr.views || 0), 0);
-    return Math.round(sum / list.length).toLocaleString();
+  const classifyVideoFormat = (v: VideoMetric): FormatBucketKey => {
+    const at = (v.action_type || '').toLowerCase().trim();
+    const title = (v.title || '').toLowerCase();
+    const src = at || title;
+
+    if (at.includes('solo') || at.includes('1v1') || (!at && (title.includes('solo') || title.includes('1v1')))) {
+      return 'solo_bolo';
+    }
+    if (at.includes('outplay') || at.includes('clutch') || (!at && (title.includes('outplay') || title.includes('clutch')))) {
+      return 'outplay';
+    }
+    if (at.includes('penta') || at.includes('quadra') || (!at && (title.includes('penta') || title.includes('quadra')))) {
+      return 'quadra_penta';
+    }
+    if (at.includes('triple') || (!at && title.includes('triple'))) {
+      return 'triple';
+    }
+    if (at.includes('double') || (!at && title.includes('double'))) {
+      return 'double';
+    }
+    if (src.includes('solo')) return 'solo_bolo';
+    if (src.includes('outplay') || src.includes('clutch')) return 'outplay';
+    if (src.includes('penta') || src.includes('quadra')) return 'quadra_penta';
+    if (src.includes('triple')) return 'triple';
+    if (src.includes('double')) return 'double';
+    return 'other';
   };
 
-  const actionBreakdown = [
-    {
-      type: '👑 Solo Bolo / 1v1 (High-Conversion Tier)',
-      count: soloBolos.length || learning?.action_stats?.['solo_bolo']?.count || 3,
-      avgViews: soloBolos.length > 0 ? calcAvg(soloBolos) : Math.round(learning?.action_stats?.['solo_bolo']?.avg_views || 4793).toLocaleString(),
-      perfRatio: `${learning?.action_stats?.['solo_bolo']?.performance_ratio || 1.27}x`,
-      score: '96/100 👑 PRIORYTET',
-      isPromoted: true,
-    },
-    {
-      type: '🔥 Outplay / Clutch (1v3 / Tower Dive)',
-      count: outplays.length || learning?.action_stats?.['outplay']?.count || 14,
-      avgViews: outplays.length > 0 ? calcAvg(outplays) : Math.round(learning?.action_stats?.['outplay']?.avg_views || 5125).toLocaleString(),
-      perfRatio: `${learning?.action_stats?.['outplay']?.performance_ratio || 1.36}x`,
-      score: '88/100 🔥 VIRAL',
-      isPromoted: true,
-    },
-    {
-      type: '⚔️ Triple Kill (Katarina Core Format)',
-      count: triples.length || learning?.action_stats?.['triple']?.count || 15,
-      avgViews: triples.length > 0 ? calcAvg(triples) : Math.round(learning?.action_stats?.['triple']?.avg_views || 3958).toLocaleString(),
-      perfRatio: `${learning?.action_stats?.['triple']?.performance_ratio || 1.05}x`,
-      score: '53/100 ⚡ STABILNY',
-      isPromoted: false,
-    },
-    {
-      type: '🎯 Double Kill (Fast Skirmish)',
-      count: doubles.length || learning?.action_stats?.['double']?.count || 2,
-      avgViews: doubles.length > 0 ? calcAvg(doubles) : Math.round(learning?.action_stats?.['double']?.avg_views || 4318).toLocaleString(),
-      perfRatio: `${learning?.action_stats?.['double']?.performance_ratio || 1.15}x`,
-      score: '29/100 🎯 ZWYKŁY',
-      isPromoted: false,
-    },
-    {
-      type: '💀 Pentakill (Niski CTR - Filtr Samouczenia)',
-      count: pentakills.length || learning?.action_stats?.['pentakill']?.count || 8,
-      avgViews: pentakills.length > 0 ? calcAvg(pentakills) : Math.round(learning?.action_stats?.['pentakill']?.avg_views || 1446).toLocaleString(),
-      perfRatio: `${learning?.action_stats?.['pentakill']?.performance_ratio || 0.38}x`,
-      score: '38/100 ⚠️ -12pkt KARA',
-      isPromoted: false,
-    },
+  const sortedByViews = [...ytData.videos].sort((a, b) => (b.views || 0) - (a.views || 0));
+  const topPeriodVideo = ytData.top_videos?.[0] || sortedByViews[0];
+  const topPeriodViews = topPeriodVideo?.views || 0;
+  const periodAvgViews =
+    ytData.avg_views > 0
+      ? ytData.avg_views
+      : ytData.videos.length > 0
+        ? ytData.videos.reduce((acc, v) => acc + (v.views || 0), 0) / ytData.videos.length
+        : 0;
+
+  const demotedFormats = new Set(learning?.evaluator_config?.demoted_formats || []);
+
+  const buildFormatRow = (
+    bucket: FormatBucketKey,
+    label: string,
+    learningKeys: string[]
+  ) => {
+    const list = ytData.videos.filter((v) => classifyVideoFormat(v) === bucket);
+    const count = list.length;
+    const sumViews = list.reduce((acc, v) => acc + (v.views || 0), 0);
+    const avgRaw = count > 0 ? sumViews / count : 0;
+    const maxRaw = list.reduce((m, v) => Math.max(m, v.views || 0), 0);
+    const ratio = count > 0 && periodAvgViews > 0 ? avgRaw / periodAvgViews : null;
+
+    const statMatch = learningKeys
+      .map((k) => learning?.action_stats?.[k])
+      .find((s) => s !== undefined);
+    const weightVal =
+      learningKeys
+        .map((k) => learning?.action_weights?.[k])
+        .find((w): w is number => typeof w === 'number') ??
+      statMatch?.weight ??
+      1.0;
+
+    const isDemoted = learningKeys.some((k) => demotedFormats.has(k));
+    const hasTopHit = count > 0 && topPeriodVideo && list.some((v) => v.video_id === topPeriodVideo.video_id) && topPeriodViews >= 3000;
+
+    let score = `WAGA ${weightVal.toFixed(2)}x`;
+    let isPromoted = false;
+    if (count === 0) {
+      if (isDemoted) {
+        score = `BRAK W OKRESIE • KARA -${learning?.evaluator_config?.demoted_penalty_points ?? 12}pkt`;
+      } else if (statMatch?.count) {
+        score = `BRAK W OKRESIE (hist. ${statMatch.count})`;
+      } else {
+        score = 'BRAK W OKRESIE';
+      }
+    } else if (hasTopHit) {
+      score = `🔥 MAX ${maxRaw.toLocaleString()} • WAGA ${weightVal.toFixed(2)}x`;
+      isPromoted = true;
+    } else if (isDemoted) {
+      score = `⚠️ NISKI CTR • WAGA ${weightVal.toFixed(2)}x`;
+    } else if ((ratio !== null && ratio >= 1.15) || weightVal >= 1.15) {
+      score = `👑 PRIORYTET • WAGA ${weightVal.toFixed(2)}x`;
+      isPromoted = true;
+    } else if ((ratio !== null && ratio >= 0.9) || weightVal >= 0.95) {
+      score = `⚡ STABILNY • WAGA ${weightVal.toFixed(2)}x`;
+    } else {
+      score = `🎯 NISKI • WAGA ${weightVal.toFixed(2)}x`;
+    }
+
+    return {
+      type: label,
+      count,
+      avgViews: count > 0 ? Math.round(avgRaw).toLocaleString() : '0',
+      perfRatio: ratio !== null ? `${ratio.toFixed(2)}x` : '—',
+      score,
+      isPromoted,
+    };
+  };
+
+  const baseBreakdown = [
+    buildFormatRow('solo_bolo', '👑 Solo Bolo / 1v1', ['solo_bolo']),
+    buildFormatRow('outplay', '🔥 Outplay / Clutch (1v2 / 1v3 / Dive)', ['outplay', 'clutch']),
+    buildFormatRow('triple', '⚔️ Triple Kill (Katarina Core)', ['triple']),
+    buildFormatRow('double', '🎯 Double Kill (Fast Skirmish)', ['double']),
+    buildFormatRow('quadra_penta', '💀 Quadra / Pentakill', ['quadrakill', 'pentakill']),
   ];
+  const otherRow = buildFormatRow('other', '⚡ Inne / Starsze Multikill', ['multikill']);
+  const actionBreakdown = otherRow.count > 0 ? [...baseBreakdown, otherRow] : baseBreakdown;
 
   // Dynamic CSV Export
   const handleExportCSV = () => {
@@ -357,7 +404,9 @@ export default function Analytics() {
           >
             <span className="w-2.5 h-2.5 rounded-full bg-[#E62117] inline-block" />
             <span>YouTube Shorts</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/40 text-red-300 font-mono">198 filmów</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/40 text-red-300 font-mono">
+              {(ytData.channel?.total_video_count ?? ytData.videos.length) || 0} filmów
+            </span>
           </button>
 
           <button
@@ -492,11 +541,11 @@ export default function Analytics() {
                 <Award className="w-4 h-4 text-[#C8FF3A]" />
               </div>
               <div className="mt-3">
-                <div className="text-lg font-black text-[#FFFFFF] truncate">
-                  {ytData.videos[0]?.title || 'Katarina Triple Kill'}
+                <div className="text-lg font-black text-[#FFFFFF] truncate" title={topPeriodVideo?.title}>
+                  {topPeriodVideo?.title || 'Brak danych w okresie'}
                 </div>
                 <div className="text-xs text-[#55E88D] mt-1 font-semibold">
-                  {ytData.videos[0]?.views ? `${ytData.videos[0].views.toLocaleString()} views` : 'Aktywny'}
+                  {topPeriodVideo?.views != null ? `${topPeriodVideo.views.toLocaleString()} views` : 'Brak danych'}
                 </div>
               </div>
             </div>
@@ -892,7 +941,7 @@ export default function Analytics() {
                 <div className="text-2xl font-black text-[#2ECC71]">
                   1 w chmurze
                 </div>
-                <div className="text-xs text-[#A0A7B1] mt-1">Najbliższa publikacja: sloty 11:00 &amp; 21:30 CET</div>
+                <div className="text-xs text-[#A0A7B1] mt-1">Najbliższa publikacja: sloty 15:00 &amp; 21:30 CET</div>
               </div>
             </div>
           </div>

@@ -203,8 +203,8 @@ def publish_multi_platform(
             if not ig_caption:
                 ig_tags = hashtags or tags or []
                 tag_str = " ".join(f"#{t.strip('#').lower()}" for t in ig_tags if t.strip())
-                fb_funnel = "🔗 Więcej akcji i powtórek na FB: facebook.com/Dwannellenga\n🎬 TikTok: @dwannellenga | YouTube: Dwannellenga"
-                ig_caption = f"{title}\n\n{fb_funnel}\n\n.\n.\n.\n{tag_str}".strip() if tag_str else f"{title}\n\n{fb_funnel}"
+                hook_cta = "Clean play or enemy throw? Drop your take 👇"
+                ig_caption = f"{title}\n\n{hook_cta}\n\n.\n.\n.\n{tag_str}".strip() if tag_str else f"{title}\n\n{hook_cta}"
             return upload_instagram_reel(
                 video_path=video_path,
                 caption=ig_caption,
@@ -219,7 +219,15 @@ def publish_multi_platform(
     def _do_facebook():
         try:
             fb_copy = copy_by_platform.get("facebook", {})
-            fb_caption = fb_copy.get("caption") or title
+            raw_fb_caption = (fb_copy.get("caption") or title or "").strip()
+            seen_parts = []
+            for part in raw_fb_caption.splitlines():
+                p_clean = part.strip()
+                if p_clean and p_clean not in seen_parts:
+                    seen_parts.append(p_clean)
+            fb_caption = "\n".join(seen_parts) or raw_fb_caption
+            if "#" not in fb_caption:
+                fb_caption = f"{fb_caption}\n\n#leagueoflegends #lol #reels".strip()
             return upload_facebook_reel(
                 video_path=video_path,
                 caption=fb_caption,

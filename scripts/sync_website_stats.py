@@ -6,7 +6,7 @@ TikTok, Instagram Reels, Facebook) bezpośrednio do pliku live_stats.json.
 
 Zasada: Zero śmiecenia w bazie danych — nadpisuje najświeższy stan (UPSERT snapshot),
 a dane wysyła zarówno do repozytorium (docs/), jak i do folderu stagingowego strony:
-C:\\Users\\mz100\\OneDrive\\Pulpit\\odpal\\Shortsyt\\live_stats.json
+~/OneDrive/Pulpit/odpal/Shortsyt/live_stats.json
 """
 import os
 import json
@@ -19,7 +19,7 @@ DOCS_DIR = BASE_DIR / "docs"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Folder strony stagingowej (do wrzucenia na OVH)
-DESKTOP_WEB_DIR = Path(r"C:\Users\mz100\OneDrive\Pulpit\odpal\Shortsyt")
+DESKTOP_WEB_DIR = Path.home() / "OneDrive" / "Pulpit" / "odpal" / "Shortsyt"
 
 
 def sync_stats(force_refresh_api: bool = False):

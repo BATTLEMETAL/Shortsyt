@@ -28,7 +28,7 @@ from .models import (
 from .youtube_uploader import flush_pending_comments
 
 # Routers
-from .routers import auth, pipeline, clips, youtube, calendar, learning, system, social, accounts, overnight
+from .routers import auth, pipeline, clips, youtube, calendar, learning, system, social, accounts, overnight, research, compilations
 from .routers.clips import list_clips, auto_detect_clip, scan_available_clips
 
 
@@ -155,6 +155,7 @@ tags_metadata = [
     {"name": "System", "description": "Diagnostyka sprzętowa (GPU/NVENC), tuning parametrów i benchmarking."},
     {"name": "Accounts", "description": "Zarządzanie wieloma profilami kont, tokenami i wytycznymi kontentu."},
     {"name": "Overnight", "description": "Tryb nocny: skan folderu, lokalny montaż Top 5 (bez uploadu) i rekomendacja Synapsy."},
+    {"name": "Research", "description": "Research nisz YT Shorts, dekonstrukcja montażu, anty-plagiat i podgląd pitch 9:16 DFY."},
 ]
 
 app = FastAPI(
@@ -188,6 +189,8 @@ app.include_router(system.router)
 app.include_router(social.router)
 app.include_router(accounts.router)
 app.include_router(overnight.router)
+app.include_router(research.router)
+app.include_router(compilations.router)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STATYCZNY FRONTEND SPA (Electron / Browser)
@@ -200,7 +203,7 @@ if DIST_DIR.exists() and (DIST_DIR / "index.html").exists():
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
         norm = full_path.replace("\\", "/")
-        if norm.startswith(("thumbnails/", "outputs/")):
+        if norm.startswith(("thumbnails/", "outputs/", "research/media/", "research/niche/", "compilations/")):
             raise HTTPException(status_code=404, detail="Not found")
         dist_root = DIST_DIR.resolve()
         target = (dist_root / norm).resolve()

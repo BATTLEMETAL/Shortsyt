@@ -419,7 +419,201 @@ def run_pending_checks(force_all: bool = False) -> bool:
         checked_any = True
 
     _save_pending(pending)
+    if checked_any:
+        try:
+            from lol_agent.viral_vault import evaluate_and_promote_vault
+            all_logs = _load_performance_log()
+            v_sorted = sorted(int(e.get("views") or 0) for e in all_logs if e.get("views") is not None)
+            med_v = float(v_sorted[len(v_sorted) // 2]) if v_sorted else 1593.5
+            evaluate_and_promote_vault(all_logs, channel_median_views=med_v)
+        except Exception:
+            pass
     return checked_any
+
+
+def _parse_iso_utc(ts: Any) -> Optional[Any]:
+    """Parsuje timestamp ISO8601 do timezone-aware datetime UTC."""
+    from datetime import datetime, timezone
+    if not ts or not isinstance(ts, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.strip().replace("Z", "+00:00"))
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def sync_performance_log_with_live_videos(live_videos: list) -> int:
+    """Synchronizuje istniejące wpisy performance_log.jsonl z aktualnymi metrykami YouTube.
+
+    Aktualizuje wyświetlenia, lajki, komentarze, tytuł, dostępne metryki retencji,
+    przelicza elapsed_hours, views_per_hour, result, prediction_eval i gate_48h,
+    zapisując log atomowo (tmp + os.replace).
+    """
+    from datetime import datetime, timezone
+
+    if not live_videos:
+        return 0
+
+    live_by_id: Dict[str, Dict[str, Any]] = {}
+    for lv in live_videos:
+        if isinstance(lv, dict) and lv.get("video_id"):
+            live_by_id[str(lv["video_id"])] = lv
+    if not live_by_id:
+        return 0
+
+    entries = _load_performance_log()
+    if not entries:
+        return 0
+
+    # Deduplikacja ewentualnych powtórzonych video_id z zachowaniem kolejności
+    deduped_entries: list = []
+    idx_by_vid: Dict[str, int] = {}
+    collapsed_dups = False
+    for raw_entry in entries:
+        vid = raw_entry.get("video_id")
+        if not vid:
+            deduped_entries.append(raw_entry)
+            continue
+        if vid in idx_by_vid:
+            collapsed_dups = True
+            prev = deduped_entries[idx_by_vid[vid]]
+            merged = {**prev, **{k: v for k, v in raw_entry.items() if v is not None}}
+            deduped_entries[idx_by_vid[vid]] = merged
+        else:
+            idx_by_vid[vid] = len(deduped_entries)
+            deduped_entries.append(raw_entry)
+
+    # Mediana wyświetleń kanału obliczona na aktualnych metrykach
+    live_view_samples = []
+    for e in deduped_entries:
+        vid = e.get("video_id")
+        lv = live_by_id.get(vid) if vid else None
+        if lv and lv.get("views") is not None:
+            live_view_samples.append(int(lv["views"]))
+        elif e.get("views") is not None:
+            live_view_samples.append(int(e["views"]))
+    live_view_samples.sort()
+    med_v = float(live_view_samples[len(live_view_samples) // 2]) if live_view_samples else 1640.0
+
+    now_utc = datetime.now(timezone.utc)
+    analytics_fields = (
+        "avg_view_pct",
+        "engaged_views",
+        "engaged_view_rate_pct",
+        "shares",
+        "subscribers_gained",
+        "hook_retention_pct",
+        "swiped_away_pct",
+        "completion_rate_pct",
+    )
+    updated_count = 0
+
+    for entry in deduped_entries:
+        vid = entry.get("video_id")
+        if not vid or vid not in live_by_id:
+            continue
+        lv = live_by_id[vid]
+
+        old_views = int(entry.get("views") or 0)
+        old_likes = int(entry.get("likes") or 0)
+        old_comments = int(entry.get("comments") or 0)
+        old_title = entry.get("title")
+        old_gate_ready = (entry.get("gate_48h") or {}).get("ready_48h") if isinstance(entry.get("gate_48h"), dict) else None
+        old_rwi = (entry.get("gate_48h") or {}).get("rwi_score") if isinstance(entry.get("gate_48h"), dict) else None
+
+        new_views = int(lv["views"]) if lv.get("views") is not None else old_views
+        new_likes = int(lv["likes"]) if lv.get("likes") is not None else old_likes
+        new_comments = int(lv["comments"]) if lv.get("comments") is not None else old_comments
+
+        entry["views"] = new_views
+        entry["likes"] = new_likes
+        entry["comments"] = new_comments
+        if lv.get("title"):
+            entry["title"] = lv["title"]
+
+        analytics_changed = False
+        for field in analytics_fields:
+            if lv.get(field) is not None and entry.get(field) != lv.get(field):
+                entry[field] = lv[field]
+                analytics_changed = True
+
+        pub_dt = _parse_iso_utc(entry.get("published_at") or lv.get("published_at"))
+        if pub_dt is not None:
+            elapsed_hours = round(max(0.0, (now_utc - pub_dt).total_seconds() / 3600.0), 1)
+        else:
+            elapsed_hours = float(entry.get("elapsed_hours") or 48.0)
+
+        entry["elapsed_hours"] = elapsed_hours
+        entry["views_per_hour"] = round(new_views / max(elapsed_hours, 0.1), 1)
+
+        avg_vp = entry.get("avg_view_pct")
+        hook_ret = entry.get("hook_retention_pct")
+        is_breakout = elapsed_hours <= 18.0 and (entry["views_per_hour"] >= 80.0 or new_views >= 1000)
+        is_viral_loop = avg_vp is not None and float(avg_vp) >= 95.0
+        is_high_ret = hook_ret is not None and float(hook_ret) >= 75.0 and new_views >= 1000
+
+        if new_views >= VIEWS_SUCCESS_48H or is_breakout or is_viral_loop or is_high_ret:
+            result = "SUCCESS"
+        elif elapsed_hours >= 48.0 and new_views < VIEWS_FAIL_48H:
+            result = "FAIL"
+        else:
+            result = "AVERAGE"
+        entry["result"] = result
+        entry["last_result"] = result
+
+        qs = float(entry.get("quality_score") or entry.get("initial_qa_score") or 75.0)
+        if qs >= 78.0:
+            pred_eval = "ACCURATE_HIGH" if result == "SUCCESS" else ("OVERESTIMATED" if result == "FAIL" else "NEUTRAL")
+        else:
+            pred_eval = "UNDERESTIMATED" if result == "SUCCESS" else ("ACCURATE_LOW" if result == "FAIL" else "NEUTRAL")
+        entry["prediction_eval"] = pred_eval
+
+        stats_for_gate = dict(lv)
+        for field in analytics_fields:
+            if entry.get(field) is not None and stats_for_gate.get(field) is None:
+                stats_for_gate[field] = entry[field]
+        stats_for_gate["views"] = new_views
+        stats_for_gate["likes"] = new_likes
+        stats_for_gate["comments"] = new_comments
+        stats_for_gate["elapsed_hours"] = elapsed_hours
+
+        gate_48h = evaluate_48h_post_publish_gate(entry, stats_for_gate, channel_median_views=med_v)
+        entry["gate_48h"] = gate_48h
+        if elapsed_hours >= 48.0:
+            entry["checked"] = True
+
+        changed = (
+            new_views != old_views
+            or new_likes != old_likes
+            or new_comments != old_comments
+            or entry.get("title") != old_title
+            or analytics_changed
+            or gate_48h.get("ready_48h") != old_gate_ready
+            or gate_48h.get("rwi_score") != old_rwi
+        )
+        if changed:
+            entry["checked_at"] = now_utc.replace(tzinfo=None).isoformat()
+            updated_count += 1
+
+    if updated_count > 0 or collapsed_dups:
+        tmp_path = PERFORMANCE_LOG + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            for entry in deduped_entries:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        os.replace(tmp_path, PERFORMANCE_LOG)
+
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            try:
+                try:
+                    from lol_agent.viral_vault import evaluate_and_promote_vault
+                except ImportError:
+                    from viral_vault import evaluate_and_promote_vault
+                evaluate_and_promote_vault(deduped_entries, channel_median_views=med_v)
+            except Exception:
+                pass
+
+    return updated_count
 
 
 def reconcile_and_verify_published_videos() -> int:
@@ -435,7 +629,11 @@ def reconcile_and_verify_published_videos() -> int:
 
     existing_logged_ids = set()
     for entry in _load_performance_log():
-        if entry.get("video_id"):
+        if (
+            entry.get("video_id")
+            and int(entry.get("views") or 0) > 0
+            and entry.get("gate_48h") is not None
+        ):
             existing_logged_ids.add(entry["video_id"])
 
     pending = _load_pending()
