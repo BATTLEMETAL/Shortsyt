@@ -259,7 +259,7 @@ def generate_channel_title(
             f"Disrespect Turned Into Silence 😈 {champ} Triple #Shorts",
             f"They Walked Right Into The Daggers 💀 {champ} #Shorts",
             f"Back-to-Back Resets Under Pressure 🩸 {champ} Triple #Shorts",
-            f"They Thought They Had The 3v1 Lock 💀 Clean Turnaround #Shorts",
+            f"They Thought They Had The 3v1 Lock 💀 {champ} Triple Turnaround #Shorts",
             f"One By One They Dropped ⚡ {champ} Triple Kill 🔥 #Shorts",
             f"Frame-Perfect Reset Cascade 💀 {champ} Triple #Shorts",
             f"Three Down. Clean Outplay. 💀 {champ} Triple Kill #Shorts",

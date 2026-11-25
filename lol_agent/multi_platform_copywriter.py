@@ -126,10 +126,10 @@ def _tiktok_hashtags(champion: str, action_type: str) -> List[str]:
 
     raw = [
         action_tags[0],
-        "pcgaming",
+        clean_low or "katarina",
+        "fyp",
         "leagueoflegends",
         "lolhighlights",
-        clean_low or "katarina",
     ]
     return _dedup_preserve([t for t in raw if t not in _YT_TAG_BLOCKLIST])[:5]
 

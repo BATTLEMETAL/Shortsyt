@@ -28,12 +28,8 @@ def detect_hardware() -> Tuple[str, str]:
             if r_smi.returncode == 0 and r_smi.stdout.strip():
                 gpu_name = r_smi.stdout.strip().split('\n')[0]
                 detected_encoder = 'h264_nvenc'
-            else:
-                detected_encoder = 'h264_nvenc'
-                gpu_name = 'NVIDIA GPU (NVENC)'
         except Exception:
-            detected_encoder = 'h264_nvenc'
-            gpu_name = 'NVIDIA GPU (NVENC)'
+            pass
 
     elif 'h264_amf' in enc_output:
         detected_encoder = 'h264_amf'

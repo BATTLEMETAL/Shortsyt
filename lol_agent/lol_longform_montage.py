@@ -75,7 +75,7 @@ def _run_ffmpeg_checked(cmd: List[str], timeout: float = 300.0, desc: str = "ffm
         # Bezpieczny fallback CPU
         cpu_cmd: List[str] = []
         skip_next = False
-        hw_flags = {"-c:v", "-preset", "-cq", "-rc", "-b:v", "-maxrate", "-bufsize", "-profile:v", "-spatial-aq", "-temporal-aq", "-rc-lookahead"}
+        hw_flags = {"-c:v", "-preset", "-tune", "-cq", "-rc", "-b:v", "-maxrate", "-bufsize", "-profile:v", "-spatial-aq", "-temporal-aq", "-rc-lookahead"}
         i = 0
         out_arg = cmd[-1]
         while i < len(cmd) - 1:

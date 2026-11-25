@@ -232,7 +232,6 @@ start_daily.bat
 start_evening.bat
 start_morning.bat
 disable_legacy_tasks.bat
-update_weekly_schedule.py
 render_benchmark_5clips.py
 Uruchom_Android.bat
 lol_agent/check_medal.py
