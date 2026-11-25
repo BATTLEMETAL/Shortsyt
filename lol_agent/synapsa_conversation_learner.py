@@ -210,7 +210,7 @@ def _is_shortsyt_code_file(path_str: str) -> Optional[str]:
     if ext not in _CODE_EXTS:
         return None
     idx = low.find("shortsyt\\")
-    return norm[idx + len("shortsyt\\"):] if idx >= 0 else Path(norm).name
+    return norm[idx + len("shortsyt\\"):] if idx >= 0 else norm.rsplit("\\", 1)[-1]
 
 
 def extract_lessons_from_transcripts(

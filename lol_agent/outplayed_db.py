@@ -76,7 +76,8 @@ _CACHED_INDEX: Dict[str, Dict[str, Any]] = {}
 
 
 def _norm_path_key(path_str: str) -> str:
-    return os.path.normcase(os.path.normpath(str(path_str or "").strip()))
+    raw = str(path_str or "").strip().replace("\\", "/")
+    return os.path.normpath(raw).replace("\\", "/").lower()
 
 
 def _normalize_tier_label(raw_label: Any, ev_type: Any = "") -> Optional[str]:
@@ -103,7 +104,7 @@ def _parse_json_maybe(val: Any) -> Any:
 
 def parse_outplayed_path_info(video_path: str | Path) -> Dict[str, str]:
     """Wyciąga folder meczu, znormalizowaną datę i bazowy klucz deduplikacji (_0/_1)."""
-    p = Path(video_path)
+    p = Path(str(video_path or "").strip().replace("\\", "/"))
     parent_name = p.parent.name if p.parent and p.parent.name else ""
     stem_base = _TRAILING_COPY_RE.sub("", p.stem).strip().lower()
 

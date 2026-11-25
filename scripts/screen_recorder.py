@@ -7,7 +7,6 @@ by switching the thread desktop to 'Default' on WinSta0.
 """
 import argparse
 import ctypes
-from ctypes import wintypes
 import os
 from pathlib import Path
 import subprocess
@@ -17,8 +16,56 @@ import threading
 from typing import Optional, Tuple
 
 
-u32 = ctypes.windll.user32
-g32 = ctypes.windll.gdi32
+class _Win32DllStub:
+    """Stub DLL dla testów i środowisk non-Windows (np. Linux CI)."""
+
+    def __init__(self, method_names: Tuple[str, ...]) -> None:
+        for name in method_names:
+            setattr(self, name, self._noop)
+
+    @staticmethod
+    def _noop(*_args, **_kwargs) -> int:
+        return 0
+
+
+class _WinTypeFallback:
+    """Minimalne odpowiedniki typów ctypes.wintypes na platformach non-Windows."""
+
+    DWORD = ctypes.c_uint32
+    LONG = ctypes.c_int32
+    WORD = ctypes.c_uint16
+    BOOL = ctypes.c_int
+    HWND = ctypes.c_void_p
+    LPARAM = ctypes.c_long
+
+
+if hasattr(ctypes, "windll"):
+    from ctypes import wintypes
+    u32 = ctypes.windll.user32
+    g32 = ctypes.windll.gdi32
+else:
+    wintypes = _WinTypeFallback
+    u32 = _Win32DllStub((
+        "OpenDesktopW",
+        "SetThreadDesktop",
+        "IsWindowVisible",
+        "GetWindowTextLengthW",
+        "GetWindowTextW",
+        "EnumWindows",
+        "GetWindowRect",
+        "GetSystemMetrics",
+        "GetDC",
+        "ReleaseDC",
+    ))
+    g32 = _Win32DllStub((
+        "CreateCompatibleDC",
+        "CreateCompatibleBitmap",
+        "SelectObject",
+        "BitBlt",
+        "GetDIBits",
+        "DeleteDC",
+        "DeleteObject",
+    ))
 
 # Win32 Constants
 DESKTOP_GENERIC_ALL = 0x10000000
@@ -83,6 +130,8 @@ def find_window_geometry(target_title: str) -> Optional[Tuple[int, int, int, int
     Wyszukuje widoczne okno zawierające dany ciąg znaków w tytule i zwraca (x, y, w, h).
     Wymiary w i h są zaokrąglane do liczb parzystych (wymóg H.264).
     """
+    if not hasattr(ctypes, "WINFUNCTYPE"):
+        return None
     found_hwnd = None
 
     def enum_windows_callback(hwnd, extra):
