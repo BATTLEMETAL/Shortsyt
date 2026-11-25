@@ -1199,6 +1199,30 @@ def extract_pre_conversation_value_history(
             "Kolejne poprawki kamery, buildupu i dyrektyw realnie podniosły utrzymanie widza i wyświetlenia.",
             "KEEP_CHANGE",
         )
+        _add(
+            "pre_conversation",
+            "learning_directive.json:duration_analysis",
+            "Porównanie długości: short_10_13s vs balanced_14_17s vs cinematic_18_25s",
+            "balanced_14_17s: med=1798 (score=1.22) > short=1547 > cinematic=1510",
+            "Przedział 14-17s wygrywa retencją i odsłonami z krótszymi i rozwlekłymi montażami.",
+            "KEEP_CHANGE",
+        )
+        _add(
+            "pre_conversation",
+            "learning_directive.json:action_stats",
+            "Formaty: solo_bolo (RWI=76.0) vs pentakill (RWI=63.2)",
+            "solo_bolo med=2097 (1.32x) vs pentakill med=1269 (0.80x, w=0.92)",
+            "Chaotyczne pentakille tracą klarowność w 9:16; 1v1 i szybkie trio utrzymują wyższe RWI.",
+            "KEEP_CHANGE",
+        )
+        _add(
+            "pre_conversation",
+            "learning_directive.json:title_structure",
+            "Struktury tytułów DISRESPECT_1V1 vs CLEAN_OUTPLAY vs QUESTION",
+            "DISRESPECT_1V1 ratio=1.32, CLEAN_OUTPLAY conv=7.5/1k",
+            "Krótkie prowokujące tytuły biją ogólnikowe pytania typu QUESTION.",
+            "KEEP_CHANGE",
+        )
 
     # 5. Realne korekty z user_feedback_history.json (bez wpisów api_test)
     if fp.is_file():

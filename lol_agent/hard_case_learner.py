@@ -35,7 +35,7 @@ def _save_hard_cases(items: List[Dict[str, Any]], memory_path: Optional[Path] = 
 
 
 def get_hard_case_by_source(video_path: str, memory_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    source_name = Path(video_path).name
+    source_name = Path(str(video_path).replace("\\", "/")).name
     with _LOCK:
         for item in load_hard_cases(memory_path):
             if item.get("source_name") == source_name:
@@ -56,7 +56,7 @@ def record_hard_case(
     min_hp_pct: float = 100.0,
     memory_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    source_name = Path(video_path).name
+    source_name = Path(str(video_path).replace("\\", "/")).name
     entry = {
         "source_name": source_name,
         "video_path": str(video_path),

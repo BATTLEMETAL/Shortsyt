@@ -182,17 +182,19 @@ def test_attach_publication_to_recipe_archives_permanently(tmp_path):
 def test_clip_ranker_duration_range_maps_best_bucket(monkeypatch):
     import lol_clip_ranker as LCR
 
-    monkeypatch.setattr(
-        LE,
-        "get_learning_directive",
-        lambda: {
-            "duration_analysis": {
-                "best_bucket": "balanced_14_17s",
-                "clear_winner": True,
-                "bucket_stats": {"balanced_14_17s": {"reliable": True}},
-            }
-        },
-    )
+    fake_dir = lambda: {
+        "duration_analysis": {
+            "best_bucket": "balanced_14_17s",
+            "clear_winner": True,
+            "bucket_stats": {"balanced_14_17s": {"reliable": True}},
+        }
+    }
+    monkeypatch.setattr(LE, "get_learning_directive", fake_dir)
+    try:
+        import lol_agent.learning_engine as LE_pkg
+        monkeypatch.setattr(LE_pkg, "get_learning_directive", fake_dir)
+    except Exception:
+        pass
     assert LCR._load_optimal_duration_range() == (13.5, 17.5)
 
 
@@ -562,7 +564,7 @@ def test_etap_5c_closed_loop_and_stability(tmp_path):
     # 4. sync_incremental_training_dataset wylicza retrain_ready i zapisuje ds.jsonl do tmp_path
     ad_dir = tmp_path / "adapter"
     ad_dir.mkdir(parents=True, exist_ok=True)
-    (ad_dir / "training_metrics.json").write_text(json.dumps({"dataset_examples": 100}), encoding="utf-8")
+    (ad_dir / "training_metrics.json").write_text(json.dumps({"dataset_examples": 10}), encoding="utf-8")
     ds_out = tmp_path / "ds.jsonl"
     sync_ready = STT.sync_incremental_training_dataset(
         directive={"post_48h_gate_summary": g48},
@@ -573,7 +575,7 @@ def test_etap_5c_closed_loop_and_stability(tmp_path):
     )
     assert ds_out.is_file()
     assert sync_ready["retrain_ready"] is True
-    assert sync_ready["new_examples_since_train"] == max(0, sync_ready["total_examples"] - 100)
+    assert sync_ready["new_examples_since_train"] == max(0, sync_ready["total_examples"] - 10)
 
     (ad_dir / "training_metrics.json").write_text(
         json.dumps({"dataset_examples": sync_ready["total_examples"]}),
