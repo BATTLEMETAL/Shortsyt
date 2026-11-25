@@ -48,7 +48,7 @@
 - **SQLite WAL & Cross-Platform OS File Locking:** Stores scheduled posts, publication fingerprints, and slot queues in `SQLite` (`WAL` mode, busy timeouts) guarded by OS-level locks (`msvcrt` on Windows / `fcntl` on POSIX) to eliminate duplicate uploads under concurrent workers.
 - **Multi-Network Distribution:** Automated publishing and OAuth2/PKCE lifecycle across YouTube Data API v3, TikTok Direct Post, Instagram Graph API, and Facebook Reels (`lol_agent/multi_publisher.py`, `tiktok_publisher.py`, `facebook_publisher.py`).
 
-### 6. Autonomous DFY Niche Research & Anti-Plagiarism Engine (`lol_agent/niche_research_engine.py`, `lol_agent/niche_research/`)
+### 6. Autonomous DFY Niche Research & Anti-Plagiarism Engine (`lol_agent/niche_research_engine.py`, `lol_agent/api/routers/research.py`)
 - **Multi-Source Reference Intelligence:** Searches high-performing vertical references, analyzes hook cadence and visual pacing, and outputs HTML pitch decks & production storyboards while enforcing originality/anti-plagiarism similarity thresholds (`<= 0.35`) and fallback adaptation when LoRA adapters differ from domain context.
 
 ---
@@ -69,6 +69,24 @@ flowchart LR
     API["FastAPI Server (:8765)"] <--> UI["Flikcut Studio Desktop (Electron + React + TS)"]
     API <--> QUEUE
 ```
+
+---
+
+## 🖥️ Flikcut Studio — Live Production UI
+
+| Live YouTube & Multi-Platform Telemetry | Explicit Overnight Defect Gate |
+|---|---|
+| ![Flikcut Analytics Live](docs/screenshots/flikcut_01_analytics_live.png) | ![Overnight Defect Gate](docs/screenshots/flikcut_02_overnight_defect_gate.png) |
+| *Live YouTube Data & Analytics API dashboard (`230` videos, `59.8K` / 30d views, top hit `7,064` views, format ratios, `97.4%` AVD).* | *Overnight selector replacing opaque 0–100 scores with explicit defect assertions (`offscreen`, `camera_jump`, `slow_intro`) before upload.* |
+
+| Binary Outplayed LevelDB / V8 Ingest | 16:9 Long-Form Compilations & Viral Vault |
+|---|---|
+| ![Outplayed V8 Clips](docs/screenshots/flikcut_03_outplayed_v8_clips.png) | ![Long-Form Compilations](docs/screenshots/flikcut_04_longform_compilations.png) |
+| *Zero-dependency Chromium IndexedDB `.log` decoder extracting exact kill tiers and K/D/A across 108 clips / 10 matches.* | *Zero-byte NTFS hardlink `Viral Vault` + NVENC 1080p60 weekly highlight compiler with 1280x720 thumbnail generation.* |
+
+### Autonomous DFY Niche Research & Anti-Plagiarism Engine (`RTX 3060 + Synapsa`)
+![DFY Niche Research](docs/screenshots/flikcut_05_niche_research_dfy.png)
+*Deconstructs viral niche pacing patterns (`296K+` reference views) into original storyboards with strict anti-plagiarism similarity gating (`83.7%` originality).*
 
 ---
 
