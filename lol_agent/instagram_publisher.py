@@ -9,6 +9,7 @@ import time
 import json
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 import requests
@@ -239,8 +240,31 @@ def load_instagram_token() -> Optional[Dict[str, Any]]:
     }
 
 
-def get_instagram_token_status() -> Dict[str, Any]:
-    """Zwraca czytelny status połączenia konta Instagram."""
+_IG_STATUS_CACHE_LOCK = threading.Lock()
+_IG_STATUS_CACHE: Dict[str, Any] = {"key": None, "ts": 0.0, "data": None}
+_IG_STATUS_CACHE_TTL_S = 60.0
+
+
+def invalidate_instagram_token_status_cache() -> None:
+    """Czyści buforowany status tokenu Instagram."""
+    with _IG_STATUS_CACHE_LOCK:
+        _IG_STATUS_CACHE["key"] = None
+        _IG_STATUS_CACHE["ts"] = 0.0
+        _IG_STATUS_CACHE["data"] = None
+
+
+def get_instagram_token_status(
+    force_refresh: bool = False,
+    _use_cache: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Zwraca czytelny status połączenia konta Instagram (z 60s TTL cache poza testami)."""
+    tpath = _token_path()
+    mtime_ns = 0
+    try:
+        mtime_ns = Path(tpath).stat().st_mtime_ns
+    except Exception:
+        mtime_ns = 0
+
     token_data = load_instagram_token()
     if not token_data:
         return {
@@ -251,6 +275,18 @@ def get_instagram_token_status() -> Dict[str, Any]:
 
     access_token = token_data["access_token"]
     ig_id = token_data["instagram_account_id"]
+    use_cache = (not bool(os.environ.get("PYTEST_CURRENT_TEST"))) if _use_cache is None else bool(_use_cache)
+    cache_key = (str(tpath), mtime_ns, str(access_token)[:16])
+
+    if use_cache and not force_refresh:
+        now_m = time.monotonic()
+        with _IG_STATUS_CACHE_LOCK:
+            if (
+                _IG_STATUS_CACHE["key"] == cache_key
+                and _IG_STATUS_CACHE["data"] is not None
+                and (now_m - float(_IG_STATUS_CACHE["ts"])) < _IG_STATUS_CACHE_TTL_S
+            ):
+                return dict(_IG_STATUS_CACHE["data"])
 
     try:
         url = f"{GRAPH_API_BASE}/{ig_id}"
@@ -262,7 +298,7 @@ def get_instagram_token_status() -> Dict[str, Any]:
         if resp.status_code == 200:
             res_json = resp.json()
             username = res_json.get("username", token_data.get("username", "nieznany"))
-            return {
+            result = {
                 "connected": True,
                 "valid": True,
                 "username": username,
@@ -270,13 +306,25 @@ def get_instagram_token_status() -> Dict[str, Any]:
                 "page_id": token_data.get("page_id"),
                 "message": f"Konto Instagram połączone (@{username}, ID: {ig_id})"
             }
+            if use_cache:
+                with _IG_STATUS_CACHE_LOCK:
+                    _IG_STATUS_CACHE["key"] = cache_key
+                    _IG_STATUS_CACHE["ts"] = time.monotonic()
+                    _IG_STATUS_CACHE["data"] = dict(result)
+            return result
         else:
-            return {
+            result = {
                 "connected": True,
                 "valid": False,
                 "error": resp.text,
                 "message": f"Token Instagram nieprawidłowy lub utracił uprawnienia (kod {resp.status_code})"
             }
+            if use_cache:
+                with _IG_STATUS_CACHE_LOCK:
+                    _IG_STATUS_CACHE["key"] = cache_key
+                    _IG_STATUS_CACHE["ts"] = time.monotonic()
+                    _IG_STATUS_CACHE["data"] = dict(result)
+            return result
     except Exception as e:
         return {
             "connected": True,

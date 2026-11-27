@@ -13,7 +13,7 @@ import time
 import urllib.request
 from pathlib import Path
 import threading
-from typing import Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -24,6 +24,7 @@ from ..models import ScreenRecordRequest
 from ..config import LOL_TEMP_DIR, ACCOUNTS_DIR, API_PORT
 
 router = APIRouter(tags=["System"])
+LOL_AGENT_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Globalny stan rejestratora ekranu
 _recorder_thread: Optional[threading.Thread] = None
@@ -190,43 +191,57 @@ def get_system_reliability(payload: dict = Depends(verify_token_flexible)):
     from datetime import datetime, timezone
 
     from ..youtube_uploader import get_token_status as get_yt_token_status
+    from ..youtube_analytics import get_bulk_analytics_health
     try:
         from lol_agent.tiktok_publisher import get_tiktok_token_status
         from lol_agent.instagram_publisher import get_instagram_token_status
         from lol_agent.facebook_publisher import get_facebook_token_status
         from lol_agent.temp_cleaner import get_temp_dir_stats
+        from lol_agent.scheduled_queue import summarize_queue_statuses, count_recent_tiktok_inbox
     except ImportError:
         from tiktok_publisher import get_tiktok_token_status  # type: ignore
         from instagram_publisher import get_instagram_token_status  # type: ignore
         from facebook_publisher import get_facebook_token_status  # type: ignore
         from temp_cleaner import get_temp_dir_stats  # type: ignore
+        from scheduled_queue import summarize_queue_statuses, count_recent_tiktok_inbox  # type: ignore
 
-    tokens = {
-        "youtube": _safe_token_probe(get_yt_token_status, valid_key="is_valid"),
-        "tiktok": _safe_token_probe(get_tiktok_token_status, valid_key="valid"),
-        "instagram": _safe_token_probe(get_instagram_token_status, valid_key="valid"),
-        "facebook": _safe_token_probe(get_facebook_token_status, valid_key="valid"),
+    from concurrent.futures import ThreadPoolExecutor
+
+    probe_specs = {
+        "youtube": (get_yt_token_status, "is_valid"),
+        "tiktok": (get_tiktok_token_status, "valid"),
+        "instagram": (get_instagram_token_status, "valid"),
+        "facebook": (get_facebook_token_status, "valid"),
     }
+    tokens = {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {
+            name: pool.submit(_safe_token_probe, fn, valid_key)
+            for name, (fn, valid_key) in probe_specs.items()
+        }
+        for name, fut in futures.items():
+            tokens[name] = fut.result()
 
     queue_summary = {
         "total": 0,
         "pending": 0,
         "processing": 0,
         "published": 0,
+        "published_to_inbox": 0,
         "failed": 0,
         "due_now": 0,
     }
+    tiktok_inbox_recent_14d = 0
     queue_file = ACCOUNTS_DIR / "scheduled_social_queue.json"
     if queue_file.exists():
         try:
             items = json.loads(queue_file.read_text(encoding="utf-8"))
             if isinstance(items, list):
                 now_utc = datetime.now(timezone.utc)
-                queue_summary["total"] = len(items)
+                queue_summary.update(summarize_queue_statuses(items))
+                tiktok_inbox_recent_14d = count_recent_tiktok_inbox(items, days=14)
                 for it in items:
                     st = str(it.get("status") or "pending")
-                    if st in queue_summary:
-                        queue_summary[st] += 1
                     if st == "pending" and it.get("publish_at"):
                         try:
                             pub_dt = datetime.fromisoformat(str(it["publish_at"]).replace("Z", "+00:00"))
@@ -236,8 +251,8 @@ def get_system_reliability(payload: dict = Depends(verify_token_flexible)):
                                 queue_summary["due_now"] += 1
                         except Exception:
                             pass
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[System] [WARN] Błąd odczytu kolejki ({queue_file}): {exc}")
 
     usage = shutil.disk_usage(DARK_ROOT if DARK_ROOT.exists() else Path("."))
     free_gb = round(usage.free / (1024 ** 3), 2)
@@ -275,10 +290,85 @@ def get_system_reliability(payload: dict = Depends(verify_token_flexible)):
                         "free_vram_mb": float(parts[1]),
                         "total_vram_mb": float(parts[2]),
                     }
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[System] [WARN] Błąd sondowania nvidia-smi: {exc}")
+
+    try:
+        bulk_health = get_bulk_analytics_health()
+    except Exception as exc:
+        bulk_health = {"last_error": str(exc)}
+
+    yt_cache_path = LOL_AGENT_DIR / "yt_perf_cache.json"
+    yt_integrity: Dict[str, Any] = {
+        "exists": yt_cache_path.is_file(),
+        "total_videos": 0,
+        "videos_with_avp": 0,
+        "videos_with_evr": 0,
+        "avp_coverage_pct": 0.0,
+        "evr_coverage_pct": 0.0,
+        "synced_at": None,
+        "ok": True,
+    }
+    if yt_cache_path.is_file():
+        try:
+            yc = json.loads(yt_cache_path.read_text(encoding="utf-8"))
+            yvids = yc.get("videos") if isinstance(yc, dict) else []
+            if isinstance(yvids, list):
+                tot_v = len(yvids)
+                with_avp = sum(1 for v in yvids if isinstance(v, dict) and v.get("avg_view_pct") is not None)
+                with_evr = sum(1 for v in yvids if isinstance(v, dict) and v.get("engaged_view_rate_pct") is not None)
+                avp_cov = round((with_avp / tot_v) * 100.0, 1) if tot_v > 0 else 0.0
+                evr_cov = round((with_evr / tot_v) * 100.0, 1) if tot_v > 0 else 0.0
+                yt_ok = not (tot_v >= 20 and (with_avp == 0 or with_evr == 0 or avp_cov < 30.0))
+                yt_integrity.update({
+                    "total_videos": tot_v,
+                    "videos_with_avp": with_avp,
+                    "videos_with_evr": with_evr,
+                    "avp_coverage_pct": avp_cov,
+                    "evr_coverage_pct": evr_cov,
+                    "synced_at": yc.get("synced_at") if isinstance(yc, dict) else None,
+                    "ok": yt_ok,
+                })
+        except Exception as exc:
+            yt_integrity["ok"] = False
+            yt_integrity["error"] = str(exc)
+
+    ld_path = LOL_AGENT_DIR / "learning_directive.json"
+    ld_integrity: Dict[str, Any] = {
+        "exists": ld_path.is_file(),
+        "timestamp": None,
+        "monthly_2026_with_evr": 0,
+        "monthly_2026_total": 0,
+        "retrain_ready": False,
+        "new_examples_since_train": 0,
+        "ok": True,
+    }
+    if ld_path.is_file():
+        try:
+            ld_obj = json.loads(ld_path.read_text(encoding="utf-8"))
+            if isinstance(ld_obj, dict):
+                m26 = ((ld_obj.get("learning_progression") or {}).get("monthly_2026") or {})
+                m_tot = len(m26) if isinstance(m26, dict) else 0
+                m_evr = sum(
+                    1 for row in (m26.values() if isinstance(m26, dict) else [])
+                    if isinstance(row, dict) and row.get("median_engaged_rate_pct") is not None
+                )
+                ret_st = ld_obj.get("synapsa_retrain_status") or {}
+                ld_ok = not (m_tot > 0 and m_evr == 0)
+                ld_integrity.update({
+                    "timestamp": ld_obj.get("timestamp"),
+                    "monthly_2026_with_evr": m_evr,
+                    "monthly_2026_total": m_tot,
+                    "retrain_ready": bool(ret_st.get("retrain_ready")),
+                    "new_examples_since_train": int(ret_st.get("new_examples_since_train") or 0),
+                    "ok": ld_ok,
+                })
+        except Exception as exc:
+            ld_integrity["ok"] = False
+            ld_integrity["error"] = str(exc)
 
     warnings = []
+    data_integrity_degraded = False
     for plat, tinfo in tokens.items():
         if not tinfo.get("valid"):
             warnings.append(f"Token {plat} nieważny lub brak połączenia")
@@ -289,8 +379,27 @@ def get_system_reliability(payload: dict = Depends(verify_token_flexible)):
     if queue_summary["due_now"] > 0:
         warnings.append(f"{queue_summary['due_now']} zaległych pozycji oczekuje na publikację")
 
+    if not yt_integrity["ok"]:
+        data_integrity_degraded = True
+        warnings.append(
+            f"yt_perf_cache.json ma puste metryki YouTube Analytics "
+            f"(AVP: {yt_integrity['videos_with_avp']}/{yt_integrity['total_videos']}, "
+            f"EVR: {yt_integrity['videos_with_evr']}/{yt_integrity['total_videos']}) — silnik uczenia nie ma danych retencji!"
+        )
+    if bulk_health.get("last_error"):
+        data_integrity_degraded = True
+        warnings.append(f"Ostatnie zapytanie YouTube Analytics API zgłosiło błąd: {bulk_health['last_error']}")
+    if not ld_integrity["ok"]:
+        data_integrity_degraded = True
+        warnings.append("learning_directive.json nie zawiera żadnych wartości EVR dla miesięcy 2026")
+    if tiktok_inbox_recent_14d > 0:
+        warnings.append(
+            f"TikTok: {tiktok_inbox_recent_14d} filmów z ostatnich 14 dni trafiło do INBOX "
+            "(szkice na telefonie — wymagają ręcznej publikacji lub App Review video.publish)"
+        )
+
     all_tokens_ok = all(bool(t.get("valid")) for t in tokens.values())
-    overall_status = "healthy" if (all_tokens_ok and free_gb >= 15.0) else "degraded"
+    overall_status = "healthy" if (all_tokens_ok and free_gb >= 15.0 and not data_integrity_degraded) else "degraded"
 
     return {
         "status": overall_status,
@@ -305,6 +414,12 @@ def get_system_reliability(payload: dict = Depends(verify_token_flexible)):
             "low_space_warning": free_gb < 15.0,
         },
         "gpu": gpu_info,
+        "data_integrity": {
+            "yt_perf_cache": yt_integrity,
+            "bulk_analytics": bulk_health,
+            "learning_directive": ld_integrity,
+            "tiktok_inbox_recent_14d": tiktok_inbox_recent_14d,
+        },
         "warnings": warnings,
     }
 
@@ -443,8 +558,8 @@ def _update_live_stats_remote_url(url: Optional[str]) -> None:
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             tmp.replace(path)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[System] [WARN] Błąd aktualizacji remote_control_url w {path}: {exc}")
 
 
 def _stop_tunnel_locked() -> None:
@@ -457,8 +572,8 @@ def _stop_tunnel_locked() -> None:
                     proc.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     proc.kill()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[System] [WARN] Błąd zatrzymywania procesu tunelu: {exc}")
     _tunnel_state["process"] = None
     _tunnel_state["url"] = None
     _tunnel_state["started_at"] = None

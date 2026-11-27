@@ -311,6 +311,19 @@ def _compute_watchability_subscores(metrics: Dict[str, Any], rubric: Dict[str, A
     return subscores, total
 
 
+def _crop_active_player_band(frame: np.ndarray, montage_style: str) -> np.ndarray:
+    """Wycina aktywny pas rozgrywki dla stylów z tłem rozmytym/ramką, unikając detekcji na blurze."""
+    if frame is None or frame.size == 0:
+        return frame
+    h = frame.shape[0]
+    st = (montage_style or "").upper().strip()
+    if st == "ARENA_WIDE":
+        return frame[int(h * 0.28):int(h * 0.72), :]
+    if st == "STORY_RAW_POV":
+        return frame[int(h * 0.18):int(h * 0.82), :]
+    return frame
+
+
 def inspect_rendered_short(mp4_path: str, recipe_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Ogląda gotowy plik `.mp4` klatka po klatce (OpenCV) + analizuje strumień audio (`ffmpeg`/`ffprobe`)
@@ -322,6 +335,7 @@ def inspect_rendered_short(mp4_path: str, recipe_path: Optional[str] = None) -> 
 
     rubric = load_watchability_rubric()
     recipe = _read_recipe_for_mp4(p, recipe_path=recipe_path)
+    r_style = str(recipe.get("montage_style") or "").upper().strip()
     audio_av = _probe_video_and_audio(p)
 
     cap = cv2.VideoCapture(str(p))
@@ -348,16 +362,19 @@ def inspect_rendered_short(mp4_path: str, recipe_path: Optional[str] = None) -> 
         frame0_hook_legible = True
         bright_004, bright_070, dark_004 = 0.0, 0.0, 0.0
         if fr_0 is not None and fr_07 is not None and width > 0 and height > 0:
-            y0, y1 = int(height * 0.072), int(height * 0.185)
+            y0 = int(height * (0.055 if r_style == "STORY_RAW_POV" else 0.072))
+            y1 = int(height * 0.185)
             x0, x1 = int(width * 0.16), int(width * 0.84)
             bright_004, dark_004, edge_004 = _overlay_text_scores(fr_0[y0:y1, x0:x1])
             bright_070, dark_070, edge_070 = _overlay_text_scores(fr_07[y0:y1, x0:x1])
-            if bright_070 >= 0.008 and (bright_004 / max(bright_070, 1e-6)) < 0.48:
+            if r_style == "STORY_RAW_POV" and bright_004 >= 0.35 and dark_004 >= 0.015:
+                frame0_hook_legible = True
+            elif bright_070 >= 0.008 and (bright_004 / max(bright_070, 1e-6)) < 0.48:
                 frame0_hook_legible = False
             elif dark_004 >= 0.14 and bright_004 < 0.005:
                 frame0_hook_legible = False
 
-        # 2. Pas napisów przy killach (`upper_safe` y=0.21..0.30 vs `center_blocking` y=0.47..0.60)
+        # 2. Pas napisów przy killach (`upper_safe` vs `center_blocking`, dla STORY_RAW_POV także dolny margines)
         warp_time = _import_warp_time()
         peaks_raw = recipe.get("peaks_in_clip") or []
         t_segs = recipe.get("time_segments") or []
@@ -382,7 +399,10 @@ def inspect_rendered_short(mp4_path: str, recipe_path: Optional[str] = None) -> 
                 continue
             x0, x1 = int(width * 0.20), int(width * 0.80)
             cb, cd, ce = _overlay_text_scores(kfr[int(height * 0.48):int(height * 0.60), x0:x1])
-            ub, ud, ue = _overlay_text_scores(kfr[int(height * 0.215):int(height * 0.305), x0:x1])
+            if r_style == "STORY_RAW_POV":
+                ub, ud, ue = _overlay_text_scores(kfr[int(height * 0.84):int(height * 0.92), x0:x1])
+            else:
+                ub, ud, ue = _overlay_text_scores(kfr[int(height * 0.200):int(height * 0.305), x0:x1])
             if cb >= 0.014 and cd >= 0.18 and ce >= 0.035:
                 center_hits += 1
             if ub >= 0.012 and ud >= 0.080 and ue >= 0.012:
@@ -399,17 +419,20 @@ def inspect_rendered_short(mp4_path: str, recipe_path: Optional[str] = None) -> 
         else:
             center_blocked_ratio = round(center_hits / max(1, len(sample_kill_ts)), 3)
 
-        # 3. Kadrowanie gracza (próbki w intro + całym filmie przez wspólny _check_player_in_frame)
+        # 3. Kadrowanie gracza (próbki w intro + całym filmie w aktywnym pasie danego stylu)
         player_check = _import_player_checker()
         intro_hi = min(2.8, max(0.4, cv_dur * 0.35))
         intro_ts = list(np.linspace(0.2, intro_hi, 5)) if cv_dur >= 0.6 else [0.1]
         body_ts = list(np.linspace(0.15, max(0.2, cv_dur - 0.15), 18)) if cv_dur > 0.5 else [0.05]
+        edge_lo = 0.08 if r_style == "ARENA_WIDE" else (0.12 if r_style == "STORY_RAW_POV" else 0.18)
+        edge_hi = 1.0 - edge_lo
 
         intro_vis = 0
         for ts in intro_ts:
             fr = _read_at(float(ts))
             if fr is not None:
-                ok_p, _, _ = player_check(fr)
+                band = _crop_active_player_band(fr, r_style)
+                ok_p, _, _ = player_check(band)
                 if ok_p:
                     intro_vis += 1
 
@@ -417,13 +440,14 @@ def inspect_rendered_short(mp4_path: str, recipe_path: Optional[str] = None) -> 
         for ts in body_ts:
             fr = _read_at(float(ts))
             if fr is not None and width > 0:
-                ok_p, _, mean_pt = player_check(fr)
+                band = _crop_active_player_band(fr, r_style)
+                ok_p, _, mean_pt = player_check(band)
                 if ok_p and mean_pt is not None:
                     vis_cnt += 1
                     nx = float(mean_pt[0]) / float(width)
-                    if 0.18 <= nx <= 0.82:
+                    if edge_lo <= nx <= edge_hi:
                         center_cnt += 1
-                    if nx < 0.18 or nx > 0.82:
+                    if nx < edge_lo or nx > edge_hi:
                         clip_cnt += 1
 
         # 4. Ostatnia klatka (wykrywanie czarnej końcówki)

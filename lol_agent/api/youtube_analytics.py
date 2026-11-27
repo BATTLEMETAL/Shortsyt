@@ -52,7 +52,7 @@ except ImportError:
 
 _CACHE_RETENTION: Dict[str, Dict[str, Any]] = {}
 _CACHE_CHANNEL_RETENTION: Dict[str, Any] = {"timestamp": 0.0, "data": None}
-_CACHE_BULK_VIDEOS: Dict[str, Any] = {"timestamp": 0.0, "days": None, "data": None}
+_CACHE_BULK_VIDEOS: Dict[str, Any] = {"timestamp": 0.0, "days": None, "data": None, "last_error": None}
 _CACHE_AUDIENCE_INSIGHTS: Dict[str, Any] = {"timestamp": 0.0, "data": None}
 
 
@@ -62,9 +62,22 @@ def invalidate_analytics_cache() -> None:
     _CACHE_CHANNEL_RETENTION["timestamp"] = 0.0
     _CACHE_CHANNEL_RETENTION["data"] = None
     _CACHE_BULK_VIDEOS["timestamp"] = 0.0
+    _CACHE_BULK_VIDEOS["days"] = None
     _CACHE_BULK_VIDEOS["data"] = None
+    _CACHE_BULK_VIDEOS["last_error"] = None
     _CACHE_AUDIENCE_INSIGHTS["timestamp"] = 0.0
     _CACHE_AUDIENCE_INSIGHTS["data"] = None
+
+
+def get_bulk_analytics_health() -> Dict[str, Any]:
+    """Zwraca stan zdrowia ostatniego zapytania zbiorczego YouTube Analytics API."""
+    data = _CACHE_BULK_VIDEOS.get("data")
+    return {
+        "cached_videos": len(data) if isinstance(data, dict) else 0,
+        "days": _CACHE_BULK_VIDEOS.get("days"),
+        "timestamp": _CACHE_BULK_VIDEOS.get("timestamp", 0.0),
+        "last_error": _CACHE_BULK_VIDEOS.get("last_error"),
+    }
 
 
 def _get_yt_token_path() -> Path:
@@ -397,10 +410,30 @@ def fetch_channel_retention_overview(max_videos: int = 35) -> Dict[str, Any]:
     return result
 
 
+def _build_analytics_date_windows(start_date: str, end_date: str) -> List[Tuple[str, str]]:
+    """Dzieli zakres dat na niezachodzące okna roczne (<= 200 wyników/okno w YTA v2 bez startIndex=201)."""
+    try:
+        sd = datetime.strptime(start_date, "%Y-%m-%d")
+        ed = datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        return [(start_date, end_date)]
+    if ed <= sd or (ed - sd).days <= 366:
+        return [(start_date, end_date)]
+
+    windows: List[Tuple[str, str]] = []
+    for yr in range(sd.year, ed.year + 1):
+        w_start = sd if yr == sd.year else datetime(yr, 1, 1)
+        w_end = ed if yr == ed.year else datetime(yr, 12, 31)
+        if w_start <= w_end:
+            windows.append((w_start.strftime("%Y-%m-%d"), w_end.strftime("%Y-%m-%d")))
+    return windows or [(start_date, end_date)]
+
+
 def fetch_bulk_video_analytics(days: int = 3650, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
     """
-    Pobiera w jednym zapytaniu zbiorcze metryki YouTube Analytics API v2 dla filmów na kanale
+    Pobiera zbiorcze metryki YouTube Analytics API v2 dla filmów na kanale
     (engagedViews, averageViewPercentage, averageViewDuration, estimatedMinutesWatched, shares, subscribersGained).
+    Dla zakresów wieloletnich dzieli zapytania na roczne okna dat, omijając limit HTTP 400 przy startIndex=201.
     Zwraca słownik {video_id: {...}}. Buforowane przez 10 minut.
     """
     global _CACHE_BULK_VIDEOS
@@ -415,6 +448,7 @@ def fetch_bulk_video_analytics(days: int = 3650, force_refresh: bool = False) ->
 
     _, yta, channel_id = _get_services()
     if not yta or not channel_id:
+        _CACHE_BULK_VIDEOS["last_error"] = "Brak autoryzacji lub channel_id dla YouTube Analytics API"
         return {}
 
     end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -427,19 +461,20 @@ def fetch_bulk_video_analytics(days: int = 3650, force_refresh: bool = False) ->
         "views,engagedViews,averageViewDuration,averageViewPercentage,"
         "estimatedMinutesWatched,likes,dislikes,comments,shares,subscribersGained,subscribersLost"
     )
-    out: Dict[str, Dict[str, Any]] = {}
-    start_index = 1
-    try:
-        while True:
+    windows = _build_analytics_date_windows(start_date, end_date)
+    agg: Dict[str, Dict[str, Any]] = {}
+    window_errors: List[str] = []
+
+    for w_start, w_end in windows:
+        try:
             res = yta.reports().query(
                 ids=f"channel=={channel_id}",
-                startDate=start_date,
-                endDate=end_date,
+                startDate=w_start,
+                endDate=w_end,
                 metrics=metrics_str,
                 dimensions="video",
                 sort="-views",
                 maxResults=200,
-                startIndex=start_index,
             ).execute()
             rows = res.get("rows", []) or []
             cols = [c["name"] for c in res.get("columnHeaders", [])]
@@ -451,34 +486,91 @@ def fetch_bulk_video_analytics(days: int = 3650, force_refresh: bool = False) ->
                 vw = int(row_map.get("views") or 0)
                 eng_vw = int(row_map.get("engagedViews") or 0)
                 est_min = float(row_map.get("estimatedMinutesWatched") or 0.0)
-                out[vid] = {
-                    "views": vw,
-                    "engaged_views": eng_vw,
-                    "engaged_view_rate_pct": round((eng_vw / vw) * 100.0, 1) if vw > 0 else 0.0,
-                    "avg_view_duration_s": round(float(row_map.get("averageViewDuration") or 0.0), 1),
-                    "avg_view_pct": round(float(row_map.get("averageViewPercentage") or 0.0), 1),
-                    "est_minutes_watched": round(est_min, 1),
-                    "watch_time_hours": round(est_min / 60.0, 2),
-                    "likes": int(row_map.get("likes") or 0),
-                    "dislikes": int(row_map.get("dislikes") or 0),
-                    "comments": int(row_map.get("comments") or 0),
-                    "shares": int(row_map.get("shares") or 0),
-                    "subscribers_gained": int(row_map.get("subscribersGained") or 0),
-                    "subscribers_lost": int(row_map.get("subscribersLost") or 0),
-                }
-            if len(rows) < 200:
-                break
-            start_index += 200
-    except Exception as e:
-        print(f"[YouTubeAnalytics] Błąd pobierania bulk video analytics: {e}")
-        if _CACHE_BULK_VIDEOS["data"] is not None:
-            return _CACHE_BULK_VIDEOS["data"]
-        return {}
+                avp = float(row_map.get("averageViewPercentage") or 0.0)
+                avds = float(row_map.get("averageViewDuration") or 0.0)
 
-    _CACHE_BULK_VIDEOS["timestamp"] = now
-    _CACHE_BULK_VIDEOS["days"] = days
-    _CACHE_BULK_VIDEOS["data"] = out
-    return out
+                acc = agg.setdefault(
+                    vid,
+                    {
+                        "views": 0,
+                        "engaged_views": 0,
+                        "est_minutes_watched": 0.0,
+                        "likes": 0,
+                        "dislikes": 0,
+                        "comments": 0,
+                        "shares": 0,
+                        "subscribers_gained": 0,
+                        "subscribers_lost": 0,
+                        "_avp_weighted_sum": 0.0,
+                        "_avds_weighted_sum": 0.0,
+                        "_avp_weight": 0.0,
+                        "_avp_raw_sum": 0.0,
+                        "_avds_raw_sum": 0.0,
+                        "_row_count": 0,
+                    },
+                )
+                acc["views"] += vw
+                acc["engaged_views"] += eng_vw
+                acc["est_minutes_watched"] += est_min
+                acc["likes"] += int(row_map.get("likes") or 0)
+                acc["dislikes"] += int(row_map.get("dislikes") or 0)
+                acc["comments"] += int(row_map.get("comments") or 0)
+                acc["shares"] += int(row_map.get("shares") or 0)
+                acc["subscribers_gained"] += int(row_map.get("subscribersGained") or 0)
+                acc["subscribers_lost"] += int(row_map.get("subscribersLost") or 0)
+                if vw > 0:
+                    acc["_avp_weighted_sum"] += avp * vw
+                    acc["_avds_weighted_sum"] += avds * vw
+                    acc["_avp_weight"] += vw
+                acc["_avp_raw_sum"] += avp
+                acc["_avds_raw_sum"] += avds
+                acc["_row_count"] += 1
+        except Exception as e:
+            err_msg = f"{w_start}..{w_end}: {e}"
+            window_errors.append(err_msg)
+            print(f"[YouTubeAnalytics] Błąd pobierania bulk video analytics ({err_msg})")
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for vid, acc in agg.items():
+        tot_views = int(acc["views"])
+        tot_eng = int(acc["engaged_views"])
+        tot_min = float(acc["est_minutes_watched"])
+        if acc["_avp_weight"] > 0:
+            avg_avp = acc["_avp_weighted_sum"] / acc["_avp_weight"]
+            avg_avds = acc["_avds_weighted_sum"] / acc["_avp_weight"]
+        elif acc["_row_count"] > 0:
+            avg_avp = acc["_avp_raw_sum"] / acc["_row_count"]
+            avg_avds = acc["_avds_raw_sum"] / acc["_row_count"]
+        else:
+            avg_avp = 0.0
+            avg_avds = 0.0
+
+        out[vid] = {
+            "views": tot_views,
+            "engaged_views": tot_eng,
+            "engaged_view_rate_pct": round((tot_eng / tot_views) * 100.0, 1) if tot_views > 0 else 0.0,
+            "avg_view_duration_s": round(avg_avds, 1),
+            "avg_view_pct": round(avg_avp, 1),
+            "est_minutes_watched": round(tot_min, 1),
+            "watch_time_hours": round(tot_min / 60.0, 2),
+            "likes": int(acc["likes"]),
+            "dislikes": int(acc["dislikes"]),
+            "comments": int(acc["comments"]),
+            "shares": int(acc["shares"]),
+            "subscribers_gained": int(acc["subscribers_gained"]),
+            "subscribers_lost": int(acc["subscribers_lost"]),
+        }
+
+    _CACHE_BULK_VIDEOS["last_error"] = "; ".join(window_errors) if window_errors else None
+    if out:
+        _CACHE_BULK_VIDEOS["timestamp"] = now
+        _CACHE_BULK_VIDEOS["days"] = days
+        _CACHE_BULK_VIDEOS["data"] = out
+        return out
+
+    if _CACHE_BULK_VIDEOS["data"] is not None:
+        return _CACHE_BULK_VIDEOS["data"]
+    return {}
 
 
 def fetch_channel_audience_insights(force_refresh: bool = False) -> Dict[str, Any]:

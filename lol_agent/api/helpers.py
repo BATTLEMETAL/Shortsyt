@@ -316,6 +316,47 @@ def _dark_load_json(filename: str) -> dict:
         return {}
 
 
+def _load_cached_yt_metrics_by_id(cache_file: Path) -> dict[str, dict]:
+    """Wczytuje poprzednio zapisane metryki filmów po video_id, aby nie zerować ich przy awarii bulk API."""
+    if not cache_file.exists():
+        return {}
+    try:
+        cached = json.loads(cache_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[Analytics] Warning: nie udało się wczytać poprzedniego cache ({cache_file}): {e}")
+        return {}
+    videos = cached.get("videos", []) if isinstance(cached, dict) else []
+    return {
+        v["video_id"]: v
+        for v in videos
+        if isinstance(v, dict) and v.get("video_id")
+    }
+
+
+def _merge_yt_analytics_metrics(ya: dict, prev_v: dict, ret_str: Optional[str]) -> dict:
+    """Scala świeże metryki YouTube Analytics z poprzednim cache, chroniąc przed nadpisaniem przez None."""
+    fields = (
+        "avg_view_pct",
+        "engaged_views",
+        "engaged_view_rate_pct",
+        "watch_time_hours",
+        "shares",
+        "subscribers_gained",
+    )
+    merged: dict = {}
+    for key in fields:
+        val = ya.get(key) if isinstance(ya, dict) else None
+        merged[key] = val if val is not None else (prev_v.get(key) if isinstance(prev_v, dict) else None)
+
+    resolved_ret = ret_str
+    if not resolved_ret and merged["avg_view_pct"] is not None:
+        resolved_ret = f"{float(merged['avg_view_pct']):.1f}%"
+    if not resolved_ret and isinstance(prev_v, dict):
+        resolved_ret = prev_v.get("retention")
+    merged["retention"] = resolved_ret
+    return merged
+
+
 def _sync_youtube_analytics(force: bool = False) -> dict:
     """Synchronizuje na żywo statystyki kanału i filmów z YouTube Data API."""
     from .youtube_uploader import _load_credentials
@@ -323,16 +364,16 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
     agent_dir = Path(__file__).parent.parent
     cache_file = agent_dir / "yt_perf_cache.json"
 
-    # Check cache TTL (2 minutes)
+    # Check cache TTL (10 minutes — zsynchronizowane z _tracker_loop 600s)
     if not force and cache_file.exists():
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cached = json.load(f)
                 cached_time = cached.get("synced_timestamp", 0)
-                if time.time() - cached_time < 120 and cached.get("videos"):
+                if time.time() - cached_time < 600 and cached.get("videos"):
                     return cached
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Analytics] Cache read warning ({cache_file}): {e}")
 
     # Try live fetch from YouTube
     creds = _load_credentials()
@@ -370,13 +411,15 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                     if not page_token:
                         break
 
-                # Pobierz zbiorcze metryki YouTube Analytics API v2 jednym zapytaniem
+                prev_by_id = _load_cached_yt_metrics_by_id(cache_file)
+
+                # Pobierz zbiorcze metryki YouTube Analytics API v2 (okna roczne)
                 bulk_yta = {}
                 try:
                     from .youtube_analytics import fetch_bulk_video_analytics
                     bulk_yta = fetch_bulk_video_analytics(force_refresh=force)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[Analytics] Bulk YTA sync error: {e}")
 
                 # Wczytaj mapowanie video_id z published_videos.jsonl dla precyzyjnych metadanych
                 local_meta_by_id = {}
@@ -421,6 +464,7 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                         initial_qa = loc_meta.get("initial_qa_score")
 
                         ya = bulk_yta.get(vid, {})
+                        prev_v = prev_by_id.get(vid, {})
                         ret_str = None
                         if idx < 10:
                             try:
@@ -429,11 +473,10 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                                 r_data = fetch_video_retention_data(vid, duration_s=r_dur)
                                 if r_data and r_data.get("status") == "success" and r_data.get("hook_retention_pct"):
                                     ret_str = f"{r_data.get('hook_retention_pct'):.1f}%"
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                print(f"[Analytics] Retention fetch error ({vid}): {e}")
 
-                        if not ret_str and ya.get("avg_view_pct") is not None:
-                            ret_str = f"{float(ya['avg_view_pct']):.1f}%"
+                        merged_ya = _merge_yt_analytics_metrics(ya, prev_v, ret_str)
 
                         videos.append({
                             "video_id": vid,
@@ -443,13 +486,13 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                             "views": views,
                             "likes": likes,
                             "comments": comments,
-                            "retention": ret_str,
-                            "avg_view_pct": ya.get("avg_view_pct"),
-                            "engaged_views": ya.get("engaged_views"),
-                            "engaged_view_rate_pct": ya.get("engaged_view_rate_pct"),
-                            "watch_time_hours": ya.get("watch_time_hours"),
-                            "shares": ya.get("shares"),
-                            "subscribers_gained": ya.get("subscribers_gained"),
+                            "retention": merged_ya["retention"],
+                            "avg_view_pct": merged_ya["avg_view_pct"],
+                            "engaged_views": merged_ya["engaged_views"],
+                            "engaged_view_rate_pct": merged_ya["engaged_view_rate_pct"],
+                            "watch_time_hours": merged_ya["watch_time_hours"],
+                            "shares": merged_ya["shares"],
+                            "subscribers_gained": merged_ya["subscribers_gained"],
                             "initial_qa_score": initial_qa,
                             "timestamp": pub_at,
                             "published_at": pub_at,
@@ -471,8 +514,8 @@ def _sync_youtube_analytics(force: bool = False) -> dict:
                     try:
                         from lol_agent.lol_performance_tracker import sync_performance_log_with_live_videos
                         sync_performance_log_with_live_videos(videos)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[Analytics] Performance log sync warning: {e}")
 
                 return payload_data
         except Exception as e:

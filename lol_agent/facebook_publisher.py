@@ -10,6 +10,7 @@ import os
 import sys
 import time
 import json
+import threading
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import requests
@@ -72,8 +73,31 @@ def load_facebook_token() -> Optional[Dict[str, Any]]:
     }
 
 
-def get_facebook_token_status() -> Dict[str, Any]:
-    """Zwraca czytelny status połączenia i uprawnień strony Facebook."""
+_FB_STATUS_CACHE_LOCK = threading.Lock()
+_FB_STATUS_CACHE: Dict[str, Any] = {"key": None, "ts": 0.0, "data": None}
+_FB_STATUS_CACHE_TTL_S = 60.0
+
+
+def invalidate_facebook_token_status_cache() -> None:
+    """Czyści buforowany status tokenu Facebook."""
+    with _FB_STATUS_CACHE_LOCK:
+        _FB_STATUS_CACHE["key"] = None
+        _FB_STATUS_CACHE["ts"] = 0.0
+        _FB_STATUS_CACHE["data"] = None
+
+
+def get_facebook_token_status(
+    force_refresh: bool = False,
+    _use_cache: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Zwraca czytelny status połączenia i uprawnień strony Facebook (z 60s TTL cache poza testami)."""
+    tpath = _token_path()
+    mtime_ns = 0
+    try:
+        mtime_ns = Path(tpath).stat().st_mtime_ns
+    except Exception:
+        mtime_ns = 0
+
     token_data = load_facebook_token()
     if not token_data:
         return {
@@ -85,6 +109,18 @@ def get_facebook_token_status() -> Dict[str, Any]:
 
     access_token = token_data["access_token"]
     page_id = token_data["page_id"]
+    use_cache = (not bool(os.environ.get("PYTEST_CURRENT_TEST"))) if _use_cache is None else bool(_use_cache)
+    cache_key = (str(tpath), mtime_ns, str(access_token)[:16])
+
+    if use_cache and not force_refresh:
+        now_m = time.monotonic()
+        with _FB_STATUS_CACHE_LOCK:
+            if (
+                _FB_STATUS_CACHE["key"] == cache_key
+                and _FB_STATUS_CACHE["data"] is not None
+                and (now_m - float(_FB_STATUS_CACHE["ts"])) < _FB_STATUS_CACHE_TTL_S
+            ):
+                return dict(_FB_STATUS_CACHE["data"])
 
     try:
         url = f"{GRAPH_API_BASE}/{page_id}"
@@ -97,7 +133,7 @@ def get_facebook_token_status() -> Dict[str, Any]:
             res_json = resp.json()
             page_name = res_json.get("name", token_data.get("page_name", "Fanpage"))
             can_publish = bool(token_data.get("can_publish_posts", True))
-            return {
+            result = {
                 "connected": True,
                 "valid": True,
                 "can_publish": can_publish,
@@ -106,14 +142,26 @@ def get_facebook_token_status() -> Dict[str, Any]:
                 "fan_count": res_json.get("fan_count", 0),
                 "message": f"Strona Facebook połączona ({page_name}, ID: {page_id})"
             }
+            if use_cache:
+                with _FB_STATUS_CACHE_LOCK:
+                    _FB_STATUS_CACHE["key"] = cache_key
+                    _FB_STATUS_CACHE["ts"] = time.monotonic()
+                    _FB_STATUS_CACHE["data"] = dict(result)
+            return result
         else:
-            return {
+            result = {
                 "connected": True,
                 "valid": False,
                 "can_publish": False,
                 "error": resp.text,
                 "message": f"Token Facebook nieprawidłowy (kod {resp.status_code})"
             }
+            if use_cache:
+                with _FB_STATUS_CACHE_LOCK:
+                    _FB_STATUS_CACHE["key"] = cache_key
+                    _FB_STATUS_CACHE["ts"] = time.monotonic()
+                    _FB_STATUS_CACHE["data"] = dict(result)
+            return result
     except Exception as e:
         return {
             "connected": True,

@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -45,9 +46,33 @@ except ImportError:
 
 router = APIRouter(tags=["Files", "Clips"])
 
+_CLIPS_CACHE_LOCK = threading.Lock()
+_CLIPS_SCAN_CACHE: dict[str, tuple[float, list]] = {}
+_CLIPS_SCAN_TTL_S = 15.0
+_VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi"}
 
-def scan_available_clips(folder: Optional[str] = None) -> list:
-    """Skanuje foldery z nagraniami (Outplayed / Medal / custom) i zwraca listę metadanych klipów."""
+
+def invalidate_clips_cache() -> None:
+    """Czyści bufor skanu dostępnych klipów po zmianach na dysku (delete/render/refresh)."""
+    with _CLIPS_CACHE_LOCK:
+        _CLIPS_SCAN_CACHE.clear()
+
+
+def scan_available_clips(
+    folder: Optional[str] = None,
+    force_refresh: bool = False,
+    _use_cache: Optional[bool] = None,
+) -> list:
+    """Skanuje foldery z nagraniami (Outplayed / Medal / custom) jednym os.walk z 15s TTL cache."""
+    use_cache = (not bool(os.environ.get("PYTEST_CURRENT_TEST"))) if _use_cache is None else bool(_use_cache)
+    folder_key = str(Path(folder).resolve()).lower() if folder else "__default__"
+    if use_cache and not force_refresh:
+        now_m = time.monotonic()
+        with _CLIPS_CACHE_LOCK:
+            cached_entry = _CLIPS_SCAN_CACHE.get(folder_key)
+            if cached_entry and (now_m - cached_entry[0]) < _CLIPS_SCAN_TTL_S:
+                return [dict(c) for c in cached_entry[1]]
+
     try:
         try:
             from lol_agent.run_lol_agent import check_duplicate_clip
@@ -87,10 +112,14 @@ def scan_available_clips(folder: Optional[str] = None) -> list:
     for s_dir in search_dirs:
         if not s_dir.exists():
             continue
-        for ext in ["*.mp4", "*.mov", "*.mkv", "*.avi"]:
-            for f in s_dir.rglob(ext):
-                if any("recently deleted" in part.lower() for part in f.parts):
+        for root, dirs, files in os.walk(s_dir):
+            dirs[:] = [d for d in dirs if "recently deleted" not in d.lower()]
+            if "recently deleted" in root.lower():
+                continue
+            for fname in files:
+                if Path(fname).suffix.lower() not in _VIDEO_EXTS:
                     continue
+                f = Path(root) / fname
                 full_path_str = str(f.resolve())
                 if full_path_str in seen_paths:
                     continue
@@ -199,12 +228,17 @@ def scan_available_clips(folder: Optional[str] = None) -> list:
                 })
 
     clips.sort(key=lambda x: x["modified"], reverse=True)
+    if use_cache:
+        with _CLIPS_CACHE_LOCK:
+            _CLIPS_SCAN_CACHE[folder_key] = (time.monotonic(), [dict(c) for c in clips])
     return clips
 
 
 @router.get("/clips")
-def list_clips(folder: Optional[str] = None, payload: dict = Depends(verify_token)):
+def list_clips(folder: Optional[str] = None, refresh: bool = False, payload: dict = Depends(verify_token)):
     """Lista plików MP4 w folderach nagrań (Outplayed / Medal lub podany folder) wraz ze statusem publikacji (dedup)."""
+    if refresh:
+        invalidate_clips_cache()
     return {"clips": scan_available_clips(folder)}
 
 
@@ -356,7 +390,7 @@ def list_outputs(payload: dict = Depends(verify_token)):
         from ...scheduled_queue import QUEUE_FILE, _load_queue
         if QUEUE_FILE.exists():
             for q_it in _load_queue():
-                if q_it.get("status") not in ("pending", "processing", "published"):
+                if q_it.get("status") not in ("pending", "processing", "published", "published_to_inbox"):
                     continue
                 q_vp = str(q_it.get("video_path") or "").strip()
                 if not q_vp:
@@ -428,6 +462,7 @@ def delete_output(filename: str, payload: dict = Depends(verify_token)):
     except Exception:
         pass
 
+    invalidate_clips_cache()
     return {"status": "deleted", "filename": filename}
 
 

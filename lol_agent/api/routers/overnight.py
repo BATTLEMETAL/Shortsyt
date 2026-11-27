@@ -29,6 +29,12 @@ class OvernightStartRequest(BaseModel):
     use_local_ai: bool = True
     tier_filter: Literal["auto", "all", "any_kill", "double_plus", "triple_plus", "quadra_plus"] = "auto"
     only_channel_champion: bool = True
+    montage_preset: Literal["auto_fallback", "arena_wide", "beat_velocity", "story_raw_pov", "compare_all_3"] = "compare_all_3"
+
+
+class OvernightRestyleRequest(BaseModel):
+    output_filename: str
+    target_style: Literal["ARENA_WIDE", "BEAT_VELOCITY", "STORY_RAW_POV"]
 
 
 @router.post("/overnight/start")
@@ -43,6 +49,7 @@ def overnight_start(req: OvernightStartRequest, payload: dict = Depends(verify_t
         use_local_ai=req.use_local_ai,
         tier_filter=req.tier_filter,
         only_channel_champion=req.only_channel_champion,
+        montage_preset=req.montage_preset,
     )
     if not ok:
         raise HTTPException(
@@ -54,8 +61,25 @@ def overnight_start(req: OvernightStartRequest, payload: dict = Depends(verify_t
         "top_n": req.top_n,
         "tier_filter": req.tier_filter,
         "only_channel_champion": req.only_channel_champion,
+        "montage_preset": req.montage_preset,
         "auto_publish": False,
     }
+
+
+@router.post("/overnight/restyle")
+def overnight_restyle(req: OvernightRestyleRequest, payload: dict = Depends(verify_token)):
+    """Przerenderowuje wybrany short z nocnego batcha w innym stylu montażu (ARENA_WIDE / BEAT_VELOCITY / STORY_RAW_POV)."""
+    try:
+        return _ob.restyle_overnight_short(
+            output_filename=req.output_filename,
+            target_style=req.target_style,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @router.get("/overnight/catalog")
@@ -106,6 +130,7 @@ def overnight_latest(payload: dict = Depends(verify_token)):
     """Zwraca manifest ostatniej paczki nocnej wzbogacony o stan publikacji/kolejki i istnienie pliku .mp4."""
     import json
     from pathlib import Path
+    from ..config import LOL_OUTPUT_DIR, LOL_TEMP_DIR
     from ..helpers import _load_meta
 
     batch = _ob.load_latest_overnight_batch()
@@ -135,7 +160,7 @@ def overnight_latest(payload: dict = Depends(verify_token)):
         from ...scheduled_queue import QUEUE_FILE, _load_queue
         if QUEUE_FILE.exists():
             for q_it in _load_queue():
-                if q_it.get("status") not in ("pending", "processing", "published"):
+                if q_it.get("status") not in ("pending", "processing", "published", "published_to_inbox"):
                     continue
                 q_name = Path(str(q_it.get("video_path") or "")).name.lower()
                 if not q_name:
@@ -168,6 +193,41 @@ def overnight_latest(payload: dict = Depends(verify_token)):
                 extra_plats.add("youtube")
 
         file_exists = bool(out_path and Path(out_path).is_file())
+        if not file_exists and out_name:
+            for d in (LOL_TEMP_DIR, LOL_OUTPUT_DIR):
+                cand_p = Path(d) / out_name
+                if cand_p.is_file():
+                    it["output_path"] = str(cand_p)
+                    file_exists = True
+                    break
+        enriched_alts = []
+        for alt in (it.get("alternate_renders") or []):
+            if not isinstance(alt, dict):
+                continue
+            alt_copy = dict(alt)
+            alt_fn = Path(str(alt_copy.get("output_filename") or "")).name
+            alt_p = str(alt_copy.get("output_path") or "")
+            alt_exists = bool(alt_p and Path(alt_p).is_file())
+            if not alt_exists and alt_fn:
+                for d in (LOL_TEMP_DIR, LOL_OUTPUT_DIR):
+                    cand_alt = Path(d) / alt_fn
+                    if cand_alt.is_file():
+                        alt_copy["output_path"] = str(cand_alt)
+                        alt_exists = True
+                        break
+            alt_copy["file_exists"] = alt_exists
+            if alt_fn and not alt_copy.get("thumbnail_filename"):
+                th_stem = f"{Path(alt_fn).stem}_thumb.jpg"
+                for d in (LOL_TEMP_DIR, LOL_OUTPUT_DIR):
+                    cand_th = Path(d) / th_stem
+                    if cand_th.is_file():
+                        alt_copy["thumbnail_path"] = str(cand_th)
+                        alt_copy["thumbnail_filename"] = th_stem
+                        break
+            enriched_alts.append(alt_copy)
+        if enriched_alts:
+            it["alternate_renders"] = enriched_alts
+
         pub_flags = compute_publish_status_flags(
             meta,
             queued_plats=extra_plats,

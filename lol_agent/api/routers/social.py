@@ -13,7 +13,7 @@ import urllib.parse
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -42,6 +42,30 @@ from ..youtube_uploader import get_token_status as get_yt_token_status
 
 router = APIRouter(tags=["Social & Multi-Platform"])
 PUBLISHED_VIDEOS_PATH = Path(__file__).resolve().parent.parent.parent / "published_videos.jsonl"
+LATEST_BATCH_FILE = Path(__file__).resolve().parent.parent.parent / "overnight_batches" / "latest_batch.json"
+
+
+def _resolve_publish_recommendation(filename: str, meta: Dict[str, Any]) -> Tuple[Optional[bool], List[str]]:
+    """Odczytuje werdykt bramki publikacji z .meta.json lub z manifestu latest_batch.json."""
+    if isinstance(meta, dict) and meta.get("publish_recommended") is not None:
+        reasons = [str(r) for r in (meta.get("publish_block_reasons") or []) if r]
+        return bool(meta.get("publish_recommended")), reasons
+    target = str(filename or "").strip()
+    if not target or not LATEST_BATCH_FILE.is_file():
+        return None, []
+    try:
+        batch = json.loads(LATEST_BATCH_FILE.read_text(encoding="utf-8"))
+        for it in (batch.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            if str(it.get("output_filename") or "") == target and it.get("publish_recommended") is not None:
+                return bool(it.get("publish_recommended")), [str(r) for r in (it.get("publish_block_reasons") or []) if r]
+            for alt in (it.get("alternate_renders") or []):
+                if isinstance(alt, dict) and str(alt.get("output_filename") or "") == target and alt.get("publish_recommended") is not None:
+                    return bool(alt.get("publish_recommended")), [str(r) for r in (alt.get("publish_block_reasons") or []) if r]
+    except Exception as exc:
+        print(f"[Social] [WARN] Błąd odczytu manifestu {LATEST_BATCH_FILE}: {exc}")
+    return None, []
 
 
 @router.get("/social/status")
@@ -560,6 +584,16 @@ async def publish_all(
 
     meta = _load_meta(filename) or {}
 
+    pub_rec, block_reasons = _resolve_publish_recommendation(filename, meta)
+    if pub_rec is False and not req.force_publish:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Klip odradzany przez bramkę jakości ({', '.join(block_reasons) or 'publish_recommended=False'}). "
+                f"Aby mimo to opublikować, ustaw force_publish=true."
+            ),
+        )
+
     # Twarda blokada duplikatów: sprawdź czy wszystkie wybrane platformy zostały już opublikowane lub zakolejkowane
     done_plats: set[str] = set()
     try:
@@ -570,7 +604,7 @@ async def publish_all(
         if _Q_FILE.exists():
             vp_resolved = str(Path(video_path).resolve()).lower()
             for q_it in _load_q():
-                if q_it.get("status") not in ("pending", "processing", "published"):
+                if q_it.get("status") not in ("pending", "processing", "published", "published_to_inbox"):
                     continue
                 q_vp = str(q_it.get("video_path") or "").strip()
                 if not q_vp:
@@ -616,8 +650,8 @@ async def publish_all(
         try:
             from ...lol_metadata_generator import build_rich_youtube_tags
             tags_to_use = build_rich_youtube_tags(champ, action, rnk)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[Social] [WARN] Nie udało się wygenerować tagów YT: {exc}")
 
     # Gwarancja przypiętego komentarza z lejkiem do FB, IG, TikTok
     pinned_to_use = req.pinned_comment or meta.get("pinned_comment")
@@ -625,8 +659,8 @@ async def publish_all(
         try:
             from ...lol_metadata_generator import build_pinned_comment
             pinned_to_use = build_pinned_comment(champ, action)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[Social] [WARN] Nie udało się wygenerować przypiętego komentarza: {exc}")
 
     # Gwarancja opisu z linkami społecznościowymi
     desc_to_use = req.description or meta.get("description") or ""
@@ -634,8 +668,8 @@ async def publish_all(
         try:
             from ...lol_metadata_generator import build_channel_description
             desc_to_use = build_channel_description(champ, action, desc_to_use)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[Social] [WARN] Nie udało się uzupełnić opisu kanału: {exc}")
 
     # Normalizuj wszystkie hasztagi w tytule i opisie na kanoniczne małe litery
     title_to_use = re.sub(r'#([a-zA-Z0-9_]+)', lambda m: f"#{m.group(1).lower()}", req.title)
@@ -821,8 +855,8 @@ async def publish_all(
                             video_id=results.get("youtube", {}).get("video_id") or meta.get("youtube_id") or meta.get("tiktok_publish_id"),
                             url=pub_log.get("url"),
                         )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    print(f"[Social] [WARN] Błąd zapisu hash źródła ({src_p}): {exc}")
 
             if not existing_failed:
                 try:
@@ -871,16 +905,11 @@ class SocialCopyPreviewRequest(BaseModel):
 @router.get("/social/queue")
 def get_social_queue(payload: dict = Depends(verify_token_flexible)):
     """Zwraca kolejkę zaplanowanych publikacji TikTok/Instagram/Facebook wraz z podsumowaniem."""
-    from ...scheduled_queue import _load_queue, _QUEUE_LOCK
+    from ...scheduled_queue import _load_queue, _QUEUE_LOCK, summarize_queue_statuses
     with _QUEUE_LOCK:
         items = list(_load_queue())
     items.sort(key=lambda x: str(x.get("publish_at") or ""), reverse=True)
-    summary = {
-        "total": len(items),
-        "pending": sum(1 for i in items if i.get("status") == "pending"),
-        "published": sum(1 for i in items if i.get("status") == "published"),
-        "failed": sum(1 for i in items if i.get("status") == "failed"),
-    }
+    summary = summarize_queue_statuses(items)
     return {"items": items, "summary": summary}
 
 

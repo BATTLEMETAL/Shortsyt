@@ -26,13 +26,78 @@ FAST_GAP_MIN = 3.5           # s przerwy między killami, od której przyspiesza
 FAST_TAIL = 0.9              # s po killu w normalnym tempie (widać skutek)
 FAST_LEAD = 1.0              # s przed następnym killem w normalnym tempie (widać wejście)
 
+# ── Profile 3 radykalnie różnych stylów LoL Shorts (Etap 45; lustro w engine_rules.json → "style_profiles") ──
+VIRAL_STYLES = ("ARENA_WIDE", "BEAT_VELOCITY", "STORY_RAW_POV")
 
-def effective_edit_values(zoom_level: float, zoom_duration: float, slowmo_duration: float) -> Dict[str, float]:
+STYLE_PROFILES: Dict[str, Dict] = {
+    "ARENA_WIDE": {
+        "frame_mode": "arena_wide",
+        "crop_width": 1280,
+        "slowmo_speed": 0.45,
+        "slowmo_window_max": 0.90,
+        "zoom_max": 1.08,
+        "zoom_window_max": 0.50,
+        "buildup_speed": 1.0,
+        "fast_gap_speed": 2.2,
+        "impact_flash": False,
+        "music_volume": 0.46,
+        "game_volume": 0.90,
+        "max_post_kill_outro_s": 2.0,
+    },
+    "BEAT_VELOCITY": {
+        "frame_mode": "vertical_velocity",
+        "crop_width": 608,
+        "slowmo_speed": 0.40,
+        "slowmo_window_max": 1.00,
+        "zoom_max": 1.14,
+        "zoom_window_max": 0.55,
+        "buildup_speed": 1.38,
+        "fast_gap_speed": 2.3,
+        "impact_flash": True,
+        "music_volume": 0.68,
+        "game_volume": 0.78,
+        "max_post_kill_outro_s": 1.8,
+    },
+    "STORY_RAW_POV": {
+        "frame_mode": "story_hybrid",
+        "crop_width": 960,
+        "slowmo_speed": 0.55,
+        "slowmo_window_max": 0.55,
+        "zoom_max": 1.06,
+        "zoom_window_max": 0.35,
+        "buildup_speed": 1.0,
+        "fast_gap_speed": 2.4,
+        "impact_flash": False,
+        "music_volume": 0.22,
+        "game_volume": 0.96,
+        "max_post_kill_outro_s": 1.6,
+    },
+}
+
+
+def get_style_profile(style: Optional[str]) -> Optional[Dict]:
+    """Zwraca kopię profilu stylu (ARENA_WIDE / BEAT_VELOCITY / STORY_RAW_POV) albo None dla stylów legacy."""
+    key = (style or "").upper().strip()
+    prof = STYLE_PROFILES.get(key)
+    return dict(prof) if prof is not None else None
+
+
+def effective_edit_values(
+    zoom_level: float,
+    zoom_duration: float,
+    slowmo_duration: float,
+    zoom_max: Optional[float] = None,
+    zoom_window_max: Optional[float] = None,
+    slowmo_window_max: Optional[float] = None,
+) -> Dict[str, float]:
     """To, co edytor NAPRAWDĘ zastosuje po limitach. Reżyser i tuning mogą prosić o więcej; tu widać, ile dostaną."""
+    eff_zoom_max = ZOOM_MAX if zoom_max is None else float(zoom_max)
+    eff_zoom_win_max = ZOOM_WINDOW_MAX if zoom_window_max is None else float(zoom_window_max)
+    eff_slowmo_win_max = SLOWMO_WINDOW_MAX if slowmo_window_max is None else float(slowmo_window_max)
     return {
-        "zoom_level": min(float(zoom_level), ZOOM_MAX),
-        "zoom_window": min(float(zoom_duration), ZOOM_WINDOW_MAX),
-        "slowmo_window": min(float(slowmo_duration), SLOWMO_WINDOW_MAX),
+        "zoom_level": min(float(zoom_level), eff_zoom_max),
+        "zoom_window": min(float(zoom_duration), eff_zoom_win_max),
+        "slowmo_window": min(float(slowmo_duration), eff_slowmo_win_max),
     }
 
 
@@ -42,18 +107,23 @@ def build_speed_segments(clip_duration: float,
                          slowmo_duration: float = 1.5,
                          zoom_duration: float = 0.8,
                          intermediate_peaks: Optional[List[float]] = None,
-                         use_easing: bool = True) -> List[Dict]:
+                         use_easing: bool = True,
+                         slowmo_window_max: Optional[float] = None,
+                         zoom_window_max: Optional[float] = None,
+                         buildup_speed: float = 1.0) -> List[Dict]:
     """
     Dzieli klip (czas źródłowy 0..clip_duration) na odcinki o stałej prędkości.
     Zwraca listę {"start", "end", "speed", "zoom"} — w tej kolejności są sklejane w obrazie.
-    Logika 1:1 z apply_editor_effects sprzed 11.11.2026 (obraz wychodzi identyczny).
     """
+    eff_zoom_win_max = ZOOM_WINDOW_MAX if zoom_window_max is None else float(zoom_window_max)
+    eff_slowmo_win_max = SLOWMO_WINDOW_MAX if slowmo_window_max is None else float(slowmo_window_max)
+
     t0 = 0.0
     t4 = float(clip_duration)
-    lead_in = 0.20 if slowmo_speed >= 0.65 else 0.25
+    lead_in = 0.20 if slowmo_speed >= 0.65 else 0.35
     t1 = max(t0, peak_moment - lead_in)
-    t2 = peak_moment + min(zoom_duration, ZOOM_WINDOW_MAX)
-    t3 = peak_moment + min(slowmo_duration, SLOWMO_WINDOW_MAX)
+    t2 = peak_moment + min(zoom_duration, eff_zoom_win_max)
+    t3 = peak_moment + min(slowmo_duration, eff_slowmo_win_max)
     t1 = max(t0, min(t1, t4))
     t2 = max(t1, min(t2, t4))
     t3 = max(t2, min(t3, t4))
@@ -70,8 +140,10 @@ def build_speed_segments(clip_duration: float,
     def add(start, end, speed, zoom=False):
         segs.append({"start": float(start), "end": float(end), "speed": float(speed), "zoom": bool(zoom)})
 
+    has_inter = False
     if intermediate_peaks and slow:
         valid_inter = [p for p in sorted(intermediate_peaks) if (p > curr_t + 0.35 and p < (t1 - 0.50))]
+        has_inter = bool(valid_inter)
         for ip in valid_inter:
             m_start = max(curr_t, ip - MINI_SLOWMO_LEAD)
             m_end = min(t1 - 0.15, ip + (MINI_SLOWMO_WINDOW - MINI_SLOWMO_LEAD))
@@ -83,7 +155,17 @@ def build_speed_segments(clip_duration: float,
 
     t1_norm = t1 - ease_in_dur
     if t1_norm > curr_t + 0.05:
-        add(curr_t, t1_norm, 1.0)
+        if float(buildup_speed) > 1.05 and not has_inter and (t1_norm - curr_t) >= 2.0:
+            b_start = round(curr_t + 0.45, 3)
+            b_end = round(t1_norm - 0.65, 3)
+            if (b_end - b_start) >= 0.40:
+                add(curr_t, b_start, 1.0)
+                add(b_start, b_end, float(buildup_speed))
+                add(b_end, t1_norm, 1.0)
+            else:
+                add(curr_t, t1_norm, 1.0)
+        else:
+            add(curr_t, t1_norm, 1.0)
     if ease_in_dur > 0.04 and t1 > t1_norm + 0.04:
         add(t1_norm, t1, ease_in_speed)
     if t2 > t1 + 0.05:
@@ -98,14 +180,22 @@ def build_speed_segments(clip_duration: float,
     return segs
 
 
-def apply_fast_forward(segments: List[Dict], kill_times: Optional[List[float]], speed: float = FAST_FORWARD_SPEED) -> List[Dict]:
+def apply_fast_forward(
+    segments: List[Dict],
+    kill_times: Optional[List[float]],
+    speed: float = FAST_FORWARD_SPEED,
+    tail: Optional[float] = None,
+    lead: Optional[float] = None,
+) -> List[Dict]:
     """
     Styl SPEED_RAMP_FLOW: zero cięć. Odcinki w tempie 1.0 leżące w przerwie między killami dłuższej niż FAST_GAP_MIN
     dostają prędkość `speed`; FAST_TAIL po killu i FAST_LEAD przed następnym zostają w tempie 1.0.
     Zwolnień i zoomów nie rusza. kill_times: czasy killi w klipie (czas źródłowy).
     """
+    t_tail = FAST_TAIL if tail is None else float(tail)
+    t_lead = FAST_LEAD if lead is None else float(lead)
     ks = sorted(float(k) for k in (kill_times or []))
-    windows = [(a + FAST_TAIL, b - FAST_LEAD) for a, b in zip(ks, ks[1:]) if (b - a) > FAST_GAP_MIN]
+    windows = [(a + t_tail, b - t_lead) for a, b in zip(ks, ks[1:]) if (b - a) > FAST_GAP_MIN]
     windows = [(a, b) for a, b in windows if b - a > 0.3]
     if not windows:
         return segments
@@ -129,6 +219,32 @@ def apply_fast_forward(segments: List[Dict], kill_times: Optional[List[float]], 
 def output_duration(segments: List[Dict]) -> float:
     """Długość gotowego obrazu po rozciągnięciu."""
     return sum((s["end"] - s["start"]) / s["speed"] for s in segments)
+
+
+def compute_adaptive_gap_speed(
+    segments: List[Dict],
+    kill_times: Optional[List[float]],
+    base_speed: float = FAST_FORWARD_SPEED,
+    min_output_dur: float = 9.4,
+    tail: Optional[float] = None,
+    lead: Optional[float] = None,
+) -> float:
+    """
+    Dobiera prędkość mostka między killami tak, by zredukować martwą przerwę (< 3.8s)
+    bez skrócenia gotowego shorta poniżej `min_output_dur` (domyślnie 9.4s > limit 8.9s).
+    """
+    base = max(1.0, float(base_speed))
+    if not segments or not kill_times or len(kill_times) < 2:
+        return base
+    candidates = [base]
+    for cand in (2.1, 1.9, 1.75, 1.6, 1.45, 1.3, 1.15, 1.0):
+        if cand < base - 1e-3:
+            candidates.append(cand)
+    for cand_spd in candidates:
+        ff_segs = apply_fast_forward(segments, kill_times, speed=cand_spd, tail=tail, lead=lead)
+        if output_duration(ff_segs) >= float(min_output_dur) - 1e-3:
+            return round(float(cand_spd), 2)
+    return 1.0
 
 
 def warp_time(segments: List[Dict], t: float) -> float:

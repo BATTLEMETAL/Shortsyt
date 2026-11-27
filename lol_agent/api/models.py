@@ -154,6 +154,7 @@ class MultiPlatformUploadRequest(BaseModel):
     tiktok_brand_organic: bool = False
     tiktok_branded_content: bool = False
     tiktok_post_mode: str = 'direct'
+    force_publish: bool = False
 
 
 class ScreenRecordRequest(BaseModel):

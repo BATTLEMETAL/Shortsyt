@@ -42,7 +42,8 @@ def _read_cache(cache_path: Path) -> Optional[Dict[str, Any]]:
         cached_at = data.get("_cached_at", 0)
         if time.time() - cached_at < CACHE_TTL_SECONDS:
             return data
-    except Exception:
+    except Exception as exc:
+        print(f"[SocialAnalytics] [WARN] Błąd odczytu cache {cache_path.name}: {exc}")
         return None
     return None
 
@@ -98,8 +99,8 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             if IG_CACHE_FILE.exists():
                 try:
                     return json.loads(IG_CACHE_FILE.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    print(f"[SocialAnalytics] [WARN] Błąd odczytu fallback cache IG: {exc}")
             return {"connected": False, "error": err_msg, "reels": [], "total_views": 0}
 
         username = prof_res.get("username", "dwannellenga")
@@ -161,8 +162,8 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                         shares = val
                     elif metric_name == "total_interactions" and val > 0:
                         interactions = val
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[SocialAnalytics] [WARN] Błąd insights IG ({m_id}): {exc}")
 
             total_views += views
             total_reach += reach
@@ -218,8 +219,8 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
         if IG_CACHE_FILE.exists():
             try:
                 return json.loads(IG_CACHE_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+            except Exception as cache_err:
+                print(f"[SocialAnalytics] [WARN] Błąd odczytu fallback cache IG: {cache_err}")
         return {"connected": False, "error": str(e), "reels": [], "total_views": 0}
 
 
@@ -261,8 +262,8 @@ def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             if FB_CACHE_FILE.exists():
                 try:
                     return json.loads(FB_CACHE_FILE.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
+                except Exception as cache_err:
+                    print(f"[SocialAnalytics] [WARN] Błąd odczytu fallback cache FB: {cache_err}")
             return {"connected": False, "error": err_msg, "videos": [], "total_views": 0}
 
         page_name = page_res.get("name", "Dwannellenga")
@@ -300,8 +301,8 @@ def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                 ).json()
                 reactions = stat_res.get("reactions", {}).get("summary", {}).get("total_count", 0)
                 comments = stat_res.get("comments", {}).get("summary", {}).get("total_count", 0)
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[SocialAnalytics] [WARN] Błąd metryk FB ({v_id}): {exc}")
 
             total_views += views
             total_reactions += reactions
@@ -348,8 +349,8 @@ def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
         if FB_CACHE_FILE.exists():
             try:
                 return json.loads(FB_CACHE_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+            except Exception as cache_err:
+                print(f"[SocialAnalytics] [WARN] Błąd odczytu fallback cache FB: {cache_err}")
         return {"connected": False, "error": str(e), "videos": [], "total_views": 0}
 
 
@@ -468,8 +469,8 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                     display_name = user_data.get("display_name") or display_name
                     avatar_url = user_data.get("avatar_url") or avatar_url
                     open_id = user_data.get("open_id") or open_id
-                except Exception:
-                    pass
+                except Exception as exc:
+                    print(f"[SocialAnalytics] [WARN] Błąd user/info TikTok: {exc}")
 
         # 2. Pobranie danych profilu z live web hydration
         followers_count = 10
@@ -504,7 +505,8 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
         if TT_POST_CACHE_FILE.exists():
             try:
                 post_cache = json.loads(TT_POST_CACHE_FILE.read_text(encoding="utf-8"))
-            except Exception:
+            except Exception as exc:
+                print(f"[SocialAnalytics] [WARN] Błąd odczytu tiktok_post_cache.json: {exc}")
                 post_cache = {}
 
         # Zindeksuj istniejące posty po post_id, żeby uzupełnić brakujące wpisy z .meta.json bez duplikatów
@@ -538,8 +540,8 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                             post_id = str(p_ids[0])
                             p_entry["post_id"] = post_id
                             cache_modified = True
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        print(f"[SocialAnalytics] [WARN] Błąd status/fetch TikTok ({pid}): {exc}")
 
                 if post_id and not p_entry.get("synced_from_profile") and (force_refresh or "views" not in p_entry or p_entry.get("views", 0) == 0):
                     try:
@@ -557,8 +559,8 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                                 p_entry["desc"] = item.get("desc", p_entry.get("desc", ""))
                                 p_entry["url"] = f"https://www.tiktok.com/@{unique_id}/video/{post_id}"
                                 cache_modified = True
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        print(f"[SocialAnalytics] [WARN] Błąd web scrape TikTok ({post_id}): {exc}")
 
                 clean_title = p_entry.get("desc") or m.get("hook_text") or m.get("title") or "TikTok Short"
                 if "#" in clean_title:
@@ -575,8 +577,8 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                 p_entry["shares"] = int(p_entry.get("shares") or 0)
 
                 post_cache[pid] = p_entry
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[SocialAnalytics] [WARN] Błąd meta TikTok ({mf.name}): {exc}")
 
         # Scal wszystkie wpisy z post_cache po unikalnym kluczu post_id (preferując bogatszy wpis)
         dedup_videos: Dict[str, Dict[str, Any]] = {}
@@ -623,8 +625,8 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
         if cache_modified:
             try:
                 TT_POST_CACHE_FILE.write_text(json.dumps(post_cache, indent=2, ensure_ascii=False), encoding="utf-8")
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[SocialAnalytics] [WARN] Błąd zapisu tiktok_post_cache.json: {exc}")
 
         tiktok_learning = _build_tiktok_learning(videos)
         try:
@@ -633,8 +635,8 @@ def get_tiktok_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                 json.dumps(tiktok_learning, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[SocialAnalytics] [WARN] Błąd zapisu tiktok_learning.json: {exc}")
 
         total_views = sum(int(v.get("views") or 0) for v in videos)
         total_likes = sum(int(v.get("likes") or 0) for v in videos)
@@ -717,8 +719,8 @@ def get_omnichannel_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                     _ch_views = int(_items[0].get("statistics", {}).get("viewCount", 0))
                     if _ch_views > yt_total_views_sampled:
                         yt_total_views = _ch_views  # use real channel total
-    except Exception:
-        pass  # keep sampled fallback if API fails
+    except Exception as _yt_views_err:
+        print(f"[SocialAnalytics] [WARN] Błąd pobrania lifetime views YT: {_yt_views_err}")  # keep sampled fallback if API fails
 
     # 2. Instagram
     ig_data = get_instagram_analytics(force_refresh=force_refresh)

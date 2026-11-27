@@ -162,6 +162,7 @@ def _run_pipeline(
     notify_token: Optional[str],
     combat_segments: Optional[List[Tuple[float, float]]] = None,
     game_type: str = "lol",
+    montage_style_override: Optional[str] = None,
 ):
     """Główna funkcja pipeline — uruchamiana w osobnym wątku."""
     global _state
@@ -345,16 +346,42 @@ def _run_pipeline(
                 _exp_rank = int(_op_info["event_tier_rank"])
                 _est_last = _op_info.get("est_last_kill_s")
                 _est_first = _op_info.get("est_first_kill_s")
+                _best_op_ev = _op_info.get("best_event_time_s")
+                _op_events = list(_op_info.get("events_summary") or [])
                 _op_banners = {1: "KILL", 2: "DOUBLE KILL", 3: "TRIPLE KILL", 4: "QUADRAKILL", 5: "PENTAKILL"}
+                _want_lbl = _op_banners.get(_exp_rank, "TRIPLE KILL")
+
+                _cur_span_pre = max(0.5, float(clip_end - clip_start))
+                _pre_peaks_abs = [
+                    (float(p[0]) if float(p[0]) > (_cur_span_pre + 0.5) else (clip_start + float(p[0])), str(p[1]))
+                    for p in (peaks or [])
+                ]
+                _ocr_target_hits = [
+                    t_abs for (t_abs, lbl) in _pre_peaks_abs
+                    if lbl == _want_lbl
+                    and (_best_op_ev is None or abs(t_abs - float(_best_op_ev)) <= 3.5)
+                ]
+                _later_op_kills = [
+                    float(ev.get("time_s")) for ev in _op_events
+                    if isinstance(ev, dict) and ev.get("type") == "kill" and isinstance(ev.get("time_s"), (int, float))
+                    and _ocr_target_hits
+                    and abs(float(ev.get("time_s")) - float(_best_op_ev or -99.0)) > 1.5
+                    and float(ev.get("time_s")) > max(max(_ocr_target_hits), float(_best_op_ev or 0.0)) + 1.5
+                ]
+                _has_verified_target_ocr = bool(_ocr_target_hits) and not _later_op_kills
+
                 if isinstance(_est_last, (int, float)):
-                    _op_est_last_kill_s = float(_est_last)
-                    if clip_start <= _op_est_last_kill_s <= min(src_total_dur, clip_end + 6.0):
-                        _needed_end = round(min(src_total_dur, _op_est_last_kill_s + 1.9), 2)
-                        if _needed_end > clip_end and not combat_segments:
-                            clip_end = _needed_end
-                            with _lock:
-                                _state.clip_end = clip_end
-                            _update("Riot Outplayed Anchor", 12, f"Rozszerzono koniec okna na finałowy kill: {clip_end:.2f}s")
+                    if _has_verified_target_ocr:
+                        _op_est_last_kill_s = max(_ocr_target_hits)
+                    else:
+                        _op_est_last_kill_s = float(_est_last)
+                        if clip_start <= _op_est_last_kill_s <= min(src_total_dur, clip_end + 6.0):
+                            _needed_end = round(min(src_total_dur, _op_est_last_kill_s + 1.9), 2)
+                            if _needed_end > clip_end and not combat_segments:
+                                clip_end = _needed_end
+                                with _lock:
+                                    _state.clip_end = clip_end
+                                _update("Riot Outplayed Anchor", 12, f"Rozszerzono koniec okna na finałowy kill: {clip_end:.2f}s")
 
                 _cur_span = max(0.5, float(clip_end - clip_start))
                 _peaks_are_abs = any(float(p[0]) > (_cur_span + 0.5) for p in (peaks or []))
@@ -373,9 +400,8 @@ def _run_pipeline(
                 if len(_rel_peaks) > _max_allowed:
                     _trimmed = _rel_peaks[-_exp_rank:]
                     _rel_peaks = _trimmed[:-1] + [(_trimmed[-1][0], _op_banners.get(_exp_rank, _trimmed[-1][1]))]
-                elif _op_est_last_kill_s is not None and clip_start < _op_est_last_kill_s <= clip_end:
+                elif _op_est_last_kill_s is not None and not _has_verified_target_ocr and clip_start < _op_est_last_kill_s <= clip_end:
                     _climax_rel = round(max(0.5, min(_cur_span - 0.5, _op_est_last_kill_s - clip_start)), 2)
-                    _want_lbl = _op_banners.get(_exp_rank, "TRIPLE KILL")
                     if len(_rel_peaks) < min(_exp_rank, 2) or all(lbl != _want_lbl for _, lbl in _rel_peaks):
                         if _rel_peaks and abs(_rel_peaks[-1][0] - _climax_rel) <= 1.2:
                             _rel_peaks[-1] = (_rel_peaks[-1][0], _want_lbl)
@@ -383,6 +409,17 @@ def _run_pipeline(
                             _rel_peaks.append((_climax_rel, _want_lbl))
                             _rel_peaks.sort(key=lambda x: x[0])
                         peak_moment = round(max(0.5, _climax_rel - 0.25), 2)
+                if (
+                    isinstance(_est_first, (int, float))
+                    and _exp_rank >= 2
+                    and len(_rel_peaks) < min(_exp_rank, 2)
+                    and (clip_start + 0.3) <= float(_est_first) <= (clip_end - 0.5)
+                    and (not _rel_peaks or float(_est_first) <= (clip_start + _rel_peaks[-1][0] - 0.6))
+                ):
+                    _first_rel = round(max(0.3, float(_est_first) - clip_start), 2)
+                    if not any(abs(t - _first_rel) <= 0.9 for t, _ in _rel_peaks):
+                        _rel_peaks.append((_first_rel, "KILL"))
+                        _rel_peaks.sort(key=lambda x: x[0])
                 if _rel_peaks:
                     peaks = _rel_peaks
         except Exception as _op_err:
@@ -431,11 +468,13 @@ def _run_pipeline(
             if peaks:
                 raw_k0 = float(peaks[0][0]) if isinstance(peaks[0], (tuple, list)) else float(peaks[0].get("timestamp", 0.0))
                 first_k_pre = (raw_k0 - clip_start) if raw_k0 > (c_span_pre + 0.5) else raw_k0
+            _forced_st = str(montage_style_override).upper().strip() if montage_style_override else None
             director_dec = direct_clip_montage(
                 action_type=action_type,
                 champion_name=champion_name,
                 duration=clip_end - clip_start,
                 peaks=peaks,
+                force_style=_forced_st,
                 objective_secured=objective_secured,
                 ally_banner_blocked=ally_banner_blocked,
                 min_hp_pct=screen_telemetry.get("min_hp_pct"),
@@ -443,6 +482,8 @@ def _run_pipeline(
             )
             _update(f"Reżyser AI: {director_dec.archetype}", 13, director_dec.rationale)
             tuning_prof.update(director_dec.tuning_profile)
+            if _forced_st:
+                tuning_prof["preferred_montage_style"] = _forced_st
 
             # Dry-Run Symulator i Rollback Guard dla operacji okienkowych Synapsy
             syn_op = str(((director_dec.synapsa_decision or {}).get("operation")) or "")
@@ -773,7 +814,7 @@ def _run_pipeline(
             generic_pre = (
                 not hook_up
                 or hook_up in ("PENTAKILL", "OUTPLAY", "INSANE OUTPLAY!", "INSANE OUTPLAY")
-                or hook_up.startswith(("TRIPLE KILL - 3 DOWN", "QUADRAKILL - ONE MORE", "TRIPLE KILL - CLEAN RESET"))
+                or hook_up.startswith(("DOUBLE KILL - ", "TRIPLE KILL - ", "QUADRAKILL - ", "PENTAKILL - "))
             )
             if generic_pre and meta.get("hook_text"):
                 hook_text = sanitize_hook_text(
@@ -793,6 +834,11 @@ def _run_pipeline(
         check_cancellation()
         _update("Renderowanie klipu", 20, "Uruchamiam render_short...")
 
+        _effective_style = (
+            str(montage_style_override).upper().strip()
+            if montage_style_override
+            else tuning_prof.get("preferred_montage_style")
+        )
         output = render_short(
             source_path=source_path,
             clip_start=clip_start,
@@ -808,7 +854,7 @@ def _run_pipeline(
             peaks=peaks,
             output_filename=output_filename,
             combat_segments=combat_segments,
-            montage_style=tuning_prof.get("preferred_montage_style"),
+            montage_style=_effective_style,
             director_decision=director_dec,
             objective_secured=objective_secured,
             ally_banner_blocked=ally_banner_blocked,
@@ -929,19 +975,34 @@ def _run_pipeline(
             thumb_out = str(output).replace(".mp4", "_thumb.jpg")
             # FIX: peak_moment z oryginalnego klipu (np. 45s) jest za duży dla 15s shorta.
             # Przeliczamy względem czasu renderowanego klipu (clip_start → 0).
-            clip_duration = float(clip_end) - float(clip_start) if clip_end and clip_start else None
-            if clip_duration and peak_moment is not None:
-                # Względny czas w shorcie = peak_moment_in_source - clip_start
-                relative_peak = float(peak_moment) - float(clip_start)
-                # Bezpieczny zakres: 0.2s od początku do 1s przed końcem
+            clip_duration = float(clip_end) - float(clip_start) if clip_end is not None and clip_start is not None else None
+            _rec_peak_out = None
+            _rec_path_th = Path(str(output)).with_suffix(".recipe.json")
+            if _rec_path_th.is_file():
+                try:
+                    import json as _jth
+                    _rec_d = _jth.loads(_rec_path_th.read_text(encoding="utf-8"))
+                    _rec_peak_out = _rec_d.get("peak_in_output")
+                except Exception:
+                    _rec_peak_out = None
+            if _rec_peak_out is not None:
+                thumb_time = max(0.2, float(_rec_peak_out))
+                _src_pk_for_thumb = float(clip_start or 0.0) + float(_rec_d.get("peak_in_clip") or thumb_time) if isinstance(_rec_d, dict) else (float(peak_moment) if peak_moment is not None else None)
+            elif clip_duration and peak_moment is not None:
+                pm_val = float(peak_moment)
+                cs_val = float(clip_start or 0.0)
+                relative_peak = (pm_val - cs_val) if (cs_val > 0.0 and pm_val > clip_duration + 0.35) else pm_val
+                _src_pk_for_thumb = pm_val if (cs_val > 0.0 and pm_val > clip_duration + 0.35) else (cs_val + pm_val)
                 if clip_duration > 0:
                     thumb_time = min(max(0.2, relative_peak), clip_duration - 1.0)
                 else:
                     thumb_time = 1.0
             elif peak_moment is not None:
                 thumb_time = float(peak_moment)
+                _src_pk_for_thumb = float(peak_moment)
             else:
                 thumb_time = 1.5
+                _src_pk_for_thumb = None
             thumb_file = generate_thumbnail(
                 video_path=str(output),
                 peak_moment=thumb_time,
@@ -949,7 +1010,7 @@ def _run_pipeline(
                 champion_name=champion_name,
                 output_path=thumb_out,
                 source_clip_path=str(source_path) if source_path and os.path.isfile(str(source_path)) else None,
-                source_peak_moment=float(peak_moment) if peak_moment is not None else None,
+                source_peak_moment=_src_pk_for_thumb,
             )
         except Exception as te:
             _update("Błąd miniaturki", 92, f"Miniaturka warning: {te}")
@@ -1071,6 +1132,12 @@ def _run_pipeline(
 
             _state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Output: {output}")
 
+        try:
+            from .routers.clips import invalidate_clips_cache
+            invalidate_clips_cache()
+        except Exception:
+            pass
+
         # Zapisz w pamięci uczenia (render wygenerowany, oczekuje na decyzję)
         try:
             try:
@@ -1117,8 +1184,10 @@ def _run_pipeline(
 
     except InterruptedError as ie:
         with _lock:
-            _state.status = PipelineStatus.ERROR
-            _state.error = str(ie)
+            _state.status = PipelineStatus.IDLE
+            _state.error = None
+            _state.progress = 0
+            _state.current_step = str(ie) or "Zatrzymano przez użytkownika"
             _state.finished_at = datetime.now().isoformat()
             _state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] 🛑 {ie}")
         return
@@ -1230,8 +1299,10 @@ def stop_pipeline(clear_queue: bool = True):
             _job_queue.clear()
         if _state.status == PipelineStatus.RUNNING:
             _cancel_event.set()
-            _state.status = PipelineStatus.ERROR
-            _state.error = "Zatrzymano przez użytkownika"
+            _state.status = PipelineStatus.IDLE
+            _state.error = None
+            _state.progress = 0
+            _state.current_step = "Zatrzymano przez użytkownika"
             _state.finished_at = datetime.now().isoformat()
             if _active_proc is not None:
                 try:

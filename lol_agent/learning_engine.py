@@ -93,8 +93,8 @@ def _load_published_history() -> List[Dict[str, Any]]:
             for line in raw_lines[-500:]:
                 try:
                     history.append(json.loads(line.strip()))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _safe_print(f"[Learning] [WARN] Pominięto uszkodzoną linię published_videos.jsonl: {exc}")
         except Exception as e:
             _safe_print(f"[Learning] Warning reading published_videos.jsonl: {e}")
     return history
@@ -471,7 +471,8 @@ def _load_omnichannel_hour_samples(yt_median_views: float, ref_now: datetime, tz
                     "age_d": age_d,
                     "plat": plat_tag,
                 })
-        except Exception:
+        except Exception as exc:
+            _safe_print(f"[Learning] [WARN] Pominięto uszkodzony wpis omnichannel: {exc}")
             continue
     return out
 
@@ -1052,8 +1053,8 @@ def _analyze_48h_reality_gate(
         try:
             from hard_case_learner import load_hard_cases
             hard_cases_count = len(load_hard_cases())
-        except Exception:
-            pass
+        except Exception as exc:
+            _safe_print(f"[Learning] [WARN] Brak modułu hard_case_learner: {exc}")
 
     synapsa_director_insights: List[Dict[str, Any]] = []
     if by_action_type:
@@ -1477,8 +1478,8 @@ def _collect_recipe_records(shorts_dir: Optional[Path] = None) -> List[Dict[str,
                     rec = dict(rec)
                     rec.setdefault("_recipe_stem", rp.name[:-len(".recipe.json")])
                     recipes.append(rec)
-            except Exception:
-                pass
+            except Exception as exc:
+                _safe_print(f"[Learning] [WARN] Pominięto uszkodzony recipe {rp.name}: {exc}")
     return recipes
 
 
@@ -1815,8 +1816,8 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
                                         videos_by_id[p_vid][k] = p_item[k]
                         else:
                             videos_by_id[p_vid] = p_item
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        _safe_print(f"[Learning] [WARN] Pominięto linię performance_log.jsonl: {exc}")
         except Exception as e_perf:
             _safe_print(f"[Learning] Warning reading performance_log.jsonl: {e_perf}")
 
@@ -2198,8 +2199,8 @@ def run_channel_learning_cycle(force_refresh: bool = False) -> Dict[str, Any]:
         try:
             from api.youtube_analytics import fetch_channel_retention_overview
             retention_summary = fetch_channel_retention_overview(max_videos=20)
-        except Exception:
-            pass
+        except Exception as exc:
+            _safe_print(f"[Learning] [WARN] Błąd fetch_channel_retention_overview: {exc}")
 
     retention_by_action = _analyze_retention_by_action(retention_summary, valid_videos)
 
@@ -2417,8 +2418,8 @@ def _user_locked_keys(tuning_cfg: Dict[str, Any]) -> set:
                     key = _PARAM_TO_KEY.get(str(entry.get("param", "")).lower().replace(" ", "_"))
                     if key:
                         locked.add(key)
-    except Exception:
-        pass
+    except Exception as exc:
+        _safe_print(f"[Learning] [WARN] Błąd odczytu user_feedback_history.json: {exc}")
     return locked
 
 

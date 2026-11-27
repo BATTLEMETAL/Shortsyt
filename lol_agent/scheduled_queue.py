@@ -40,7 +40,8 @@ def _load_queue() -> List[Dict[str, Any]]:
     if QUEUE_FILE.exists():
         try:
             return json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            print(f"[ScheduledQueue] [WARN] Błąd odczytu kolejki ({QUEUE_FILE}): {exc}")
             return []
     return []
 
@@ -58,6 +59,72 @@ def _save_queue(items: List[Dict[str, Any]]):
         sync_queue_to_db(items, db_path=get_state_db_path(QUEUE_FILE))
     except Exception:
         pass
+
+
+def is_tiktok_inbox_result(platform: Optional[str], res: Any) -> bool:
+    """Zwraca True, jeśli wynik publikacji TikTok trafił wyłącznie do INBOX (szkic na telefonie)."""
+    if str(platform or "").strip().lower() != "tiktok":
+        return False
+    if not isinstance(res, dict):
+        return False
+    if bool(res.get("inbox")):
+        return True
+    if str(res.get("post_mode") or "").strip().lower() == "inbox":
+        return True
+    pub_id = str(res.get("publish_id") or "")
+    return pub_id.startswith("v_inbox_file")
+
+
+def summarize_queue_statuses(items: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Zlicza wpisy kolejki z rozróżnieniem realnego `published` od `published_to_inbox`."""
+    summary = {
+        "total": 0,
+        "pending": 0,
+        "processing": 0,
+        "published": 0,
+        "published_to_inbox": 0,
+        "failed": 0,
+    }
+    if not isinstance(items, list):
+        return summary
+    summary["total"] = len(items)
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        st = str(it.get("status") or "pending").strip()
+        if st == "published_to_inbox" or (
+            st == "published" and is_tiktok_inbox_result(it.get("platform"), it.get("result"))
+        ):
+            summary["published_to_inbox"] += 1
+        elif st in summary:
+            summary[st] += 1
+    return summary
+
+
+def count_recent_tiktok_inbox(items: List[Dict[str, Any]], days: int = 14) -> int:
+    """Zlicza pozycje TikTok z ostatnich N dni, które trafiły do INBOX zamiast publikacji publicznej."""
+    if not isinstance(items, list):
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, int(days)))
+    cnt = 0
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        if str(it.get("platform") or "").strip().lower() != "tiktok":
+            continue
+        st = str(it.get("status") or "").strip()
+        if st != "published_to_inbox" and not (
+            st == "published" and is_tiktok_inbox_result("tiktok", it.get("result"))
+        ):
+            continue
+        dt = (
+            _parse_iso_utc(it.get("published_at"))
+            or _parse_iso_utc(it.get("publish_at"))
+            or _parse_iso_utc(it.get("created_at"))
+        )
+        if dt is None or dt >= cutoff:
+            cnt += 1
+    return cnt
 
 
 def queue_scheduled_post(
@@ -78,7 +145,7 @@ def queue_scheduled_post(
         "publish_at": publish_at,
         "thumbnail_path": str(Path(thumbnail_path).resolve()) if thumbnail_path and os.path.exists(thumbnail_path) else None,
         "peak_moment": peak_moment,
-        "status": "pending",  # 'pending' | 'processing' | 'published' | 'failed'
+        "status": "pending",  # 'pending' | 'processing' | 'published' | 'published_to_inbox' | 'failed'
         "created_at": datetime.now(timezone.utc).isoformat(),
         "extra": extra or {}
     }
@@ -324,7 +391,7 @@ def check_and_flush_scheduled_posts() -> int:
                 published_keys = set()
                 last_pub_by_platform: Dict[str, datetime] = {}
                 for it in items:
-                    if it.get("status") != "published":
+                    if it.get("status") not in ("published", "published_to_inbox"):
                         continue
                     k = _norm_video_key(it.get("platform"), it.get("video_path"))
                     if k:
@@ -400,10 +467,13 @@ def check_and_flush_scheduled_posts() -> int:
                 try:
                     res = _execute_single_upload(item)
                     if res.get("success"):
+                        is_inbox = is_tiktok_inbox_result(platform, res)
                         _persist_item_state(
                             item_id,
                             {
-                                "status": "published",
+                                "status": "published_to_inbox" if is_inbox else "published",
+                                "delivery_mode": "inbox_draft" if is_inbox else "public",
+                                "requires_manual_publish": is_inbox,
                                 "result": res,
                                 "published_at": datetime.now(timezone.utc).isoformat(),
                             },
@@ -421,10 +491,10 @@ def check_and_flush_scheduled_posts() -> int:
                                 stage_short_original(
                                     src_orig,
                                     yt_video_id=str(res.get("video_id") or ""),
-                                    metadata={**extra_m, "title": caption},
+                                    metadata={**extra_m, "title": item.get("caption", "")},
                                 )
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            print(f"[ScheduledQueue] [WARN] Viral vault stage pominięte ({vp}): {exc}")
                         try:
                             from lol_agent.temp_cleaner import cleanup_published_video_if_idle
                             clean_res = cleanup_published_video_if_idle(vp, queue_file=QUEUE_FILE)
@@ -433,13 +503,19 @@ def check_and_flush_scheduled_posts() -> int:
                                     f"🧹 [ScheduledQueue] Usunięto opublikowany plik .mp4 po wyczyszczeniu kolejki: "
                                     f"{Path(vp).name} (-{clean_res.get('freed_mb', 0):.1f} MB)"
                                 )
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            print(f"[ScheduledQueue] [WARN] Auto-czyszczenie .mp4 pominięte ({vp}): {exc}")
                         flushed_count += 1
-                        print(
-                            f"✅ [ScheduledQueue] {platform} opublikowany pomyślnie! "
-                            f"ID/URL: {res.get('publish_id') or res.get('url')}"
-                        )
+                        if is_inbox:
+                            print(
+                                f"⚠️ [ScheduledQueue] TikTok wysłany do INBOX (szkic w aplikacji na telefonie — "
+                                f"wymaga ręcznej publikacji), publish_id={res.get('publish_id')}"
+                            )
+                        else:
+                            print(
+                                f"✅ [ScheduledQueue] {platform} opublikowany pomyślnie! "
+                                f"ID/URL: {res.get('publish_id') or res.get('url')}"
+                            )
                     else:
                         _record_retry_or_fail(item, str(res.get("error") or "Unknown upload error"))
                 except Exception as e:

@@ -24,16 +24,11 @@ def get_calendar(
     try:
         from .. import calendar_manager
         slots = calendar_manager.get_calendar_slots(start_date=start_date, days=days, force_refresh=force_refresh)
-        social_queue_summary = {"pending": 0, "published": 0, "failed": 0, "total": 0}
+        social_queue_summary = {"pending": 0, "published": 0, "published_to_inbox": 0, "failed": 0, "total": 0}
         try:
-            from ...scheduled_queue import _load_queue
+            from ...scheduled_queue import _load_queue, summarize_queue_statuses
             q_items = _load_queue() or []
-            social_queue_summary = {
-                "total": len(q_items),
-                "pending": sum(1 for i in q_items if i.get("status") == "pending"),
-                "published": sum(1 for i in q_items if i.get("status") == "published"),
-                "failed": sum(1 for i in q_items if i.get("status") == "failed"),
-            }
+            social_queue_summary = summarize_queue_statuses(q_items)
         except Exception:
             pass
         by_weekday = {}

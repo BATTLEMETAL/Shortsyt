@@ -86,25 +86,58 @@ def _extract_frame(video_path: str, t: float, out: str) -> bool:
 extract_peak_frame = _extract_frame
 
 
+def _detect_hp_bar_masks(
+    img_arr: np.ndarray,
+    is_bgr: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Wykrywa maski pikseli zielonych (gracz), złotych i czerwonych (wrogowie) pasków HP."""
+    if is_bgr:
+        r = img_arr[:, :, 2].astype(np.int16)
+        g = img_arr[:, :, 1].astype(np.int16)
+        b = img_arr[:, :, 0].astype(np.int16)
+    else:
+        r = img_arr[:, :, 0].astype(np.int16)
+        g = img_arr[:, :, 1].astype(np.int16)
+        b = img_arr[:, :, 2].astype(np.int16)
+
+    green_mask = (g > 155) & (r < 145) & (b < 115) & ((g - r) > 35)
+    gold_mask = (r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15)
+    red_mask = (r > 165) & (g < 80) & (b < 80) & ((r - g) > 80)
+    return green_mask, gold_mask, red_mask
+
+
 def _find_best_crop_x(img_rgb: np.ndarray, crop_w_px: int, source_w: int = 1920) -> int:
-    """Wyszukuje centrum akcji/walki w klatce."""
+    """Wyszukuje centrum akcji/walki w klatce (priorytet: paski HP bohaterów + nasycenie VFX)."""
     from PIL import Image as PilImage
     img_pil = PilImage.fromarray(img_rgb)
     hsv = np.array(img_pil.convert("HSV"))
     sat = hsv[:, :, 1].astype(float)
     h = sat.shape[0]
-    sat[int(h * 0.82):, :] = 0  # wyklucz dolny HUD
+    cutoff = int(h * 0.82)
+    sat[cutoff:, :] = 0  # wyklucz dolny HUD
 
-    col_sat = sat.sum(axis=0)
     kernel = np.ones(31) / 31
-    col_sat = np.convolve(col_sat, kernel, mode="same")
+    col_sat = np.convolve(sat.sum(axis=0), kernel, mode="same")
     total = col_sat.sum()
     if total > 0:
-        cx = int((col_sat * np.arange(len(col_sat))).sum() / total)
+        cx_sat = int((col_sat * np.arange(len(col_sat))).sum() / total)
     else:
-        cx = source_w // 2
+        cx_sat = source_w // 2
 
-    cx_blended = int(0.70 * cx + 0.30 * (source_w // 2))
+    top_rgb = img_rgb[:cutoff, :, :]
+    if top_rgb.size > 0:
+        green_m, gold_m, red_m = _detect_hp_bar_masks(top_rgb, is_bgr=False)
+        hp_col = np.convolve((green_m | gold_m | red_m).sum(axis=0).astype(float), kernel, mode="same")
+        hp_total = float(hp_col.sum())
+    else:
+        hp_col = np.zeros(source_w, dtype=float)
+        hp_total = 0.0
+
+    if hp_total >= 25.0:
+        cx_hp = int((hp_col * np.arange(len(hp_col))).sum() / hp_total)
+        cx_blended = int(0.60 * cx_hp + 0.25 * cx_sat + 0.15 * (source_w // 2))
+    else:
+        cx_blended = int(0.70 * cx_sat + 0.30 * (source_w // 2))
     x = cx_blended - crop_w_px // 2
     return max(0, min(x, source_w - crop_w_px))
 
@@ -199,19 +232,22 @@ def _find_ranked_hero_frames(
             fr_nohud = fr[:int(h * 0.82), :]
             hsv = cv2.cvtColor(fr_nohud, cv2.COLOR_BGR2HSV)
 
-            r = fr_nohud[:, :, 2].astype(np.int16)
-            g = fr_nohud[:, :, 1].astype(np.int16)
-            b = fr_nohud[:, :, 0].astype(np.int16)
-            gold_mask = ((r > 160) & (g > 130) & (b < 115) & ((r - b) > 40) & ((g - b) > 15))
+            green_mask, gold_mask, red_mask = _detect_hp_bar_masks(fr_nohud, is_bgr=True)
+            green_hp_pts = int(cv2.countNonZero(green_mask.astype(np.uint8)))
             gold_pts = int(cv2.countNonZero(gold_mask.astype(np.uint8)))
+            red_hp_pts = int(cv2.countNonZero(red_mask.astype(np.uint8)))
 
             # Premia za złotą/kolorową akcję bliżej środka kadru zamiast uciętych krawędzi
             center_roi = fr_nohud[int(h * 0.14):int(h * 0.72), int(w_fr * 0.25):int(w_fr * 0.75)]
             if center_roi.size > 0:
                 cr_sat = cv2.cvtColor(center_roi, cv2.COLOR_BGR2HSV)[:, :, 1]
                 center_vfx = float(np.mean(cr_sat > 130)) * 60.0
+                center_med_sat = float(np.median(cr_sat))
+                center_p85_sat = float(np.percentile(cr_sat, 85))
             else:
                 center_vfx = 0.0
+                center_med_sat = 255.0
+                center_p85_sat = 255.0
 
             # Lekka kara za ciężki popup/tekst UI w prawym dolnym rogu (np. Mid Lane Quest Reward)
             br_roi = fr[int(h * 0.64):int(h * 0.84), int(w_fr * 0.68):]
@@ -225,17 +261,35 @@ def _find_ranked_hero_frames(
 
             sat = hsv[:, :, 1]
             high_sat = sat > 140
-            vfx_score = float(np.mean(sat[high_sat])) if high_sat.any() else 0.0
+            high_sat_ratio = float(np.mean(high_sat))
+            vfx_score = (
+                float(np.mean(sat[high_sat])) * min(1.0, high_sat_ratio / 0.035)
+                if high_sat_ratio > 0.004
+                else 0.0
+            )
 
             val = hsv[:, :, 2]
             avg_bright = float(np.mean(val))
             avg_sat = float(np.mean(sat))
-            # Odrzuć czarne/prześwietlone klatki oraz szary ekran śmierci (grey screen)
-            if avg_bright < 35 or avg_bright > 240 or avg_sat < 25.0:
+            # Odrzuć czarne/prześwietlone klatki oraz szary ekran śmierci (grey screen / BACK IN)
+            if (
+                avg_bright < 35
+                or avg_bright > 240
+                or avg_sat < 30.0
+                or (center_roi.size > 0 and center_med_sat < 32.0 and center_p85_sat < 68.0)
+            ):
                 continue
 
+            hp_bonus = 0.0
+            if green_hp_pts >= 20 or gold_pts >= 20:
+                hp_bonus += 90.0
+            if red_hp_pts >= 20:
+                hp_bonus += 50.0
+            if green_hp_pts < 12 and gold_pts < 12 and red_hp_pts < 12:
+                hp_bonus -= 120.0
+
             proximity_bonus = 0.0 if max_candidates <= 1 else max(0.0, 25.0 - abs(float(t) - center_t) * 4.0)
-            score = vfx_score + center_vfx + (150.0 if gold_pts >= 10 else 0.0) + proximity_bonus - popup_penalty
+            score = vfx_score + center_vfx + (150.0 if gold_pts >= 10 else 0.0) + hp_bonus + proximity_bonus - popup_penalty
             scored.append((score, float(t)))
 
         if not scored:

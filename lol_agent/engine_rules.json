@@ -226,5 +226,49 @@
    "acceptable_shunpo_step_px": 520.0,
    "chaotic_cam_step_px": 600.0
   }
+ },
+ "style_profiles": {
+  "ARENA_WIDE": {
+   "frame_mode": "arena_wide",
+   "crop_width": 1280,
+   "slowmo_speed": 0.45,
+   "slowmo_window_max": 0.9,
+   "zoom_max": 1.08,
+   "zoom_window_max": 0.5,
+   "buildup_speed": 1.0,
+   "fast_gap_speed": 2.2,
+   "impact_flash": false,
+   "music_volume": 0.46,
+   "game_volume": 0.9,
+   "max_post_kill_outro_s": 2.0
+  },
+  "BEAT_VELOCITY": {
+   "frame_mode": "vertical_velocity",
+   "crop_width": 608,
+   "slowmo_speed": 0.4,
+   "slowmo_window_max": 1.0,
+   "zoom_max": 1.14,
+   "zoom_window_max": 0.55,
+   "buildup_speed": 1.38,
+   "fast_gap_speed": 2.3,
+   "impact_flash": true,
+   "music_volume": 0.68,
+   "game_volume": 0.78,
+   "max_post_kill_outro_s": 1.8
+  },
+  "STORY_RAW_POV": {
+   "frame_mode": "story_hybrid",
+   "crop_width": 960,
+   "slowmo_speed": 0.55,
+   "slowmo_window_max": 0.55,
+   "zoom_max": 1.06,
+   "zoom_window_max": 0.35,
+   "buildup_speed": 1.0,
+   "fast_gap_speed": 2.4,
+   "impact_flash": false,
+   "music_volume": 0.22,
+   "game_volume": 0.96,
+   "max_post_kill_outro_s": 1.6
+  }
  }
 }

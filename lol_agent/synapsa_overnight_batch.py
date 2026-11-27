@@ -28,7 +28,10 @@ LOL_AGENT_DIR = Path(__file__).resolve().parent
 OVERNIGHT_DIR = LOL_AGENT_DIR / "overnight_batches"
 LATEST_BATCH_FILE = OVERNIGHT_DIR / "latest_batch.json"
 SCAN_CACHE_FILE = LOL_AGENT_DIR / "overnight_scan_cache.json"
-SCAN_CACHE_SCHEMA_VERSION = 5
+SCAN_CACHE_SCHEMA_VERSION = 7
+
+MONTAGE_PRESETS = ("compare_all_3", "auto_fallback", "arena_wide", "beat_velocity", "story_raw_pov")
+VIRAL_STYLE_ORDER = ("ARENA_WIDE", "BEAT_VELOCITY", "STORY_RAW_POV")
 
 TIER_FILTER_MIN_RANK: Dict[str, int] = {
     "auto": -1,
@@ -175,8 +178,8 @@ def _load_scan_cache() -> Dict[str, Any]:
             entries = data.get("entries")
             if isinstance(entries, dict):
                 return {"schema": SCAN_CACHE_SCHEMA_VERSION, "entries": entries}
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[Overnight] [WARN] Błąd odczytu SCAN_CACHE_FILE ({SCAN_CACHE_FILE}): {exc}")
     return {"schema": SCAN_CACHE_SCHEMA_VERSION, "entries": {}}
 
 
@@ -190,8 +193,8 @@ def _save_scan_cache(cache_data: Dict[str, Any]) -> None:
             trimmed = dict(list(entries.items())[-600:])
             cache_data = {"schema": SCAN_CACHE_SCHEMA_VERSION, "entries": trimmed}
         _atomic_write_text(SCAN_CACHE_FILE, json.dumps(cache_data, indent=2, ensure_ascii=False))
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[Overnight] [WARN] Błąd zapisu SCAN_CACHE_FILE ({SCAN_CACHE_FILE}): {exc}")
 
 
 def _cache_key_for(path: str, size_bytes: int, mtime_sec: float) -> str:
@@ -277,7 +280,35 @@ def _normalize_action_type_in_window(
     return "outplay"
 
 
-def _score_and_classify_candidate(raw_entry: Dict[str, Any]) -> Dict[str, Any]:
+def _load_learning_directive_safe() -> Dict[str, Any]:
+    """Bezpiecznie ładuje learning_directive.json z learning_engine."""
+    try:
+        try:
+            from lol_agent.learning_engine import get_learning_directive
+        except ImportError:
+            from learning_engine import get_learning_directive
+        data = get_learning_directive()
+        return data if isinstance(data, dict) else {}
+    except Exception as exc:
+        print(f"⚠️ [Overnight] Ostrzeżenie odczytu learning_directive.json: {exc}")
+        return {}
+
+
+def _get_recent_evr_safe(directive: Dict[str, Any]) -> Optional[float]:
+    try:
+        try:
+            from lol_agent.lol_montage_director import _extract_recent_evr_pct
+        except ImportError:
+            from lol_montage_director import _extract_recent_evr_pct
+        return _extract_recent_evr_pct(directive or {})
+    except Exception:
+        return None
+
+
+def _score_and_classify_candidate(
+    raw_entry: Dict[str, Any],
+    directive: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Przelicza klasyfikację okienkową, filtrację i hype_score na surowym lub zcache'owanym wpisie."""
     entry = dict(raw_entry)
     if entry.get("rejection_code") in (
@@ -355,7 +386,9 @@ def _score_and_classify_candidate(raw_entry: Dict[str, Any]) -> Dict[str, Any]:
     if 10.0 <= window_dur <= 24.0 and kill_count_in_win >= 1:
         hype += 3.0
 
-    if kill_count_in_win >= 2 and kill_span_s > 11.0:
+    if kill_count_in_win == 2 and kill_span_s > 6.5:
+        hype -= min(12.0, round((kill_span_s - 6.5) * 1.5, 1))
+    elif kill_count_in_win >= 3 and kill_span_s > 11.0:
         hype -= min(10.0, round((kill_span_s - 11.0) * 1.5, 1))
     if player_died:
         hype -= 18.0
@@ -365,8 +398,34 @@ def _score_and_classify_candidate(raw_entry: Dict[str, Any]) -> Dict[str, Any]:
         hype -= 10.0
     elif window_dur < 6.0:
         hype -= 6.0
-    if first_kill_offset_s > 6.0 and not objective_secured and not is_outplayed:
-        hype -= 10.0
+    if first_kill_offset_s > 4.5 and not objective_secured:
+        hype -= min(10.0, round((first_kill_offset_s - 4.5) * 2.0, 1))
+
+    if directive is None and not os.environ.get("PYTEST_CURRENT_TEST"):
+        directive_data = _load_learning_directive_safe()
+    else:
+        directive_data = directive if isinstance(directive, dict) else {}
+
+    mult = 1.0
+    learning_signals: List[str] = []
+    if directive_data:
+        action_weights = directive_data.get("action_weights") or {}
+        eval_mults = ((directive_data.get("evaluator_config") or {}).get("action_multipliers") or {})
+        raw_mult = action_weights.get(action_type) if action_weights.get(action_type) is not None else eval_mults.get(action_type)
+        if raw_mult is not None:
+            try:
+                mult = max(0.88, min(1.15, float(raw_mult)))
+            except (TypeError, ValueError):
+                mult = 1.0
+        if abs(mult - 1.0) >= 0.01 and kill_count_in_win >= 1:
+            hype = round(hype * mult, 1)
+            learning_signals.append(f"action_mult:{action_type}={mult:.2f}")
+
+        recent_evr = _get_recent_evr_safe(directive_data)
+        if recent_evr is not None and recent_evr < 48.0 and first_kill_offset_s > 3.5 and kill_count_in_win >= 1 and not objective_secured:
+            evr_pen = min(8.0, round((first_kill_offset_s - 3.5) * 2.5, 1))
+            hype -= evr_pen
+            learning_signals.append(f"low_evr_slow_hook:-{evr_pen:.1f}(evr={recent_evr:.1f}%,fk={first_kill_offset_s:.1f}s)")
 
     rejection_code: Optional[str] = None
     rejection_reason = ""
@@ -423,6 +482,8 @@ def _score_and_classify_candidate(raw_entry: Dict[str, Any]) -> Dict[str, Any]:
         "window_dur": window_dur,
         "hook_text": hook_text,
         "hype_score": hype_score,
+        "learning_action_multiplier": round(mult, 3),
+        "learning_signals_applied": learning_signals,
         "qualified": qualified,
         "fallback_eligible": fallback_eligible,
         "fallback_mediocre": False,
@@ -498,8 +559,8 @@ def _apply_outplayed_anchor(
                 best_future_s = best_future_s if best_future_s is not None else full_op.get("best_event_future_s")
                 est_first_kill_s = est_first_kill_s if est_first_kill_s is not None else full_op.get("est_first_kill_s")
                 est_last_kill_s = est_last_kill_s if est_last_kill_s is not None else full_op.get("est_last_kill_s")
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[Overnight] [WARN] Błąd odczytu outplayed_db dla klatki {clip_info.get('path')}: {exc}")
 
     kill_times = sorted(
         float(ev["time_s"])
@@ -518,7 +579,24 @@ def _apply_outplayed_anchor(
         else:
             break
 
-    anchor_end_k = max(t_ev, float(est_last_kill_s)) if isinstance(est_last_kill_s, (int, float)) else t_ev
+    later_ev_kills = [
+        float(ev["time_s"])
+        for ev in (events_summary or [])
+        if isinstance(ev, dict)
+        and ev.get("type") == "kill"
+        and isinstance(ev.get("time_s"), (int, float))
+        and float(ev["time_s"]) > t_ev + 1.5
+    ]
+    ocr_target_hits = [
+        k for k in ocr_in_win
+        if int(k.get("tier") or 0) >= t_rank
+        and abs(float(k.get("timestamp", -99.0)) - t_ev) <= 3.5
+    ]
+    if ocr_target_hits and not later_ev_kills:
+        ocr_real_end = max(float(k.get("timestamp", t_ev)) for k in ocr_target_hits)
+        anchor_end_k = max(min(t_ev, ocr_real_end), ocr_real_end)
+    else:
+        anchor_end_k = max(t_ev, float(est_last_kill_s)) if isinstance(est_last_kill_s, (int, float)) else t_ev
     anchor_end_k = min(duration, anchor_end_k)
 
     burst_first = burst[0]
@@ -539,34 +617,50 @@ def _apply_outplayed_anchor(
     elif isinstance(est_first_kill_s, (int, float)) and float(est_first_kill_s) < anchor_end_k - 1.5:
         new_start = max(0.0, float(est_first_kill_s) - default_pre_first_kill)
     else:
-        default_lead = min(9.5, max_dur - 3.5) if t_rank >= 4 else (4.2 if t_rank <= 2 else min(7.2, max_dur - 3.5))
+        default_lead = min(9.5, max_dur - 3.5) if t_rank >= 4 else (3.8 if t_rank <= 2 else min(7.2, max_dur - 3.5))
         lead = float(best_past_s) if isinstance(best_past_s, (int, float)) and float(best_past_s) > 0 else default_lead
-        max_lead = min(11.5, max_dur - 3.0) if t_rank >= 4 else (4.6 if t_rank <= 2 else min(7.8, max_dur - 3.2))
-        min_lead = 3.2 if t_rank <= 2 else 6.0
+        max_lead = min(11.5, max_dur - 3.0) if t_rank >= 4 else (3.95 if t_rank <= 2 else min(7.8, max_dur - 3.2))
+        min_lead = 3.0 if t_rank <= 2 else 6.0
         lead = max(min_lead, min(max_lead, lead))
         new_start = max(0.0, t_ev - lead)
 
     is_merged_est = isinstance(est_last_kill_s, (int, float)) and float(est_last_kill_s) > t_ev + 0.5
-    tail_s = 2.0 if is_merged_est else max(2.8, min(3.5, float(best_future_s) if isinstance(best_future_s, (int, float)) and float(best_future_s) > 0 else 3.2))
+    tail_s = 2.0 if is_merged_est else max(2.8, min(3.6, float(best_future_s) if isinstance(best_future_s, (int, float)) and float(best_future_s) > 0 else 3.2))
     new_end = min(duration, anchor_end_k + tail_s)
-    # P0.2: Najpierw delikatny tail do 3.5s po ostatnim killu; wstecz cofamy wyłącznie do granicy max_pre_first_kill (bez 5-9s biegu)
-    if (new_end - new_start) < min_dur:
+    eff_min_dur = min(min_dur, 8.2) if (not has_distinct_first_kill and t_rank <= 2) else min_dur
+    # P0.2: Najpierw delikatny tail po ostatnim killu; wstecz cofamy wyłącznie do granicy max_pre_first_kill (bez 5-9s biegu)
+    if (new_end - new_start) < eff_min_dur:
         extra_tail_end = min(duration, anchor_end_k + 3.5)
         if extra_tail_end > new_end:
-            new_end = min(extra_tail_end, new_start + min_dur)
-        if (new_end - new_start) < min_dur:
-            desired_start = max(0.0, new_end - min_dur)
+            new_end = min(extra_tail_end, new_start + eff_min_dur)
+        if (new_end - new_start) < eff_min_dur:
+            desired_start = max(0.0, new_end - eff_min_dur)
             if has_distinct_first_kill:
                 min_allowed_start = max(0.0, anchor_start_k - max_pre_first_kill)
                 new_start = max(desired_start, min_allowed_start)
             elif t_rank <= 2:
-                min_allowed_single = max(0.0, t_ev - 4.6)
+                min_allowed_single = max(0.0, t_ev - 4.0)
                 new_start = max(desired_start, min_allowed_single)
             else:
                 new_start = desired_start
-        if (new_end - new_start) < min_dur and not has_distinct_first_kill and duration > new_end:
-            new_end = min(duration, new_start + min_dur)
-    # Zbyt długie okna skracamy wyłącznie od początku (tnąc wolne intro), zachowując 1. kill i finał
+        if (new_end - new_start) < eff_min_dur and not has_distinct_first_kill and duration > new_end:
+            max_single_end = min(duration, anchor_end_k + 4.1)
+            new_end = min(max_single_end, new_start + eff_min_dur)
+    # Zbyt długie okna lub martwe intro przed 1. wykrytym OCR killem tniemy od początku
+    ocr_in_new = [
+        float(k.get("timestamp", 0.0))
+        for k in raw_kills
+        if (new_start - 0.3) <= float(k.get("timestamp", 0.0)) <= (new_end + 0.3)
+    ]
+    if ocr_in_new:
+        first_ocr_in = min(ocr_in_new)
+        if (first_ocr_in - new_start) > 3.6 and first_ocr_in <= anchor_end_k + 0.5:
+            want_trim_start = round(max(new_start, first_ocr_in - 2.6), 2)
+            if (new_end - want_trim_start) < eff_min_dur and duration > new_end:
+                new_end = min(duration, anchor_end_k + 3.4, want_trim_start + eff_min_dur)
+            if (new_end - want_trim_start) >= max(8.0, eff_min_dur - 0.2):
+                new_start = want_trim_start
+
     if (new_end - new_start) > max_dur:
         safe_earliest_kill = max(0.0, anchor_start_k - 1.2)
         trimmed_start = min(safe_earliest_kill, new_end - max_dur)
@@ -592,7 +686,7 @@ def _apply_outplayed_anchor(
     ]
     ocr_anch_max = max([int(k.get("tier") or 0) for k in anchored_ocr], default=0)
     merged_kills = list(raw_kills)
-    if ocr_anch_max < t_rank or len(anchored_ocr) < min(t_rank, 2):
+    if ocr_anch_max < t_rank:
         # Dodaj brakujące punkty Riot w nowym oknie, unikając duplikatów <1.0s
         op_points: List[Tuple[float, int]] = []
         in_win_kt = [kt for kt in kill_times if new_start - 0.3 <= kt <= new_end + 0.3]
@@ -623,6 +717,21 @@ def _apply_outplayed_anchor(
                     "confidence": 0.96,
                     "source": event_source,
                 })
+        merged_kills.sort(key=lambda k: float(k.get("timestamp", 0.0)))
+    elif (
+        len(anchored_ocr) < min(t_rank, 2)
+        and isinstance(est_first_kill_s, (int, float))
+        and anchored_ocr
+        and float(est_first_kill_s) < min(float(k.get("timestamp", 0.0)) for k in anchored_ocr) - 0.6
+        and (new_start - 0.3) <= float(est_first_kill_s) <= (new_end + 0.2)
+    ):
+        merged_kills.append({
+            "timestamp": round(float(est_first_kill_s), 2),
+            "tier": 1,
+            "label": "KILL",
+            "confidence": 0.92,
+            "source": event_source,
+        })
         merged_kills.sort(key=lambda k: float(k.get("timestamp", 0.0)))
 
     return merged_kills, event_tier, new_start, new_end, anchored_peak_t, filtered_segs
@@ -1312,6 +1421,78 @@ def _build_honest_short_comment_pl(item: Dict[str, Any]) -> str:
     )
 
 
+def _compute_item_final_score(item: Dict[str, Any]) -> float:
+    """Oblicza finalną punktację shorta (0..100) z karami za defekty oglądalności."""
+    hype = float(item.get("hype_score") or 0.0)
+    watch = float(item.get("watchability_score") or 0.0)
+    qa = float(item.get("qa_score") or 0.0)
+    defects = list(item.get("defects") or [])
+    has_crit = bool(item.get("has_critical_defect"))
+
+    raw_final = round(0.35 * hype + 0.50 * watch + 0.15 * qa, 1)
+    if item.get("champion_mismatch"):
+        raw_final -= 6.0
+    if "dead_gap_gt_3.8s" in defects:
+        raw_final -= 4.5
+    if "moderate_edge_clipping" in defects:
+        raw_final -= 3.5
+    if "camera_jump_gt_220px" in defects:
+        cam_step = float(item.get("camera_peak_step_px") or 0.0)
+        raw_final -= 4.5 if cam_step >= 450.0 else 3.0
+    if "slow_intro_gt_4.8s" in defects:
+        raw_final -= 4.0
+    elif "slow_intro_gt_3.5s" in defects:
+        raw_final -= 2.0
+    if "duration_too_long_gt_16.5s" in defects:
+        raw_final -= 2.0
+    if "center_blocking_overlay" in defects:
+        raw_final -= 3.0
+
+    vis_r = float(item.get("player_visible_ratio") if item.get("player_visible_ratio") is not None else 1.0)
+    if 0.72 <= vis_r < 0.76:
+        raw_final -= 2.0
+
+    if has_crit:
+        raw_final = min(raw_final, 65.0)
+    if (0.0 < vis_r < 0.55) or float(item.get("player_edge_clip_ratio") or 0.0) > 0.35:
+        raw_final = min(raw_final, 68.0)
+    elif 0.0 < vis_r < 0.72:
+        raw_final = min(raw_final, 74.0)
+    if item.get("fallback_mediocre"):
+        raw_final = min(raw_final, 64.0)
+    return round(max(0.0, min(100.0, raw_final)), 1)
+
+
+def _compute_publish_block_reasons(item: Dict[str, Any]) -> List[str]:
+    """Wyznacza twardą listę powodów blokady publikacji na podstawie metryk wideo i final_score."""
+    block_reasons: List[str] = []
+    if bool(item.get("has_critical_defect")):
+        block_reasons.append("has_critical_defect")
+    gap_v = item.get("longest_gap_out_sec")
+    if isinstance(gap_v, (int, float)) and float(gap_v) >= 5.5:
+        block_reasons.append(f"dead_gap_{float(gap_v):.1f}s>=5.5s")
+    fk_v = item.get("first_kill_out_sec")
+    if isinstance(fk_v, (int, float)) and float(fk_v) > 4.0:
+        block_reasons.append(f"slow_intro_{float(fk_v):.1f}s>4.0s")
+    vr_v = item.get("player_visible_ratio")
+    if isinstance(vr_v, (int, float)) and 0.0 < float(vr_v) < 0.72:
+        block_reasons.append(f"low_visibility_{float(vr_v):.2f}<0.72")
+    dur_v = item.get("duration_s")
+    act_low = str(item.get("action_type") or "").lower().strip()
+    min_pub_dur = 8.9 if act_low in ("double", "solo_bolo", "solo", "1v1", "clutch", "oneshot", "outplay") else 10.0
+    if isinstance(dur_v, (int, float)) and float(dur_v) > 0.0:
+        if float(dur_v) < min_pub_dur:
+            block_reasons.append(f"too_short_{float(dur_v):.1f}s<{min_pub_dur:.1f}s")
+        elif float(dur_v) > 17.0:
+            block_reasons.append(f"too_long_{float(dur_v):.1f}s>17.0s")
+    fs = float(item.get("final_score") or 0.0)
+    if fs < 76.0:
+        block_reasons.append(f"low_final_{fs:.1f}<76.0")
+    if item.get("fallback_mediocre"):
+        block_reasons.append("fallback_mediocre")
+    return block_reasons
+
+
 def rank_rendered_overnight_shorts(
     rendered_items: List[Dict[str, Any]],
     scan_stats: Dict[str, Any],
@@ -1333,46 +1514,8 @@ def rank_rendered_overnight_shorts(
             failed_items.append(item)
             continue
 
-        hype = float(item.get("hype_score") or 0.0)
-        watch = float(item.get("watchability_score") or 0.0)
-        qa = float(item.get("qa_score") or 0.0)
-        defects = list(item.get("defects") or [])
-        has_crit = bool(item.get("has_critical_defect"))
-
-        raw_final = round(0.35 * hype + 0.50 * watch + 0.15 * qa, 1)
-        if item.get("champion_mismatch"):
-            raw_final -= 6.0
-        if "dead_gap_gt_3.8s" in defects:
-            raw_final -= 4.5
-        if "moderate_edge_clipping" in defects:
-            raw_final -= 3.5
-        if "camera_jump_gt_220px" in defects:
-            cam_step = float(item.get("camera_peak_step_px") or 0.0)
-            raw_final -= 4.5 if cam_step >= 450.0 else 3.0
-        if "slow_intro_gt_4.8s" in defects:
-            raw_final -= 4.0
-        elif "slow_intro_gt_3.5s" in defects:
-            raw_final -= 2.0
-        if "duration_too_long_gt_16.5s" in defects:
-            raw_final -= 2.0
-        if "center_blocking_overlay" in defects:
-            raw_final -= 3.0
-
-        vis_r = float(item.get("player_visible_ratio") if item.get("player_visible_ratio") is not None else 1.0)
-        if 0.72 <= vis_r < 0.76:
-            raw_final -= 2.0
-
-        if has_crit:
-            raw_final = min(raw_final, 65.0)
-        if (0.0 < vis_r < 0.55) or float(item.get("player_edge_clip_ratio") or 0.0) > 0.35:
-            raw_final = min(raw_final, 68.0)
-        elif 0.0 < vis_r < 0.72:
-            raw_final = min(raw_final, 74.0)
-        if item.get("fallback_mediocre"):
-            raw_final = min(raw_final, 64.0)
-
-        item["final_score"] = round(max(0.0, min(100.0, raw_final)), 1)
-        item["defects"] = defects
+        item["defects"] = list(item.get("defects") or [])
+        item["final_score"] = _compute_item_final_score(item)
         valid_items.append(item)
 
     valid_items.sort(
@@ -1472,28 +1615,7 @@ def rank_rendered_overnight_shorts(
         else:
             item["verdict"] = "NEEDS_TWEAK" if fs >= 50.0 else "SKIP"
 
-        block_reasons: List[str] = []
-        if crit:
-            block_reasons.append("has_critical_defect")
-        gap_v = item.get("longest_gap_out_sec")
-        if isinstance(gap_v, (int, float)) and float(gap_v) >= 5.5:
-            block_reasons.append(f"dead_gap_{float(gap_v):.1f}s>=5.5s")
-        fk_v = item.get("first_kill_out_sec")
-        if isinstance(fk_v, (int, float)) and float(fk_v) > 4.0:
-            block_reasons.append(f"slow_intro_{float(fk_v):.1f}s>4.0s")
-        vr_v = item.get("player_visible_ratio")
-        if isinstance(vr_v, (int, float)) and 0.0 < float(vr_v) < 0.72:
-            block_reasons.append(f"low_visibility_{float(vr_v):.2f}<0.72")
-        dur_v = item.get("duration_s")
-        if isinstance(dur_v, (int, float)) and float(dur_v) > 0.0:
-            if float(dur_v) < 10.5:
-                block_reasons.append(f"too_short_{float(dur_v):.1f}s<10.5s")
-            elif float(dur_v) > 17.0:
-                block_reasons.append(f"too_long_{float(dur_v):.1f}s>17.0s")
-        if fs < 76.0:
-            block_reasons.append(f"low_final_{fs:.1f}<76.0")
-        if item.get("fallback_mediocre"):
-            block_reasons.append("fallback_mediocre")
+        block_reasons = _compute_publish_block_reasons(item)
         item["publish_block_reasons"] = block_reasons
         item["publish_recommended"] = len(block_reasons) == 0
 
@@ -1560,6 +1682,51 @@ def rank_rendered_overnight_shorts(
     }
 
 
+def _build_batch_manifest(
+    *,
+    batch_id: str,
+    status: str,
+    champion_name: Optional[str],
+    tier_filter: str,
+    only_channel_champion: bool,
+    preset: str,
+    rank: str,
+    scan_res: Dict[str, Any],
+    started_at: str,
+    finished_at: str,
+    ranked_res: Dict[str, Any],
+    summary_pl: str,
+) -> Dict[str, Any]:
+    """Buduje ujednolicony manifest paczki nocnej dla stanu `done` oraz `stopped`."""
+    return {
+        "batch_id": batch_id,
+        "status": status,
+        "auto_publish": False,
+        "champion_name": champion_name,
+        "tier_filter": tier_filter,
+        "only_channel_champion": only_channel_champion,
+        "montage_preset": preset,
+        "rank": rank,
+        "folder": scan_res.get("folder"),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "scan_stats": {
+            "total_clips_found": scan_res.get("total_clips_found", 0),
+            "skipped_published": scan_res.get("skipped_published", 0),
+            "scanned_unpublished": scan_res.get("scanned_unpublished", 0),
+            "qualified_count": scan_res.get("qualified_count", 0),
+            "rejected_count": scan_res.get("rejected_count", 0),
+            "rejection_breakdown": scan_res.get("rejection_breakdown") or {},
+        },
+        "recommended_filename": ranked_res.get("recommended_filename"),
+        "recommended_verdict": ranked_res.get("recommended_verdict"),
+        "recommendation_source": ranked_res.get("recommendation_source"),
+        "guard_override": ranked_res.get("guard_override"),
+        "summary_pl": summary_pl,
+        "items": ranked_res.get("items") or [],
+    }
+
+
 def _persist_batch_manifest(manifest: Dict[str, Any]) -> str:
     OVERNIGHT_DIR.mkdir(parents=True, exist_ok=True)
     bid = str(manifest.get("batch_id") or datetime.now().strftime("%Y%m%d_%H%M%S"))
@@ -1576,8 +1743,8 @@ def _thumb_search_dirs(output_path: Optional[str] = None) -> List[Path]:
     if output_path:
         try:
             dirs.append(Path(str(output_path)).parent)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[Overnight] [WARN] Niepoprawna ścieżka output_path ({output_path}): {exc}")
     try:
         try:
             from lol_agent.api.config import LOL_TEMP_DIR, LOL_OUTPUT_DIR
@@ -1633,7 +1800,8 @@ def update_overnight_item_thumbnail(output_filename: str, thumb_path: str) -> bo
             return False, None
         try:
             data = json.loads(mf_path.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            print(f"[Overnight] [WARN] Błąd odczytu manifestu {mf_path}: {exc}")
             return False, None
         if not isinstance(data, dict):
             return False, None
@@ -1675,7 +1843,8 @@ def load_latest_overnight_batch() -> Optional[Dict[str, Any]]:
             it["thumbnail_path"] = t_path
             it["thumbnail_filename"] = t_name
         return data
-    except Exception:
+    except Exception as exc:
+        print(f"[Overnight] [WARN] Błąd ładowania LATEST_BATCH_FILE ({LATEST_BATCH_FILE}): {exc}")
         return None
 
 
@@ -1690,46 +1859,74 @@ def list_overnight_batches(limit: int = 10) -> List[Dict[str, Any]]:
             d = json.loads(p.read_text(encoding="utf-8"))
             if isinstance(d, dict):
                 out.append(d)
-        except Exception:
+        except Exception as exc:
+            print(f"[Overnight] [WARN] Pominięto uszkodzony plik batch {p.name}: {exc}")
             continue
     return out
 
 
-def _annotate_output_metas(ranked_items: List[Dict[str, Any]], batch_id: str) -> None:
+def _save_single_output_meta(item: Dict[str, Any], batch_id: str, out_fn: Optional[str] = None, style_override: Optional[str] = None) -> None:
     try:
         from lol_agent.api.helpers import _save_meta
     except ImportError:
         from api.helpers import _save_meta  # type: ignore
 
+    target_fn = out_fn or item.get("output_filename")
+    if not target_fn:
+        return
+    try:
+        _save_meta(str(target_fn), {
+            "source_path": item.get("source_path") or "",
+            "champion_name": item.get("champion_name") or "Katarina",
+            "action_type": item.get("action_type") or "outplay",
+            "rank": item.get("rank") or "Master",
+            "clip_start": item.get("clip_start"),
+            "clip_end": item.get("clip_end"),
+            "peak_moment": item.get("peak_moment"),
+            "thumbnail_path": item.get("thumbnail_path") or "",
+            "thumbnail_filename": item.get("thumbnail_filename") or "",
+            "title": item.get("title") or "",
+            "title_variant_b": item.get("title_variant_b") or "",
+            "description": item.get("description") or "",
+            "pinned_comment": item.get("pinned_comment") or "",
+            "overnight_batch_id": batch_id,
+            "overnight_rank": item.get("overnight_rank"),
+            "overnight_verdict": item.get("verdict"),
+            "montage_style": style_override or item.get("montage_style") or "",
+            "fallback_triggered": bool(item.get("fallback_triggered", False)),
+            "fallback_from_style": item.get("fallback_from_style"),
+            "hype_score": item.get("hype_score"),
+            "watchability_score": item.get("watchability_score"),
+            "final_score": item.get("final_score"),
+            "synapsa_comment_pl": item.get("synapsa_comment_pl"),
+        })
+    except Exception as exc:
+        print(f"[Overnight] [WARN] Błąd zapisu meta ({target_fn}): {exc}")
+
+
+def _annotate_output_metas(ranked_items: List[Dict[str, Any]], batch_id: str) -> None:
     for it in ranked_items:
-        out_fn = it.get("output_filename")
-        if not out_fn or not it.get("render_ok"):
-            continue
-        try:
-            _save_meta(str(out_fn), {
-                "source_path": it.get("source_path") or "",
-                "champion_name": it.get("champion_name") or "Katarina",
-                "action_type": it.get("action_type") or "outplay",
-                "rank": it.get("rank") or "Master",
-                "clip_start": it.get("clip_start"),
-                "clip_end": it.get("clip_end"),
-                "peak_moment": it.get("peak_moment"),
-                "thumbnail_path": it.get("thumbnail_path") or "",
-                "thumbnail_filename": it.get("thumbnail_filename") or "",
-                "title": it.get("title") or "",
-                "title_variant_b": it.get("title_variant_b") or "",
-                "description": it.get("description") or "",
-                "pinned_comment": it.get("pinned_comment") or "",
-                "overnight_batch_id": batch_id,
-                "overnight_rank": it.get("overnight_rank"),
-                "overnight_verdict": it.get("verdict"),
-                "hype_score": it.get("hype_score"),
-                "watchability_score": it.get("watchability_score"),
-                "final_score": it.get("final_score"),
-                "synapsa_comment_pl": it.get("synapsa_comment_pl"),
-            })
-        except Exception:
-            pass
+        if it.get("output_filename") and it.get("render_ok"):
+            _save_single_output_meta(it, batch_id=batch_id)
+        for alt in (it.get("alternate_renders") or []):
+            alt_fn = alt.get("output_filename")
+            if alt_fn and alt.get("render_ok", True) and alt_fn != it.get("output_filename"):
+                alt_payload = dict(it)
+                alt_payload.update({
+                    "output_filename": alt_fn,
+                    "thumbnail_path": alt.get("thumbnail_path") or it.get("thumbnail_path"),
+                    "thumbnail_filename": alt.get("thumbnail_filename") or it.get("thumbnail_filename"),
+                    "title": alt.get("title") or it.get("title"),
+                    "watchability_score": alt.get("watchability_score", it.get("watchability_score")),
+                    "final_score": alt.get("final_score", it.get("final_score")),
+                    "synapsa_comment_pl": alt.get("synapsa_comment_pl") or it.get("synapsa_comment_pl"),
+                })
+                _save_single_output_meta(
+                    alt_payload,
+                    batch_id=batch_id,
+                    out_fn=str(alt_fn),
+                    style_override=str(alt.get("montage_style") or ""),
+                )
 
 
 def _probe_ig_compliance(mp4_path: str) -> Dict[str, Any]:
@@ -1756,6 +1953,488 @@ def _probe_ig_compliance(mp4_path: str) -> Dict[str, Any]:
         return {"ig_ready": True, "ig_issues": []}
 
 
+def _normalize_montage_preset(montage_preset: Optional[str]) -> str:
+    val = str(montage_preset or "compare_all_3").strip().lower()
+    return val if val in MONTAGE_PRESETS else "compare_all_3"
+
+
+def _choose_primary_and_fallback_styles(
+    cand: Dict[str, Any],
+    montage_preset: str = "compare_all_3",
+    directive: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, Optional[str]]:
+    """Dobiera główny i kontrastowy styl montażu dla klipu wg presetu z Opcji Nocnej."""
+    preset = _normalize_montage_preset(montage_preset)
+    if preset == "arena_wide":
+        return "ARENA_WIDE", None
+    if preset == "beat_velocity":
+        return "BEAT_VELOCITY", None
+    if preset == "story_raw_pov":
+        return "STORY_RAW_POV", None
+    if preset == "compare_all_3":
+        return "ARENA_WIDE", None
+
+    act = str(cand.get("action_type") or "").strip().lower()
+    kill_span = float(cand.get("kill_span_s") or 0.0)
+    est_k0 = cand.get("est_first_kill_s")
+    est_k1 = cand.get("est_last_kill_s")
+    if kill_span <= 0.0 and est_k0 is not None and est_k1 is not None:
+        try:
+            kill_span = max(0.0, float(est_k1) - float(est_k0))
+        except (TypeError, ValueError):
+            kill_span = 0.0
+    total_kills = int(cand.get("total_kills_in_clip") or cand.get("kill_count") or 0)
+
+    if (
+        act in ("triple", "quadrakill", "pentakill", "objective_steal")
+        or bool(cand.get("objective_secured"))
+        or total_kills >= 3
+        or kill_span > 5.2
+    ):
+        fb = "STORY_RAW_POV" if kill_span > 6.0 else "BEAT_VELOCITY"
+        return "ARENA_WIDE", fb
+
+    if directive is None and not os.environ.get("PYTEST_CURRENT_TEST"):
+        directive_data = _load_learning_directive_safe()
+    else:
+        directive_data = directive if isinstance(directive, dict) else {}
+
+    m_dim = (((directive_data.get("recipe_experiments") or {}).get("dimensions") or {}).get("montage_style") or {})
+    if bool(m_dim.get("reliable")):
+        winner = str(m_dim.get("winner") or "").upper().strip()
+        if winner in VIRAL_STYLE_ORDER:
+            fb = "ARENA_WIDE" if winner != "ARENA_WIDE" else "BEAT_VELOCITY"
+            return winner, fb
+
+    return "BEAT_VELOCITY", "ARENA_WIDE"
+
+
+def _pick_dynamic_fallback_style(
+    primary_style: str,
+    default_fallback: Optional[str],
+    item: Dict[str, Any],
+) -> str:
+    defects = {str(d) for d in (item.get("defects") or [])}
+    blocks = " ".join(str(b) for b in (item.get("publish_block_reasons") or []))
+    if (
+        "dead_gap_gt_3.8s" in defects
+        or "dead_gap_" in blocks
+        or "slow_intro_gt_4.8s" in defects
+        or "duration_too_long_gt_16.5s" in defects
+        or "too_long_" in blocks
+    ) and primary_style != "STORY_RAW_POV":
+        return "STORY_RAW_POV"
+    if (
+        "camera_jump_gt_220px" in defects
+        or "low_visibility_" in blocks
+        or "moderate_edge_clipping" in defects
+    ) and primary_style != "ARENA_WIDE":
+        return "ARENA_WIDE"
+    if default_fallback and default_fallback != primary_style:
+        return default_fallback
+    return "ARENA_WIDE" if primary_style != "ARENA_WIDE" else "BEAT_VELOCITY"
+
+
+def _needs_style_fallback(item: Dict[str, Any]) -> bool:
+    if not item.get("render_ok"):
+        return True
+    if bool(item.get("has_critical_defect")):
+        return True
+    if not bool(item.get("publish_recommended", False)):
+        return True
+    defects = {str(d) for d in (item.get("defects") or [])}
+    if defects & {"camera_jump_gt_220px", "dead_gap_gt_3.8s", "slow_intro_gt_4.8s", "moderate_edge_clipping"}:
+        return True
+    blocks = " ".join(str(b) for b in (item.get("publish_block_reasons") or []))
+    if any(k in blocks for k in ("low_visibility_", "too_short_", "too_long_", "slow_intro_", "dead_gap_")):
+        return True
+    if float(item.get("watchability_score") or 0.0) < 76.0:
+        return True
+    if float(item.get("final_score") or 0.0) < 76.0:
+        return True
+    return False
+
+
+def _variant_quality_key(item: Dict[str, Any]) -> Tuple[int, int, int, float, float]:
+    return (
+        1 if item.get("render_ok") else 0,
+        1 if item.get("publish_recommended") else 0,
+        0 if item.get("has_critical_defect") else 1,
+        float(item.get("final_score") or 0.0),
+        float(item.get("watchability_score") or 0.0),
+    )
+
+
+def _summarize_variant(item: Dict[str, Any], is_selected: bool = False) -> Dict[str, Any]:
+    out_p = item.get("output_path")
+    file_exists = bool(out_p and Path(str(out_p)).is_file())
+    return {
+        "montage_style": str(item.get("montage_style") or ""),
+        "output_filename": str(item.get("output_filename") or ""),
+        "output_path": out_p,
+        "thumbnail_path": item.get("thumbnail_path"),
+        "thumbnail_filename": item.get("thumbnail_filename"),
+        "title": item.get("title") or "",
+        "hook_text": item.get("hook_text") or "",
+        "duration_s": item.get("duration_s"),
+        "final_score": item.get("final_score"),
+        "watchability_score": item.get("watchability_score"),
+        "qa_score": item.get("qa_score"),
+        "camera_peak_step_px": item.get("camera_peak_step_px"),
+        "first_kill_out_sec": item.get("first_kill_out_sec"),
+        "longest_gap_out_sec": item.get("longest_gap_out_sec"),
+        "player_visible_ratio": item.get("player_visible_ratio"),
+        "player_edge_clip_ratio": item.get("player_edge_clip_ratio"),
+        "has_critical_defect": bool(item.get("has_critical_defect")),
+        "publish_recommended": bool(item.get("publish_recommended", False)),
+        "publish_block_reasons": list(item.get("publish_block_reasons") or []),
+        "defects": list(item.get("defects") or []),
+        "synapsa_comment_pl": item.get("synapsa_comment_pl") or _build_honest_short_comment_pl(item),
+        "render_ok": bool(item.get("render_ok")),
+        "file_exists": file_exists,
+        "is_selected": bool(is_selected),
+    }
+
+
+def _normalize_title_key(title: str) -> str:
+    txt = re.sub(r"#\S+", "", str(title or ""))
+    txt = re.sub(r"[^\w\s]", "", txt, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", txt).strip().lower()
+
+
+def _pick_unique_batch_hook(cand: Dict[str, Any], used_hooks: set[str]) -> str:
+    champ = str(cand.get("champion") or "KATARINA").upper().strip() or "KATARINA"
+    act = str(cand.get("action_type") or "outplay").lower().strip()
+    raw_hk = str(cand.get("hook_text") or "").strip()
+    up_hk = " ".join(raw_hk.upper().split())
+    is_spoiler = up_hk.startswith(("DOUBLE KILL - ", "TRIPLE KILL - ", "QUADRAKILL - ", "PENTAKILL - "))
+    if up_hk and not is_spoiler and up_hk not in used_hooks:
+        used_hooks.add(up_hk)
+        return raw_hk
+
+    pools: Dict[str, List[str]] = {
+        "pentakill": ["WAIT FOR THE FIFTH RESET", "NEVER GROUP VS KATARINA", "5V1 AND NO SURVIVORS", "HOW FAST CAN HP DROP?", "THEY THOUGHT 5V1 WAS FREE"],
+        "quadrakill": ["WAIT FOR THE FOURTH RESET", "NEVER STACK VS KATARINA", "4V1 INSTANT TURNAROUND", "WATCH THE RESET CHAIN", "THEY THOUGHT 4V1 WAS SAFE"],
+        "triple": ["WAIT FOR THE THIRD RESET", "THEY WALKED INTO DAGGERS", "NEVER CHASE KATARINA", "WATCH THIS COUNTER-ENGAGE", "3V1 GREED PUNISHED"],
+        "double": ["WAIT FOR THE SECOND RESET", f"NEVER CHASE {champ}", "THEY THOUGHT 2V1 WAS FREE", "WATCH THE DAGGER ANGLE", "GREEDY DIVE INSTANT REGRET", "BLINK AND BOTH VANISH"],
+        "clutch": ["HOW DID SHE SURVIVE?!", "THEY CELEBRATED TOO EARLY", "1 SECOND FROM DEATH", "NO WAY SHE FLIPS THIS"],
+        "solo_bolo": ["WHO WINS THIS 1V1?", "EGO CHALLENGE ACCEPTED", "WATCH THE DODGE TIMING", "PURE SKILL CHECK"],
+    }
+    cands = list(pools.get(act, ["WATCH THE LAST 3 SECONDS", "THEY THOUGHT THEY HAD ME", "ONE MISTAKE COST EVERYTHING", "ZERO HESITATION FLIP"]))
+    for h in cands:
+        nh = " ".join(h.upper().split())
+        if nh not in used_hooks:
+            used_hooks.add(nh)
+            return h
+    fallback_h = cands[len(used_hooks) % len(cands)]
+    used_hooks.add(" ".join(fallback_h.upper().split()))
+    return fallback_h
+
+
+def _ensure_unique_batch_title(
+    items: List[Dict[str, Any]],
+    used_titles: set[str],
+    champion: str,
+    action_type: str,
+    rank: str,
+) -> None:
+    if not items:
+        return
+    base_title = str(items[0].get("title") or "").strip()
+    base_key = _normalize_title_key(base_title)
+    chosen = base_title
+
+    if not base_key or base_key in used_titles:
+        alt_b = str(items[0].get("title_variant_b") or "").strip()
+        if alt_b and _normalize_title_key(alt_b) not in used_titles:
+            chosen = alt_b
+        else:
+            try:
+                try:
+                    from lol_agent.lol_metadata_generator import generate_channel_title, _format_final_title
+                except ImportError:
+                    from lol_metadata_generator import generate_channel_title, _format_final_title  # type: ignore
+                found = None
+                for _attempt in range(12):
+                    cand_t = generate_channel_title(
+                        action_type=action_type,
+                        champion=champion,
+                        rank=rank,
+                        variant="A" if _attempt % 2 == 0 else "B",
+                        exclude_title=chosen,
+                    )
+                    if _normalize_title_key(cand_t) not in used_titles:
+                        found = cand_t
+                        break
+                if found:
+                    chosen = found
+                else:
+                    # Gwarancja braku duplikatu nawet gdy wyczerpano pulę szablonów
+                    extra_pool = [
+                        f"Every Dagger Timed To Perfection ⚡ {champion} #shorts #leagueoflegends #lol",
+                        f"Blink Once And The Fight Is Over 💀 {champion} #shorts #leagueoflegends #lol",
+                        f"They Punished Themselves Stepping Up 🔥 {champion} #shorts #leagueoflegends #lol",
+                        f"Instant Turnaround On {champion} ⚡ Unreactable #shorts #leagueoflegends #lol",
+                        f"Zero Room To Breathe Against {champion} 💀 #shorts #leagueoflegends #lol",
+                    ]
+                    for ep in extra_pool:
+                        if _normalize_title_key(ep) not in used_titles:
+                            chosen = _format_final_title(ep)
+                            break
+            except Exception:
+                pass
+
+    chosen_key = _normalize_title_key(chosen)
+    if chosen_key:
+        used_titles.add(chosen_key)
+    for it in items:
+        it["title"] = chosen
+
+
+def _render_and_inspect_candidate(
+    pipeline_runner: Any,
+    inspect_rendered_short: Callable[[str], Dict[str, Any]],
+    cand: Dict[str, Any],
+    out_filename: str,
+    candidate_rank: int,
+    requested_champion: str,
+    rank: str,
+    montage_style: str,
+    emit_log: Optional[Callable[[str], None]] = None,
+) -> Dict[str, Any]:
+    """Renderuje jeden wariant stylu dla kandydata i od razu wykonuje pełną inspekcję oglądalności + IG."""
+    safe_act = re.sub(r"[^a-z0-9_]+", "", str(cand.get("action_type") or "outplay").lower()) or "outplay"
+
+    with pipeline_runner._lock:
+        pipeline_runner._cancel_event.clear()
+        pipeline_runner._job_queue.clear()
+
+    combat_segs = None
+    if safe_act != "solo_bolo" and cand.get("combat_segments"):
+        combat_segs = [(float(s[0]), float(s[1])) for s in cand["combat_segments"]]
+
+    cand_champ = str(cand.get("champion") or "").strip()
+    if cand_champ and str(cand.get("event_source") or "").startswith("outplayed_"):
+        detected_champ = cand_champ
+    else:
+        detected_champ = requested_champion
+        try:
+            try:
+                from lol_agent.lol_screen_inspector import detect_champion_local
+            except ImportError:
+                from lol_screen_inspector import detect_champion_local  # type: ignore
+            if cand.get("path") and Path(str(cand["path"])).is_file():
+                detected_champ = detect_champion_local(str(cand["path"]), default_champion=requested_champion) or requested_champion
+        except Exception:
+            detected_champ = requested_champion
+    champ_mismatch = bool(requested_champion and detected_champ and detected_champ.lower() != requested_champion.lower())
+
+    safe_hook = str(cand.get("hook_text") or "").strip()
+    if not safe_hook or (safe_act in ("triple", "quadrakill", "pentakill") and "DOUBLE" in safe_hook.upper()):
+        if safe_act == "triple":
+            safe_hook = "TRIPLE KILL - 3 DOWN"
+        elif safe_act == "quadrakill":
+            safe_hook = "QUADRAKILL - ONE MORE"
+        elif safe_act == "pentakill":
+            safe_hook = "PENTAKILL WIPE"
+
+    run_exc_msg: Optional[str] = None
+    try:
+        pipeline_runner._run_pipeline(
+            source_path=str(cand["path"]),
+            clip_start=float(cand.get("clip_start") or 0.0),
+            clip_end=float(cand.get("clip_end") or 15.0),
+            action_type=str(cand.get("action_type") or "outplay"),
+            champion_name=detected_champ,
+            rank=rank,
+            peak_moment=float(cand.get("peak_moment") or 8.0),
+            hook_text=safe_hook,
+            output_filename=out_filename,
+            use_speed_ramp=True,
+            use_zoom_punch=True,
+            use_smart_camera=True,
+            notify_token=None,
+            combat_segments=combat_segs,
+            game_type="lol",
+            montage_style_override=montage_style,
+        )
+    except Exception as run_err:
+        run_exc_msg = str(run_err)
+        if emit_log:
+            emit_log(f"Błąd renderu #{candidate_rank} [{montage_style}] ({cand.get('filename')}): {run_exc_msg}")
+
+    p_state = pipeline_runner.get_state()
+    out_path = p_state.get("output_path")
+    render_ok = (not run_exc_msg) and (p_state.get("status") == "done") and bool(out_path) and Path(str(out_path)).is_file()
+    resolved_out_name = Path(str(out_path)).name if render_ok else out_filename
+
+    thumb_path, thumb_filename = _resolve_thumbnail_for_output(
+        resolved_out_name,
+        p_state.get("thumbnail_path") if not run_exc_msg else None,
+        output_path=str(out_path) if out_path else None,
+    )
+    if render_ok and out_path and not thumb_path:
+        try:
+            try:
+                from lol_agent.lol_thumbnail import generate_thumbnail as _gen_thumb
+            except ImportError:
+                from lol_thumbnail import generate_thumbnail as _gen_thumb  # type: ignore
+            eff_start = float(p_state.get("clip_start") if p_state.get("clip_start") is not None else (cand.get("clip_start") or 0.0))
+            eff_end = float(p_state.get("clip_end") if p_state.get("clip_end") is not None else (cand.get("clip_end") or 15.0))
+            eff_peak = float(cand.get("peak_moment") or eff_end)
+            eff_dur = max(1.0, eff_end - eff_start)
+            safe_peak_rel = min(max(0.2, eff_peak - eff_start), max(0.3, eff_dur - 1.0))
+            fallback_thumb_out = str(Path(str(out_path)).with_name(f"{Path(str(out_path)).stem}_thumb.jpg"))
+            act_lbl = str(p_state.get("action_type") or cand.get("action_type") or "outplay").upper().replace("_", " ")
+            _gen_thumb(
+                video_path=str(out_path),
+                peak_moment=safe_peak_rel,
+                action_label=act_lbl,
+                champion_name=detected_champ,
+                output_path=fallback_thumb_out,
+                source_clip_path=str(cand.get("path")) if cand.get("path") and os.path.isfile(str(cand.get("path"))) else None,
+                source_peak_moment=float(eff_peak),
+            )
+            thumb_path, thumb_filename = _resolve_thumbnail_for_output(
+                resolved_out_name,
+                fallback_thumb_out,
+                output_path=str(out_path),
+            )
+        except Exception as thumb_err:
+            if emit_log:
+                emit_log(f"Miniaturka fallback warning (#{candidate_rank}): {thumb_err}")
+
+    item_record: Dict[str, Any] = {
+        "candidate_rank": candidate_rank,
+        "source_filename": cand.get("filename"),
+        "source_path": cand.get("path"),
+        "output_filename": resolved_out_name,
+        "output_path": out_path if not run_exc_msg else None,
+        "thumbnail_path": thumb_path,
+        "thumbnail_filename": thumb_filename,
+        "champion_name": detected_champ,
+        "requested_champion": requested_champion,
+        "champion_mismatch": champ_mismatch,
+        "rank": rank,
+        "action_type": p_state.get("action_type") or cand.get("action_type"),
+        "montage_style": montage_style,
+        "kill_count": cand.get("kill_count"),
+        "kill_span_s": cand.get("kill_span_s"),
+        "objective_secured": cand.get("objective_secured"),
+        "is_clutch_1hp": cand.get("is_clutch_1hp"),
+        "min_hp_percentage": cand.get("min_hp_percentage"),
+        "is_favorite": bool(cand.get("is_favorite", False)),
+        "event_tier": cand.get("event_tier") or "",
+        "event_source": cand.get("event_source") or "none",
+        "best_event_time_s": cand.get("best_event_time_s"),
+        "est_first_kill_s": cand.get("est_first_kill_s"),
+        "est_last_kill_s": cand.get("est_last_kill_s"),
+        "total_kills_in_clip": cand.get("total_kills_in_clip"),
+        "match_folder": cand.get("match_folder") or "",
+        "match_date": cand.get("match_date") or "",
+        "clip_base_key": cand.get("clip_base_key") or "",
+        "match_kda": cand.get("match_kda") or "",
+        "clip_start": p_state.get("clip_start") if p_state.get("clip_start") is not None else cand.get("clip_start"),
+        "clip_end": p_state.get("clip_end") if p_state.get("clip_end") is not None else cand.get("clip_end"),
+        "peak_moment": cand.get("peak_moment"),
+        "title": p_state.get("title") or "",
+        "title_variant_b": p_state.get("title_variant_b") or "",
+        "description": p_state.get("description") or "",
+        "pinned_comment": p_state.get("pinned_comment") or "",
+        "hype_score": cand.get("hype_score"),
+        "fallback_mediocre": bool(cand.get("fallback_mediocre")),
+        "qa_status": p_state.get("qa_status"),
+        "qa_score": p_state.get("qa_score") or 0,
+        "render_ok": render_ok,
+        "error": run_exc_msg or p_state.get("error"),
+        "fallback_triggered": False,
+        "fallback_from_style": None,
+        "alternate_renders": [],
+    }
+
+    if render_ok and out_path:
+        try:
+            insp = dict(inspect_rendered_short(str(out_path)) or {})
+            out_meta: Dict[str, Any] = {}
+            meta_fp = Path(str(out_path)).with_suffix(".meta.json")
+            if meta_fp.is_file():
+                try:
+                    out_meta = json.loads(meta_fp.read_text(encoding="utf-8"))
+                except Exception:
+                    out_meta = {}
+            recipe_fp = Path(str(out_path)).with_suffix(".recipe.json")
+            recipe_style = ""
+            if recipe_fp.is_file():
+                try:
+                    recipe_style = str((json.loads(recipe_fp.read_text(encoding="utf-8")) or {}).get("montage_style") or "").strip()
+                except Exception:
+                    recipe_style = ""
+            resolved_style = str(out_meta.get("montage_style") or recipe_style or montage_style or "").strip()
+            if resolved_style:
+                item_record["montage_style"] = resolved_style
+
+            qa_det = out_meta.get("qa_details") if isinstance(out_meta.get("qa_details"), dict) else {}
+            rg_meas = ((qa_det.get("recipe_gate") or {}).get("measured") or {}) if isinstance(qa_det, dict) else {}
+            qar_checks = ((qa_det.get("qa_after_render") or {}).get("checks") or {}) if isinstance(qa_det, dict) else {}
+
+            if insp.get("longest_gap_out_sec") is None and rg_meas.get("longest_gap_out_sec") is not None:
+                insp["longest_gap_out_sec"] = rg_meas.get("longest_gap_out_sec")
+            if insp.get("camera_peak_step_px") is None:
+                cam_vel = (qar_checks.get("camera_velocity") or {}).get("peak_velocity_px")
+                insp["camera_peak_step_px"] = (
+                    cam_vel if cam_vel is not None else rg_meas.get("camera_peak_step_px")
+                )
+
+            raw_kills_out = (qar_checks.get("kill_timing") or {}).get("kills") or []
+            kill_timestamps_out: List[float] = []
+            for kr in raw_kills_out:
+                if isinstance(kr, (list, tuple)) and len(kr) >= 1:
+                    try:
+                        kill_timestamps_out.append(round(float(kr[0]), 2))
+                    except (TypeError, ValueError):
+                        pass
+
+            if insp.get("longest_gap_out_sec") is not None:
+                item_record["longest_gap_out_sec"] = float(insp["longest_gap_out_sec"])
+            if insp.get("camera_peak_step_px") is not None:
+                item_record["camera_peak_step_px"] = float(insp["camera_peak_step_px"])
+            item_record["kill_timestamps_out"] = kill_timestamps_out
+
+            ig_info = _probe_ig_compliance(str(out_path))
+            defects, has_crit = _extract_defects(insp, bool(ig_info.get("ig_ready", True)), item=item_record)
+            item_record.update({
+                "watchability_score": float(insp.get("watchability_score") or 0.0),
+                "frame0_hook_legible": bool(insp.get("frame0_hook_legible", True)),
+                "kill_overlay_zone": insp.get("kill_overlay_zone"),
+                "player_visible_ratio": insp.get("player_visible_ratio"),
+                "player_edge_clip_ratio": insp.get("player_edge_clip_ratio"),
+                "audio_clip_gt_096": int(insp.get("audio_clip_gt_096") or 0),
+                "av_delta_s": float(insp.get("av_delta_s") or 0.0),
+                "black_end_frame": bool(insp.get("black_end_frame")),
+                "hook_is_generic": bool(insp.get("hook_is_generic")),
+                "hook_text": insp.get("hook_text") or "",
+                "duration_s": float(insp.get("video_dur_s") or 0.0),
+                "camera_peak_step_px": insp.get("camera_peak_step_px"),
+                "first_kill_out_sec": insp.get("first_kill_out_sec"),
+                "longest_gap_out_sec": insp.get("longest_gap_out_sec"),
+                "kill_timestamps_out": kill_timestamps_out,
+                "ig_compliance": ig_info,
+                "defects": defects,
+                "has_critical_defect": has_crit,
+            })
+        except Exception as insp_err:
+            print(f"[Overnight] [WARN] inspect_rendered_short nie powiodło się ({out_path}): {insp_err}")
+            item_record["watchability_score"] = float(p_state.get("qa_score") or 0.0)
+            item_record["defects"] = [f"inspect_error:{insp_err}"]
+            item_record["has_critical_defect"] = False
+
+    item_record["final_score"] = _compute_item_final_score(item_record)
+    block_reasons = _compute_publish_block_reasons(item_record)
+    item_record["publish_block_reasons"] = block_reasons
+    item_record["publish_recommended"] = bool(render_ok and len(block_reasons) == 0)
+    return item_record
+
+
 def run_overnight_batch(
     folder: Optional[str] = None,
     top_n: int = 5,
@@ -1769,11 +2448,12 @@ def run_overnight_batch(
     clear_cancel: bool = True,
     tier_filter: str = "auto",
     only_channel_champion: bool = True,
+    montage_preset: str = "compare_all_3",
 ) -> Dict[str, Any]:
     """
     Uruchamia pełny tryb nocny (synchronicznie):
       1. Skanuje cały folder i wybiera Top N najbardziej hypowanych klipów.
-      2. Renderuje każdy lokalnie (ZERO auto-uploadu).
+      2. Renderuje każdy lokalnie (ZERO auto-uploadu) w wybranym stylu lub z Auto-Fallback #2 / Compare 3.
       3. Inspekcjonuje każdy wyrenderowany short i zwraca rekomendację Synapsy #1..#N.
     """
     try:
@@ -1783,6 +2463,7 @@ def run_overnight_batch(
         from api import pipeline_runner  # type: ignore
         from synapsa_watchability_judge import inspect_rendered_short  # type: ignore
 
+    preset = _normalize_montage_preset(montage_preset)
     cur_pipe = pipeline_runner.get_state()
     if cur_pipe.get("status") == "running":
         raise RuntimeError("Inny render pipeline już trwa — poczekaj lub zatrzymaj przed uruchomieniem trybu nocnego.")
@@ -1815,7 +2496,7 @@ def run_overnight_batch(
         error=None,
         started_at=started_at,
         finished_at=None,
-        log=f"Start trybu nocnego (top_n={top_n}, skip_published={skip_published}, folder={folder or 'Outplayed + Medal'})",
+        log=f"Start trybu nocnego (top_n={top_n}, preset={preset}, skip_published={skip_published}, folder={folder or 'Outplayed + Medal'})",
     )
 
     def _on_scan_prog(done: int, total: int, name: str) -> None:
@@ -1847,7 +2528,7 @@ def run_overnight_batch(
     selected = list(scan_res.get("selected") or [])
     _emit_status(
         status="rendering",
-        phase=f"Wybrano {len(selected)} kandydatów do montażu",
+        phase=f"Wybrano {len(selected)} kandydatów ({preset})",
         progress=32,
         total_clips=scan_res.get("total_clips_found", 0),
         skipped_published=scan_res.get("skipped_published", 0),
@@ -1857,243 +2538,215 @@ def run_overnight_batch(
         log=(
             f"Skan gotowy: {scan_res['scanned_unpublished']} nieopublikowanych -> "
             f"{scan_res['qualified_count']} mocnych, {scan_res['rejected_count']} odrzuconych przeciętnych, "
-            f"wybrano {len(selected)}."
+            f"wybrano {len(selected)} (preset={preset})."
         ),
     )
 
+    def _log_render(msg: str) -> None:
+        _emit_status(log=msg)
+
     rendered_items: List[Dict[str, Any]] = []
-    for idx, cand in enumerate(selected, start=1):
+    used_batch_hooks: set[str] = set()
+    used_batch_titles: set[str] = set()
+    for idx, orig_cand in enumerate(selected, start=1):
         if _OVERNIGHT_CANCEL.is_set():
             _emit_status(status="stopped", phase=f"Przerwano przed renderem {idx}/{len(selected)}", finished_at=_now_iso())
             break
 
+        cand = dict(orig_cand)
+        cand["hook_text"] = _pick_unique_batch_hook(cand, used_batch_hooks)
         safe_act = re.sub(r"[^a-z0-9_]+", "", str(cand.get("action_type") or "outplay").lower()) or "outplay"
         # Nazwa MUSI zawierać "short", bo endpoint GET /outputs filtruje po "short" / "test".
-        out_filename = f"short_overnight_{batch_id}_r{idx}_{safe_act}.mp4"
+        base_out = f"short_overnight_{batch_id}_r{idx}_{safe_act}"
         pct = 32 + int(((idx - 1) / max(1, len(selected))) * 58)
+
+        if preset == "compare_all_3":
+            variants: List[Dict[str, Any]] = []
+            for s_idx, style_name in enumerate(VIRAL_STYLE_ORDER):
+                if _OVERNIGHT_CANCEL.is_set():
+                    break
+                var_fn = f"{base_out}.mp4" if s_idx == 0 else f"{base_out}_alt_{style_name.lower()}.mp4"
+                _emit_status(
+                    status="rendering",
+                    phase=f"Montaż {idx}/{len(selected)} [{style_name}]: {cand.get('filename')}",
+                    progress=min(89, pct + s_idx * 3),
+                    current_clip=str(cand.get("filename") or ""),
+                    log=f"Compare A/B/C #{idx}/{len(selected)} [{style_name}]: {cand.get('filename')} -> {var_fn}",
+                )
+                v_item = _render_and_inspect_candidate(
+                    pipeline_runner=pipeline_runner,
+                    inspect_rendered_short=inspect_rendered_short,
+                    cand=cand,
+                    out_filename=var_fn,
+                    candidate_rank=idx,
+                    requested_champion=champion_name,
+                    rank=rank,
+                    montage_style=style_name,
+                    emit_log=_log_render,
+                )
+                v_item["synapsa_comment_pl"] = _build_honest_short_comment_pl(v_item)
+                variants.append(v_item)
+                if _OVERNIGHT_CANCEL.is_set():
+                    break
+            if not variants:
+                break
+            _ensure_unique_batch_title(
+                variants,
+                used_batch_titles,
+                champion=str(variants[0].get("champion_name") or champion_name or "Katarina"),
+                action_type=str(variants[0].get("action_type") or cand.get("action_type") or "outplay"),
+                rank=rank,
+            )
+            best_item = max(variants, key=_variant_quality_key)
+            chosen_item = dict(best_item)
+            chosen_item["alternate_renders"] = [
+                _summarize_variant(v, is_selected=(v.get("output_filename") == chosen_item.get("output_filename")))
+                for v in variants
+            ]
+            rendered_items.append(chosen_item)
+            _emit_status(
+                rendered_count=len(rendered_items),
+                log=(
+                    f"Ukończono #{idx} (Compare 3): winner={chosen_item.get('montage_style')}, "
+                    f"final={chosen_item.get('final_score')}, watch={chosen_item.get('watchability_score')}"
+                ),
+            )
+            continue
+
+        primary_style, default_fb = _choose_primary_and_fallback_styles(cand, montage_preset=preset)
+        primary_fn = f"{base_out}.mp4"
         _emit_status(
             status="rendering",
-            phase=f"Montaż {idx}/{len(selected)}: {cand.get('filename')}",
+            phase=f"Montaż {idx}/{len(selected)} [{primary_style}]: {cand.get('filename')}",
             progress=pct,
             current_clip=str(cand.get("filename") or ""),
-            log=f"Render #{idx}/{len(selected)}: {cand.get('filename')} -> {out_filename} (hype={cand.get('hype_score')})",
+            log=f"Render #{idx}/{len(selected)} [{primary_style}]: {cand.get('filename')} -> {primary_fn} (hype={cand.get('hype_score')})",
         )
+        item1 = _render_and_inspect_candidate(
+            pipeline_runner=pipeline_runner,
+            inspect_rendered_short=inspect_rendered_short,
+            cand=cand,
+            out_filename=primary_fn,
+            candidate_rank=idx,
+            requested_champion=champion_name,
+            rank=rank,
+            montage_style=primary_style,
+            emit_log=_log_render,
+        )
+        item1["synapsa_comment_pl"] = _build_honest_short_comment_pl(item1)
+        cand_items = [item1]
+        chosen_item = dict(item1)
 
-        # Czyścimy ewentualny flag/kolejkę poprzedniego uruchomienia
-        with pipeline_runner._lock:
-            pipeline_runner._cancel_event.clear()
-            pipeline_runner._job_queue.clear()
-
-        combat_segs = None
-        if safe_act != "solo_bolo" and cand.get("combat_segments"):
-            combat_segs = [(float(s[0]), float(s[1])) for s in cand["combat_segments"]]
-
-        cand_champ = str(cand.get("champion") or "").strip()
-        if cand_champ and str(cand.get("event_source") or "").startswith("outplayed_"):
-            detected_champ = cand_champ
-        else:
-            detected_champ = champion_name
-            try:
-                try:
-                    from lol_agent.lol_screen_inspector import detect_champion_local
-                except ImportError:
-                    from lol_screen_inspector import detect_champion_local  # type: ignore
-                if Path(str(cand["path"])).is_file():
-                    detected_champ = detect_champion_local(str(cand["path"]), default_champion=champion_name) or champion_name
-            except Exception:
-                detected_champ = champion_name
-        champ_mismatch = bool(champion_name and detected_champ and detected_champ.lower() != champion_name.lower())
-
-        safe_hook = str(cand.get("hook_text") or "").strip()
-        if not safe_hook or (safe_act in ("triple", "quadrakill", "pentakill") and "DOUBLE" in safe_hook.upper()):
-            if safe_act == "triple":
-                safe_hook = "TRIPLE KILL - 3 DOWN"
-            elif safe_act == "quadrakill":
-                safe_hook = "QUADRAKILL - ONE MORE"
-            elif safe_act == "pentakill":
-                safe_hook = "PENTAKILL WIPE"
-
-        run_exc_msg: Optional[str] = None
-        try:
-            pipeline_runner._run_pipeline(
-                source_path=str(cand["path"]),
-                clip_start=float(cand.get("clip_start") or 0.0),
-                clip_end=float(cand.get("clip_end") or 15.0),
-                action_type=str(cand.get("action_type") or "outplay"),
-                champion_name=detected_champ,
-                rank=rank,
-                peak_moment=float(cand.get("peak_moment") or 8.0),
-                hook_text=safe_hook,
-                output_filename=out_filename,
-                use_speed_ramp=True,
-                use_zoom_punch=True,
-                use_smart_camera=True,
-                notify_token=None,
-                combat_segments=combat_segs,
-                game_type="lol",
+        if preset == "auto_fallback" and (not _OVERNIGHT_CANCEL.is_set()) and _needs_style_fallback(item1):
+            fb_style = _pick_dynamic_fallback_style(primary_style, default_fb, item1)
+            fb_fn = f"{base_out}_alt_{fb_style.lower()}.mp4"
+            _emit_status(
+                status="rendering",
+                phase=f"Auto-Fallback {idx}/{len(selected)} [{primary_style} -> {fb_style}]: {cand.get('filename')}",
+                progress=min(89, pct + 5),
+                current_clip=str(cand.get("filename") or ""),
+                log=(
+                    f"Auto-Fallback #{idx}: {primary_style} (final={item1.get('final_score')}, "
+                    f"watch={item1.get('watchability_score')}, pub={item1.get('publish_recommended')}) -> próba #{2}: {fb_style}"
+                ),
             )
-        except Exception as run_err:
-            run_exc_msg = str(run_err)
-            _emit_status(log=f"Błąd renderu #{idx} ({cand.get('filename')}): {run_exc_msg}")
+            item2 = _render_and_inspect_candidate(
+                pipeline_runner=pipeline_runner,
+                inspect_rendered_short=inspect_rendered_short,
+                cand=cand,
+                out_filename=fb_fn,
+                candidate_rank=idx,
+                requested_champion=champion_name,
+                rank=rank,
+                montage_style=fb_style,
+                emit_log=_log_render,
+            )
+            item2["synapsa_comment_pl"] = _build_honest_short_comment_pl(item2)
+            cand_items.append(item2)
+            _ensure_unique_batch_title(
+                cand_items,
+                used_batch_titles,
+                champion=str(item1.get("champion_name") or champion_name or "Katarina"),
+                action_type=str(item1.get("action_type") or cand.get("action_type") or "outplay"),
+                rank=rank,
+            )
+            if _variant_quality_key(item2) > _variant_quality_key(item1):
+                chosen_item = dict(item2)
+                chosen_item["fallback_triggered"] = True
+                chosen_item["fallback_from_style"] = primary_style
+                chosen_item["alternate_renders"] = [
+                    _summarize_variant(item1, is_selected=False),
+                    _summarize_variant(item2, is_selected=True),
+                ]
+            else:
+                chosen_item = dict(item1)
+                chosen_item["alternate_renders"] = [
+                    _summarize_variant(item1, is_selected=True),
+                    _summarize_variant(item2, is_selected=False),
+                ]
+        else:
+            _ensure_unique_batch_title(
+                cand_items,
+                used_batch_titles,
+                champion=str(item1.get("champion_name") or champion_name or "Katarina"),
+                action_type=str(item1.get("action_type") or cand.get("action_type") or "outplay"),
+                rank=rank,
+            )
+            chosen_item = dict(item1)
 
-        p_state = pipeline_runner.get_state()
-        out_path = p_state.get("output_path")
-        render_ok = (not run_exc_msg) and (p_state.get("status") == "done") and bool(out_path) and Path(str(out_path)).is_file()
-        resolved_out_name = Path(str(out_path)).name if render_ok else out_filename
-
-        thumb_path, thumb_filename = _resolve_thumbnail_for_output(
-            resolved_out_name,
-            p_state.get("thumbnail_path") if not run_exc_msg else None,
-            output_path=str(out_path) if out_path else None,
+        rendered_items.append(chosen_item)
+        _emit_status(
+            rendered_count=len(rendered_items),
+            log=(
+                f"Ukończono #{idx} [{chosen_item.get('montage_style')}]: ok={chosen_item.get('render_ok')}, "
+                f"qa={chosen_item.get('qa_score')}, watch={chosen_item.get('watchability_score')}, "
+                f"fb={chosen_item.get('fallback_triggered')}"
+            ),
         )
-        if render_ok and out_path and not thumb_path:
-            try:
-                try:
-                    from lol_agent.lol_thumbnail import generate_thumbnail as _gen_thumb
-                except ImportError:
-                    from lol_thumbnail import generate_thumbnail as _gen_thumb  # type: ignore
-                eff_start = float(p_state.get("clip_start") if p_state.get("clip_start") is not None else (cand.get("clip_start") or 0.0))
-                eff_end = float(p_state.get("clip_end") if p_state.get("clip_end") is not None else (cand.get("clip_end") or 15.0))
-                eff_peak = float(cand.get("peak_moment") or eff_end)
-                eff_dur = max(1.0, eff_end - eff_start)
-                safe_peak_rel = min(max(0.2, eff_peak - eff_start), max(0.3, eff_dur - 1.0))
-                fallback_thumb_out = str(Path(str(out_path)).with_name(f"{Path(str(out_path)).stem}_thumb.jpg"))
-                act_lbl = str(p_state.get("action_type") or cand.get("action_type") or "outplay").upper().replace("_", " ")
-                _gen_thumb(
-                    video_path=str(out_path),
-                    peak_moment=safe_peak_rel,
-                    action_label=act_lbl,
-                    champion_name=detected_champ,
-                    output_path=fallback_thumb_out,
-                    source_clip_path=str(cand.get("path")) if cand.get("path") and os.path.isfile(str(cand.get("path"))) else None,
-                    source_peak_moment=float(eff_peak),
-                )
-                thumb_path, thumb_filename = _resolve_thumbnail_for_output(
-                    resolved_out_name,
-                    fallback_thumb_out,
-                    output_path=str(out_path),
-                )
-            except Exception as thumb_err:
-                _emit_status(log=f"Miniaturka fallback warning (#{idx}): {thumb_err}")
-
-        item_record: Dict[str, Any] = {
-            "candidate_rank": idx,
-            "source_filename": cand.get("filename"),
-            "source_path": cand.get("path"),
-            "output_filename": resolved_out_name,
-            "output_path": out_path if not run_exc_msg else None,
-            "thumbnail_path": thumb_path,
-            "thumbnail_filename": thumb_filename,
-            "champion_name": detected_champ,
-            "requested_champion": champion_name,
-            "champion_mismatch": champ_mismatch,
-            "rank": rank,
-            "action_type": p_state.get("action_type") or cand.get("action_type"),
-            "kill_count": cand.get("kill_count"),
-            "kill_span_s": cand.get("kill_span_s"),
-            "objective_secured": cand.get("objective_secured"),
-            "is_clutch_1hp": cand.get("is_clutch_1hp"),
-            "min_hp_percentage": cand.get("min_hp_percentage"),
-            "is_favorite": bool(cand.get("is_favorite", False)),
-            "event_tier": cand.get("event_tier") or "",
-            "event_source": cand.get("event_source") or "none",
-            "best_event_time_s": cand.get("best_event_time_s"),
-            "est_first_kill_s": cand.get("est_first_kill_s"),
-            "est_last_kill_s": cand.get("est_last_kill_s"),
-            "total_kills_in_clip": cand.get("total_kills_in_clip"),
-            "match_folder": cand.get("match_folder") or "",
-            "match_date": cand.get("match_date") or "",
-            "clip_base_key": cand.get("clip_base_key") or "",
-            "match_kda": cand.get("match_kda") or "",
-            "clip_start": p_state.get("clip_start") if p_state.get("clip_start") is not None else cand.get("clip_start"),
-            "clip_end": p_state.get("clip_end") if p_state.get("clip_end") is not None else cand.get("clip_end"),
-            "peak_moment": cand.get("peak_moment"),
-            "title": p_state.get("title") or "",
-            "title_variant_b": p_state.get("title_variant_b") or "",
-            "description": p_state.get("description") or "",
-            "pinned_comment": p_state.get("pinned_comment") or "",
-            "hype_score": cand.get("hype_score"),
-            "fallback_mediocre": bool(cand.get("fallback_mediocre")),
-            "qa_status": p_state.get("qa_status"),
-            "qa_score": p_state.get("qa_score") or 0,
-            "render_ok": render_ok,
-            "error": run_exc_msg or p_state.get("error"),
-        }
-
-        if render_ok and out_path:
-            try:
-                insp = dict(inspect_rendered_short(str(out_path)) or {})
-                out_meta: Dict[str, Any] = {}
-                meta_fp = Path(str(out_path)).with_suffix(".meta.json")
-                if meta_fp.is_file():
-                    try:
-                        out_meta = json.loads(meta_fp.read_text(encoding="utf-8"))
-                    except Exception:
-                        out_meta = {}
-                qa_det = out_meta.get("qa_details") if isinstance(out_meta.get("qa_details"), dict) else {}
-                rg_meas = ((qa_det.get("recipe_gate") or {}).get("measured") or {}) if isinstance(qa_det, dict) else {}
-                qar_checks = ((qa_det.get("qa_after_render") or {}).get("checks") or {}) if isinstance(qa_det, dict) else {}
-
-                if insp.get("longest_gap_out_sec") is None and rg_meas.get("longest_gap_out_sec") is not None:
-                    insp["longest_gap_out_sec"] = rg_meas.get("longest_gap_out_sec")
-                if insp.get("camera_peak_step_px") is None:
-                    cam_vel = (qar_checks.get("camera_velocity") or {}).get("peak_velocity_px")
-                    insp["camera_peak_step_px"] = (
-                        cam_vel if cam_vel is not None else rg_meas.get("camera_peak_step_px")
-                    )
-
-                raw_kills_out = (qar_checks.get("kill_timing") or {}).get("kills") or []
-                kill_timestamps_out: List[float] = []
-                for kr in raw_kills_out:
-                    if isinstance(kr, (list, tuple)) and len(kr) >= 1:
-                        try:
-                            kill_timestamps_out.append(round(float(kr[0]), 2))
-                        except (TypeError, ValueError):
-                            pass
-
-                if insp.get("longest_gap_out_sec") is not None:
-                    item_record["longest_gap_out_sec"] = float(insp["longest_gap_out_sec"])
-                if insp.get("camera_peak_step_px") is not None:
-                    item_record["camera_peak_step_px"] = float(insp["camera_peak_step_px"])
-                item_record["kill_timestamps_out"] = kill_timestamps_out
-
-                ig_info = _probe_ig_compliance(str(out_path))
-                defects, has_crit = _extract_defects(insp, bool(ig_info.get("ig_ready", True)), item=item_record)
-                item_record.update({
-                    "watchability_score": float(insp.get("watchability_score") or 0.0),
-                    "frame0_hook_legible": bool(insp.get("frame0_hook_legible", True)),
-                    "kill_overlay_zone": insp.get("kill_overlay_zone"),
-                    "player_visible_ratio": insp.get("player_visible_ratio"),
-                    "player_edge_clip_ratio": insp.get("player_edge_clip_ratio"),
-                    "audio_clip_gt_096": int(insp.get("audio_clip_gt_096") or 0),
-                    "av_delta_s": float(insp.get("av_delta_s") or 0.0),
-                    "black_end_frame": bool(insp.get("black_end_frame")),
-                    "hook_is_generic": bool(insp.get("hook_is_generic")),
-                    "hook_text": insp.get("hook_text") or "",
-                    "duration_s": float(insp.get("video_dur_s") or 0.0),
-                    "camera_peak_step_px": insp.get("camera_peak_step_px"),
-                    "first_kill_out_sec": insp.get("first_kill_out_sec"),
-                    "longest_gap_out_sec": insp.get("longest_gap_out_sec"),
-                    "kill_timestamps_out": kill_timestamps_out,
-                    "ig_compliance": ig_info,
-                    "defects": defects,
-                    "has_critical_defect": has_crit,
-                })
-            except Exception as insp_err:
-                item_record["watchability_score"] = float(p_state.get("qa_score") or 0.0)
-                item_record["defects"] = [f"inspect_error:{insp_err}"]
-                item_record["has_critical_defect"] = False
-
-        rendered_items.append(item_record)
-        _emit_status(rendered_count=len(rendered_items), log=f"Ukończono #{idx}: ok={render_ok}, qa={item_record.get('qa_score')}, watch={item_record.get('watchability_score')}")
 
     if _OVERNIGHT_CANCEL.is_set():
-        _emit_status(status="stopped", phase="Przerwano przez użytkownika", finished_at=_now_iso())
-        return {"batch_id": batch_id, "status": "stopped", "scan_stats": scan_res, "items": rendered_items}
+        finished_at = _now_iso()
+        if not any(x.get("render_ok") for x in rendered_items):
+            _emit_status(status="stopped", phase="Przerwano przez użytkownika", finished_at=finished_at)
+            return {"batch_id": batch_id, "status": "stopped", "scan_stats": scan_res, "items": rendered_items}
+
+        ranked_res = rank_rendered_overnight_shorts(rendered_items, scan_res, use_local_ai=False)
+        _annotate_output_metas(ranked_res["items"], batch_id=batch_id)
+        stopped_summary = f"[Przerwano po {len(ranked_res['items'])} klipach] {ranked_res['summary_pl']}"
+        manifest = _build_batch_manifest(
+            batch_id=batch_id,
+            status="stopped",
+            champion_name=champion_name,
+            tier_filter=tier_filter,
+            only_channel_champion=only_channel_champion,
+            preset=preset,
+            rank=rank,
+            scan_res=scan_res,
+            started_at=started_at,
+            finished_at=finished_at,
+            ranked_res=ranked_res,
+            summary_pl=stopped_summary,
+        )
+        if output_dir:
+            _atomic_write_text(
+                Path(output_dir) / f"overnight_manifest_{batch_id}.json",
+                json.dumps(manifest, indent=2, ensure_ascii=False),
+            )
+        _persist_batch_manifest(manifest)
+        _emit_status(
+            status="stopped",
+            phase=f"Przerwano przez użytkownika (zapisano {len(ranked_res['items'])} gotowych)",
+            rendered_count=sum(1 for x in ranked_res["items"] if x.get("render_ok")),
+            recommended_filename=ranked_res["recommended_filename"],
+            summary_pl=stopped_summary,
+            finished_at=finished_at,
+            log=stopped_summary,
+        )
+        return manifest
 
     _emit_status(
         status="evaluating",
-        phase="Synapsa ocenia 5 shortów i wybiera #1...",
+        phase="Synapsa ocenia shorty i wybiera #1...",
         progress=94,
         log="Uruchamiam ocenę Synapsy (Sykofankcja 0) wszystkich wyrenderowanych shortów...",
     )
@@ -2102,32 +2755,20 @@ def run_overnight_batch(
     _annotate_output_metas(ranked_res["items"], batch_id=batch_id)
 
     finished_at = _now_iso()
-    manifest: Dict[str, Any] = {
-        "batch_id": batch_id,
-        "status": "done",
-        "auto_publish": False,
-        "champion_name": champion_name,
-        "tier_filter": tier_filter,
-        "only_channel_champion": only_channel_champion,
-        "rank": rank,
-        "folder": scan_res.get("folder"),
-        "started_at": started_at,
-        "finished_at": finished_at,
-        "scan_stats": {
-            "total_clips_found": scan_res.get("total_clips_found", 0),
-            "skipped_published": scan_res.get("skipped_published", 0),
-            "scanned_unpublished": scan_res.get("scanned_unpublished", 0),
-            "qualified_count": scan_res.get("qualified_count", 0),
-            "rejected_count": scan_res.get("rejected_count", 0),
-            "rejection_breakdown": scan_res.get("rejection_breakdown") or {},
-        },
-        "recommended_filename": ranked_res["recommended_filename"],
-        "recommended_verdict": ranked_res["recommended_verdict"],
-        "recommendation_source": ranked_res["recommendation_source"],
-        "guard_override": ranked_res["guard_override"],
-        "summary_pl": ranked_res["summary_pl"],
-        "items": ranked_res["items"],
-    }
+    manifest = _build_batch_manifest(
+        batch_id=batch_id,
+        status="done",
+        champion_name=champion_name,
+        tier_filter=tier_filter,
+        only_channel_champion=only_channel_champion,
+        preset=preset,
+        rank=rank,
+        scan_res=scan_res,
+        started_at=started_at,
+        finished_at=finished_at,
+        ranked_res=ranked_res,
+        summary_pl=ranked_res["summary_pl"],
+    )
     if output_dir:
         out_p = Path(output_dir)
         _atomic_write_text(
@@ -2149,6 +2790,167 @@ def run_overnight_batch(
     return manifest
 
 
+def restyle_overnight_short(output_filename: str, target_style: str) -> Dict[str, Any]:
+    """Przerenderowuje wybrany short z ostatniej paczki nocnej w jednym z 3 stylów (1-klik z Outputs.tsx)."""
+    style_norm = str(target_style or "").strip().upper()
+    if style_norm not in VIRAL_STYLE_ORDER:
+        raise ValueError(f"Nieznany styl montażu: {target_style}. Dozwolone: {', '.join(VIRAL_STYLE_ORDER)}")
+
+    target_name = Path(str(output_filename or "").strip()).name
+    if not target_name:
+        raise ValueError("Brak nazwy pliku wyjściowego (output_filename).")
+
+    try:
+        from lol_agent.api import pipeline_runner
+        from lol_agent.api.helpers import _load_meta
+        from lol_agent.synapsa_watchability_judge import inspect_rendered_short
+    except ImportError:
+        from api import pipeline_runner  # type: ignore
+        from api.helpers import _load_meta  # type: ignore
+        from synapsa_watchability_judge import inspect_rendered_short  # type: ignore
+
+    with _OVERNIGHT_LOCK:
+        if _OVERNIGHT_STATE.get("status") in ("scanning", "rendering", "evaluating"):
+            raise RuntimeError("Tryb nocny aktualnie pracuje — poczekaj na zakończenie przed restylem.")
+    if pipeline_runner.get_state().get("status") == "running":
+        raise RuntimeError("Inny render pipeline już trwa — poczekaj przed restylem.")
+
+    batch = load_latest_overnight_batch()
+    matched_item: Optional[Dict[str, Any]] = None
+    if isinstance(batch, dict):
+        for it in (batch.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            if str(it.get("output_filename") or "") == target_name:
+                matched_item = it
+                break
+            for alt in (it.get("alternate_renders") or []):
+                if str(alt.get("output_filename") or "") == target_name:
+                    matched_item = it
+                    break
+            if matched_item is not None:
+                break
+
+    meta = _load_meta(target_name) or {}
+    if matched_item is None and not meta:
+        out_fp = LOL_AGENT_DIR / "outputs" / target_name
+        if not out_fp.is_file():
+            raise FileNotFoundError(f"Nie znaleziono shorta '{target_name}' w paczce nocnej ani metadanych.")
+
+    src_path = str((matched_item or {}).get("source_path") or meta.get("source_path") or "").strip()
+    if not src_path or not Path(src_path).is_file():
+        raise FileNotFoundError(f"Brak pliku źródłowego dla '{target_name}': {src_path or '?'}")
+
+    cand: Dict[str, Any] = {
+        "filename": Path(src_path).name,
+        "path": src_path,
+        "clip_start": (matched_item or {}).get("clip_start") if (matched_item or {}).get("clip_start") is not None else (meta.get("clip_start") or 0.0),
+        "clip_end": (matched_item or {}).get("clip_end") if (matched_item or {}).get("clip_end") is not None else (meta.get("clip_end") or 15.0),
+        "action_type": (matched_item or {}).get("action_type") or meta.get("action_type") or "outplay",
+        "peak_moment": (matched_item or {}).get("peak_moment") if (matched_item or {}).get("peak_moment") is not None else (meta.get("peak_moment") or 8.0),
+        "champion": (matched_item or {}).get("champion_name") or meta.get("champion_name") or "Katarina",
+        "event_source": (matched_item or {}).get("event_source") or "outplayed_restyle",
+        "hook_text": (matched_item or {}).get("hook_text") or "",
+        "hype_score": (matched_item or {}).get("hype_score") or meta.get("hype_score") or 75.0,
+        "kill_count": (matched_item or {}).get("kill_count"),
+        "kill_span_s": (matched_item or {}).get("kill_span_s"),
+        "objective_secured": (matched_item or {}).get("objective_secured"),
+        "is_clutch_1hp": (matched_item or {}).get("is_clutch_1hp"),
+        "min_hp_percentage": (matched_item or {}).get("min_hp_percentage"),
+        "is_favorite": bool((matched_item or {}).get("is_favorite", False)),
+        "event_tier": (matched_item or {}).get("event_tier") or "",
+        "best_event_time_s": (matched_item or {}).get("best_event_time_s"),
+        "est_first_kill_s": (matched_item or {}).get("est_first_kill_s"),
+        "est_last_kill_s": (matched_item or {}).get("est_last_kill_s"),
+        "total_kills_in_clip": (matched_item or {}).get("total_kills_in_clip"),
+        "match_folder": (matched_item or {}).get("match_folder") or "",
+        "match_date": (matched_item or {}).get("match_date") or "",
+        "clip_base_key": (matched_item or {}).get("clip_base_key") or "",
+        "match_kda": (matched_item or {}).get("match_kda") or "",
+        "fallback_mediocre": bool((matched_item or {}).get("fallback_mediocre", False)),
+    }
+
+    base_stem = re.sub(r"_(alt|style)_[a-z0-9_]+$", "", Path(target_name).stem)
+    if "short" not in base_stem.lower():
+        base_stem = f"short_{base_stem}"
+    new_out_fn = f"{base_stem}_style_{style_norm.lower()}.mp4"
+
+    req_champ = str((matched_item or {}).get("requested_champion") or (matched_item or {}).get("champion_name") or meta.get("champion_name") or "Katarina")
+    rank_val = str((matched_item or {}).get("rank") or meta.get("rank") or "Master")
+    cand_rank = int((matched_item or {}).get("candidate_rank") or (matched_item or {}).get("overnight_rank") or 1)
+
+    new_item = _render_and_inspect_candidate(
+        pipeline_runner=pipeline_runner,
+        inspect_rendered_short=inspect_rendered_short,
+        cand=cand,
+        out_filename=new_out_fn,
+        candidate_rank=cand_rank,
+        requested_champion=req_champ,
+        rank=rank_val,
+        montage_style=style_norm,
+    )
+    new_item["synapsa_comment_pl"] = _build_honest_short_comment_pl(new_item)
+    batch_id = str((batch or {}).get("batch_id") or meta.get("overnight_batch_id") or "restyle")
+    if matched_item is not None and matched_item.get("overnight_rank") is not None:
+        new_item["overnight_rank"] = matched_item["overnight_rank"]
+        fs = float(new_item.get("final_score") or 0.0)
+        ws = float(new_item.get("watchability_score") or 0.0)
+        crit = bool(new_item.get("has_critical_defect"))
+        r_idx = int(matched_item["overnight_rank"])
+        if r_idx == 1:
+            new_item["verdict"] = "PICK_WINNER" if (fs >= 70.0 and ws >= 68.0 and not crit and not new_item.get("fallback_mediocre")) else "NEEDS_TWEAK"
+        else:
+            new_item["verdict"] = "STRONG_ALT" if (fs >= 65.0 and ws >= 65.0 and not crit) else ("NEEDS_TWEAK" if fs >= 50.0 else "SKIP")
+
+    new_variant = _summarize_variant(new_item, is_selected=bool(new_item.get("render_ok")))
+    batch_updated = False
+    if isinstance(batch, dict) and matched_item is not None and new_item.get("render_ok"):
+        existing_alts = list(matched_item.get("alternate_renders") or [])
+        by_fn: Dict[str, Dict[str, Any]] = {}
+        prev_fn = str(matched_item.get("output_filename") or "")
+        if prev_fn:
+            by_fn[prev_fn] = _summarize_variant(matched_item, is_selected=False)
+        for a in existing_alts:
+            afn = str(a.get("output_filename") or "")
+            if afn:
+                alt_copy = dict(a)
+                alt_copy["is_selected"] = False
+                by_fn[afn] = alt_copy
+        by_fn[str(new_item.get("output_filename") or new_out_fn)] = dict(new_variant)
+        new_alts = list(by_fn.values())
+
+        for k in (
+            "output_filename", "output_path", "thumbnail_path", "thumbnail_filename",
+            "montage_style", "title", "title_variant_b", "description", "pinned_comment",
+            "clip_start", "clip_end", "qa_status", "qa_score", "render_ok", "error",
+            "watchability_score", "final_score", "duration_s", "defects", "has_critical_defect",
+            "publish_block_reasons", "publish_recommended", "ig_compliance",
+            "player_visible_ratio", "player_edge_clip_ratio", "camera_peak_step_px",
+            "first_kill_out_sec", "longest_gap_out_sec", "kill_timestamps_out",
+            "verdict", "synapsa_comment_pl", "hook_text", "frame0_hook_legible",
+            "kill_overlay_zone", "audio_clip_gt_096", "av_delta_s", "black_end_frame",
+        ):
+            if k in new_item:
+                matched_item[k] = new_item[k]
+        matched_item["alternate_renders"] = new_alts
+        new_item["alternate_renders"] = new_alts
+
+        if batch.get("recommended_filename") == prev_fn or matched_item.get("overnight_rank") == 1:
+            batch["recommended_filename"] = matched_item.get("output_filename")
+            batch["recommended_verdict"] = matched_item.get("verdict")
+        _persist_batch_manifest(batch)
+        batch_updated = True
+
+    _annotate_output_metas([new_item], batch_id=batch_id)
+    return {
+        "status": "done" if new_item.get("render_ok") else "error",
+        "target_style": style_norm,
+        "item": new_item,
+        "variant": new_variant,
+        "batch_updated": batch_updated,
+    }
+
+
 def start_overnight_batch_async(
     folder: Optional[str] = None,
     top_n: int = 5,
@@ -2159,6 +2961,7 @@ def start_overnight_batch_async(
     use_local_ai: bool = True,
     tier_filter: str = "auto",
     only_channel_champion: bool = True,
+    montage_preset: str = "compare_all_3",
 ) -> bool:
     """Uruchamia tryb nocny w wątku w tle. Zwraca False jeśli sesja lub pipeline już trwa."""
     global _OVERNIGHT_THREAD
@@ -2167,6 +2970,7 @@ def start_overnight_batch_async(
     except ImportError:
         from api import pipeline_runner  # type: ignore
 
+    preset = _normalize_montage_preset(montage_preset)
     with _OVERNIGHT_LOCK:
         if _OVERNIGHT_STATE.get("status") in ("scanning", "rendering", "evaluating"):
             return False
@@ -2191,6 +2995,7 @@ def start_overnight_batch_async(
                 clear_cancel=False,
                 tier_filter=tier_filter,
                 only_channel_champion=only_channel_champion,
+                montage_preset=preset,
             )
         except Exception as exc:
             _update_overnight_state(
@@ -2218,6 +3023,7 @@ if __name__ == "__main__":
     parser.add_argument("--top", type=int, default=5, help="Liczba najlepszych klipów do montażu")
     parser.add_argument("--champion", default="Katarina")
     parser.add_argument("--tier-filter", default="auto", choices=sorted(TIER_FILTER_MIN_RANK.keys()))
+    parser.add_argument("--montage-preset", default="compare_all_3", choices=list(MONTAGE_PRESETS))
     parser.add_argument("--all-champions", action="store_true")
     parser.add_argument("--rank", default="Master")
     parser.add_argument("--include-published", action="store_true")
@@ -2256,9 +3062,11 @@ if __name__ == "__main__":
             progress_cb=_cli_batch_prog,
             tier_filter=ns.tier_filter,
             only_channel_champion=not ns.all_champions,
+            montage_preset=ns.montage_preset,
         )
         print(json.dumps({
             "batch_id": manifest.get("batch_id"),
+            "montage_preset": manifest.get("montage_preset"),
             "scan_stats": manifest.get("scan_stats"),
             "recommended_filename": manifest.get("recommended_filename"),
             "summary_pl": manifest.get("summary_pl"),
@@ -2268,11 +3076,14 @@ if __name__ == "__main__":
                     "output_filename": it.get("output_filename"),
                     "source_filename": it.get("source_filename"),
                     "action_type": it.get("action_type"),
+                    "montage_style": it.get("montage_style"),
+                    "fallback_triggered": it.get("fallback_triggered"),
                     "hype_score": it.get("hype_score"),
                     "watchability_score": it.get("watchability_score"),
                     "qa_score": it.get("qa_score"),
                     "final_score": it.get("final_score"),
                     "verdict": it.get("verdict"),
+                    "publish_recommended": it.get("publish_recommended"),
                     "defects": it.get("defects"),
                     "synapsa_comment_pl": it.get("synapsa_comment_pl"),
                 }

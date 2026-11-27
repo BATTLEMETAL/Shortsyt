@@ -41,8 +41,129 @@ FALLBACK_STYLES = {
     "CINEMATIC_DUEL":  "spokojna kamera (mniejszy krok i LERP), zero cięć, zoom 1.15 (po limicie 1.12), zwolnienie na ostatni cios",
     "BEAT_REALIGN":    "ten sam montaż z innym utworem o sprawdzonym dropie (utwór wybiera bramka)",
 }
+VIRAL_STYLE_DESCS = {
+    "ARENA_WIDE":    "szerokie okno 1440px (2.4x widoczności teamfightu) na rozmytym tle 9:16, gładkie slow-mo 0.45x, czyste SFX",
+    "BEAT_VELOCITY": "pełny pion 9:16 + speedup wejścia 1.45x -> maślane slow-mo 0.40x (1.35s) + impact flash + mocny beat-drop",
+    "STORY_RAW_POV": "hybrydowe 960px + biały banner hooka, szybkie 2.8x na martwym chodzeniu, 100% dźwięku gry, ciasny loop <=1.4s",
+}
 IN_MEDIA_RES_FIRST_KILL_AT = 2.5     # s; uderzenie poprzedza kill, a detektora pierwszego uderzenia nie ma
 DUEL_CAMERA = {"max_pan_px": 50.0, "lerp_alpha": 0.30}
+
+
+def _load_viral_style_profile(style: str) -> Optional[Dict[str, Any]]:
+    try:
+        try:
+            from lol_agent.lol_timeline import get_style_profile
+        except ImportError:
+            from lol_timeline import get_style_profile
+        return get_style_profile(style)
+    except Exception:
+        return None
+
+
+def _get_learning_directive_safe() -> Dict[str, Any]:
+    try:
+        try:
+            from lol_agent.learning_engine import get_learning_directive
+        except ImportError:
+            from learning_engine import get_learning_directive
+        return get_learning_directive() or {}
+    except Exception:
+        return {}
+
+
+def _extract_recent_evr_pct(directive: Dict[str, Any]) -> Optional[float]:
+    prog = (directive or {}).get("learning_progression") or {}
+    monthly = prog.get("monthly_2026") or {}
+    if not isinstance(monthly, dict):
+        return None
+    fallback_evr: Optional[float] = None
+    for month in sorted(monthly.keys(), reverse=True):
+        row = monthly.get(month)
+        if not isinstance(row, dict):
+            continue
+        evr = row.get("median_engaged_rate_pct")
+        if evr is None:
+            continue
+        try:
+            evr_val = float(evr)
+        except (TypeError, ValueError):
+            continue
+        if int(row.get("count") or 0) >= 3:
+            return evr_val
+        if fallback_evr is None:
+            fallback_evr = evr_val
+    return fallback_evr
+
+
+def _apply_48h_gate_adjustments(
+    decision: MontageDirectorDecision,
+    act: str,
+    directive: Dict[str, Any],
+    is_viral_style: bool = False,
+    max_outro_cap: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Nakłada wyuczone korekty z Bramki 48h oraz EVR bez naruszania layoutu 3 stylów viralowych."""
+    d_48 = (directive or {}).get("post_48h_gate_summary") or {}
+    adj = (d_48.get("director_adjustments_by_action") or {}).get(act)
+    recent_evr = _extract_recent_evr_pct(directive or {})
+    info: Dict[str, Any] = {
+        "applied": False,
+        "buildup_delta": 0.0,
+        "outro_delta": 0.0,
+        "recent_evr_pct": recent_evr,
+    }
+
+    if not is_viral_style:
+        if isinstance(adj, dict):
+            if adj.get("buildup_sec_delta"):
+                bd = float(adj["buildup_sec_delta"])
+                decision.buildup_sec = max(0.3, round(decision.buildup_sec + bd, 2))
+                info["buildup_delta"] = round(bd, 2)
+                info["applied"] = True
+            if adj.get("outro_sec_delta"):
+                od = float(adj["outro_sec_delta"])
+                decision.outro_sec = max(0.8, round(decision.outro_sec + od, 2))
+                info["outro_delta"] = round(od, 2)
+                info["applied"] = True
+            if info["applied"]:
+                decision.rationale += (
+                    f" [Korekta Bramki 48h dla {act}: "
+                    f"buildup={decision.buildup_sec}s, outro={decision.outro_sec}s]"
+                )
+        return info
+
+    b_delta = 0.0
+    o_delta = 0.0
+    if isinstance(adj, dict):
+        if adj.get("buildup_sec_delta"):
+            b_delta += float(adj["buildup_sec_delta"])
+        if adj.get("outro_sec_delta"):
+            o_delta += float(adj["outro_sec_delta"])
+    if recent_evr is not None and recent_evr < 48.0:
+        b_delta -= 0.15
+
+    if b_delta != 0.0:
+        new_b = round(max(0.35, min(1.1, decision.buildup_sec + b_delta)), 2)
+        if abs(new_b - decision.buildup_sec) >= 0.01:
+            info["buildup_delta"] = round(new_b - decision.buildup_sec, 2)
+            decision.buildup_sec = new_b
+            info["applied"] = True
+
+    if o_delta != 0.0:
+        outro_cap = float(max_outro_cap if max_outro_cap is not None else decision.outro_sec)
+        new_o = round(max(0.9, min(outro_cap, decision.outro_sec + o_delta)), 2)
+        if abs(new_o - decision.outro_sec) >= 0.01:
+            info["outro_delta"] = round(new_o - decision.outro_sec, 2)
+            decision.outro_sec = new_o
+            info["applied"] = True
+
+    if info["applied"]:
+        decision.rationale += (
+            f" [Korekta 48h/EVR dla {act}: buildup={decision.buildup_sec}s, "
+            f"outro={decision.outro_sec}s, evr={recent_evr}]"
+        )
+    return info
 
 
 def direct_clip_montage(
@@ -153,9 +274,31 @@ def direct_clip_montage(
             ),
         )
 
-    # ── STYL ZAPASOWY (bramka jakości): nadpisuje archetyp, reszta parametrów zostaje z diagnozy klipu ──
+    # ── STYL ZAPASOWY / VIRALOWY: nadpisuje archetyp, reszta parametrów zostaje dopasowana do stylu ──
     style = (force_style or "").upper().strip()
-    if style in FALLBACK_STYLES:
+    viral_prof = _load_viral_style_profile(style) if style in VIRAL_STYLE_DESCS else None
+    is_forced_style = (style in FALLBACK_STYLES) or (style in VIRAL_STYLE_DESCS)
+    directive = _get_learning_directive_safe()
+    adj_info: Dict[str, Any] = {"applied": False, "buildup_delta": 0.0, "outro_delta": 0.0, "recent_evr_pct": None}
+
+    if style in VIRAL_STYLE_DESCS and viral_prof:
+        base = decision.archetype
+        decision.archetype = style
+        decision.allow_jump_cut = False
+        decision.zoom_aggression = float(viral_prof["zoom_max"])
+        decision.slowmo_duration = float(viral_prof["slowmo_window_max"])
+        decision.outro_sec = float(viral_prof["max_post_kill_outro_s"])
+        decision.buildup_sec = 0.9 if style == "ARENA_WIDE" else 0.7
+        decision.camera_mode = str(viral_prof["frame_mode"])
+        decision.rationale = f"Styl viralowy {style} (zamiast {base}): {VIRAL_STYLE_DESCS[style]}."
+        adj_info = _apply_48h_gate_adjustments(
+            decision,
+            act,
+            directive,
+            is_viral_style=True,
+            max_outro_cap=float(viral_prof["max_post_kill_outro_s"]),
+        )
+    elif style in FALLBACK_STYLES:
         base = decision.archetype
         decision.archetype = style
         decision.allow_jump_cut = False
@@ -167,32 +310,15 @@ def direct_clip_montage(
             decision.camera_mode = "duel_centroid"
         decision.rationale = f"Styl zapasowy {style} (po nieudanej ocenie montażu {base}): {FALLBACK_STYLES[style]}."
     else:
-        # Zastosuj wyuczone korekty z Bramki 48h (jeśli dostępne dla tego typu akcji)
-        try:
-            try:
-                from lol_agent.learning_engine import get_learning_directive
-            except ImportError:
-                from learning_engine import get_learning_directive
-            d_48 = (get_learning_directive() or {}).get("post_48h_gate_summary") or {}
-            adj = (d_48.get("director_adjustments_by_action") or {}).get(act)
-            if isinstance(adj, dict):
-                if adj.get("buildup_sec_delta"):
-                    decision.buildup_sec = max(0.3, round(decision.buildup_sec + float(adj["buildup_sec_delta"]), 2))
-                if adj.get("outro_sec_delta"):
-                    decision.outro_sec = max(0.8, round(decision.outro_sec + float(adj["outro_sec_delta"]), 2))
-                decision.rationale += f" [Korekta Bramki 48h dla {act}: buildup={decision.buildup_sec}s, outro={decision.outro_sec}s]"
-        except Exception:
-            pass
+        adj_info = _apply_48h_gate_adjustments(decision, act, directive, is_viral_style=False)
 
     # Zastosuj hybrydowy selektor strategii Synapsa + pełny Kontrakt Skutków Parametrów
     synapsa_dec: Dict[str, Any] = {}
     try:
         try:
             from lol_agent.synapsa_engine import decide_montage_with_synapsa
-            from lol_agent.learning_engine import get_learning_directive
         except ImportError:
             from synapsa_engine import decide_montage_with_synapsa
-            from learning_engine import get_learning_directive
         synapsa_dec = decide_montage_with_synapsa(
             telemetry={
                 "action_type": act,
@@ -205,10 +331,10 @@ def direct_clip_montage(
                 "min_hp_pct": min_hp_pct,
                 "dead_intro_detected": dead_intro_detected,
             },
-            directive=get_learning_directive(),
+            directive=directive,
         )
         decision.synapsa_decision = synapsa_dec
-        if style not in FALLBACK_STYLES and isinstance(synapsa_dec, dict) and synapsa_dec.get("param_contracts_applied"):
+        if not is_forced_style and isinstance(synapsa_dec, dict) and synapsa_dec.get("param_contracts_applied"):
             decision.buildup_sec = float(synapsa_dec.get("buildup_sec", decision.buildup_sec))
             decision.outro_sec = float(synapsa_dec.get("outro_sec", decision.outro_sec))
             decision.zoom_aggression = float(synapsa_dec.get("zoom_aggression", decision.zoom_aggression))
@@ -228,6 +354,16 @@ def direct_clip_montage(
         if (len(_peak_ts) >= 2 and not _is_solo_act and 0.8 <= _peak_ts[0] <= 7.0 and _peak_ts[-1] > 8.5)
         else "climax_final_kill"
     )
+    preferred_style = (
+        style
+        if is_forced_style
+        else (synapsa_dec or {}).get("style", "PRIMARY")
+    )
+    drop_anchor_val = (
+        "climax_final_kill"
+        if style in VIRAL_STYLE_DESCS
+        else ((synapsa_dec or {}).get("drop_anchor") or _fallback_anchor)
+    )
     decision.tuning_profile = {
         "buildup_sec": decision.buildup_sec,
         "outro_sec": decision.outro_sec,
@@ -237,9 +373,11 @@ def direct_clip_montage(
         "kill_lock_enabled": decision.kill_lock_enabled,
         "allow_jump_cut": decision.allow_jump_cut,
         "archetype": decision.archetype,
-        "preferred_montage_style": (synapsa_dec or {}).get("style", "PRIMARY"),
-        "drop_anchor": (synapsa_dec or {}).get("drop_anchor") or _fallback_anchor,
+        "preferred_montage_style": preferred_style,
+        "drop_anchor": drop_anchor_val,
         "synapsa_decision": synapsa_dec,
+        "learning_48h_applied": bool(adj_info.get("applied")),
+        "learning_48h_adjustments": adj_info,
     }
 
     return decision

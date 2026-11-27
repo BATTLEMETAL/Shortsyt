@@ -446,8 +446,8 @@ def get_active_peak_slots_cet(weekday: Optional[int] = None) -> List[str]:
             cleaned = _clean_valid_hhmm_slots(((ld.get("best_pub_hour_analysis") or {}).get("recommended_slots_cet")) or [])
             if cleaned:
                 return cleaned
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[YouTube] [WARN] Błąd odczytu learning_directive (peak_slots): {exc}")
 
     return list(DAILY_PEAK_SLOTS_CET)
 
@@ -478,8 +478,8 @@ def get_weekly_peak_schedule_cet() -> Dict[str, List[str]]:
                 cand = (ld.get("best_pub_hour_analysis") or {}).get("recommended_slots_by_weekday_cet")
                 if isinstance(cand, dict) and cand:
                     raw_map = cand
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[YouTube] [WARN] Błąd odczytu learning_directive (weekly_slots): {exc}")
 
     fallback = get_active_peak_slots_cet(weekday=None)
     schedule: Dict[str, List[str]] = {}
@@ -632,7 +632,8 @@ def get_channel_videos_and_performance(max_results: int = 250, force_refresh: bo
                     try:
                         from lol_agent.api.youtube_analytics import fetch_bulk_video_analytics
                         bulk_yta = fetch_bulk_video_analytics(force_refresh=force_refresh)
-                    except Exception:
+                    except Exception as exc:
+                        _safe_print(f"[YouTube] [WARN] Błąd bulk_yta: {exc}")
                         bulk_yta = {}
 
                 if vids:
@@ -789,8 +790,8 @@ def get_channel_videos_and_performance(max_results: int = 250, force_refresh: bo
                                     "video_id": item.get("video_id"),
                                     "source": "local_pub_log",
                                 }
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        _safe_print(f"[YouTube] [WARN] Pominięto linię published_videos.jsonl: {exc}")
         except Exception as pe:
             print(f"[Scheduling] Warning checking published_videos.jsonl: {pe}")
 
@@ -836,8 +837,8 @@ def get_channel_videos_and_performance(max_results: int = 250, force_refresh: bo
                                 "video_id": meta.get("youtube_id"),
                                 "source": "local_meta",
                             }
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _safe_print(f"[YouTube] [WARN] Pominięto uszkodzony plik {meta_file.name}: {exc}")
 
     avg_v = round(sum(views_list) / len(views_list)) if views_list else 0
     res_data = {
@@ -1265,7 +1266,8 @@ def _read_pending_comments_queue(queue_path: Path) -> list:
             return []
         data = _json.loads(raw)
         return data if isinstance(data, list) else []
-    except Exception:
+    except Exception as exc:
+        _safe_print(f"[YouTube] [WARN] Błąd odczytu pending_comments.json: {exc}")
         return []
 
 
@@ -1358,7 +1360,8 @@ def _load_archive_recipe_context(video_id: str) -> Dict[str, Any]:
         return {}
     try:
         return _json.loads(rec_path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        _safe_print(f"[YouTube] [WARN] Błąd odczytu recipe {video_id}: {exc}")
         return {}
 
 
@@ -1392,7 +1395,8 @@ def get_comment_reply_suggestions(max_videos: int = 5) -> Dict[str, Any]:
                 maxResults=10,
                 order="time",
             ).execute()
-        except Exception:
+        except Exception as exc:
+            _safe_print(f"[YouTube] [WARN] Błąd commentThreads dla {vid}: {exc}")
             continue
 
         recipe = _load_archive_recipe_context(vid)

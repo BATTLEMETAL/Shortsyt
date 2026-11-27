@@ -308,6 +308,7 @@ def build_synapsa_instruction(task_type: str, payload: Dict[str, Any]) -> str:
         return (
             "Generate YouTube Shorts metadata in ENGLISH ONLY as strict JSON. "
             "RULES: Use ONLY facts from telemetry; DO NOT invent Flash/Ignite/Exhaust/Tower Dive/Baron; "
+            "NEVER spoil the result with 'DOUBLE KILL - ...' in hook_text; build curiosity (e.g. 'WAIT FOR THE SECOND RESET', 'NEVER CHASE KATARINA', '6% HP TURNAROUND'); "
             "DO NOT use 'Master' prefix, 'Part #', 'Rate 1-10', 'Regret', or facebook links.\n"
             f"TELEMETRY: {compact}\n"
             'Return JSON with keys: "title_candidates" (5 short punchy hooks <=48 chars without hashtags), '
@@ -375,7 +376,7 @@ def build_synapsa_instruction(task_type: str, payload: Dict[str, Any]) -> str:
             "Rank the rendered overnight shorts strictly from metrics (Sykofankcja 0: NEVER praise or pick a short with black_end_frame=true, "
             "frame0_hook_legible=false, audio_clip_gt_096>10, or watchability_score<65 over a clean higher-scoring short. "
             "If champion_mismatch=true e.g. Yone vs channel Katarina, player_visible_ratio<0.75, or first_kill_out_sec>4.5, "
-            "explicitly note it in Polish and prefer a clean channel-champion clip when scores are close).\n"
+            "explicitly note it in Polish and prefer a clean channel-champion clip when scores are close. When comparing montage_style variants (ARENA_WIDE, BEAT_VELOCITY, STORY_RAW_POV), prefer clean framing without camera jumps or dead gaps).\n"
             f"OVERNIGHT_CANDIDATES: {compact}\n"
             'Return strict JSON ONLY: {"winner_id": "1", "summary_pl": "2 factual Polish sentences mentioning champion and scores", '
             '"notes_pl": {"1": "concise Polish note with score", "2": "concise Polish note", "3": "concise Polish note", "4": "concise Polish note", "5": "concise Polish note"}}'

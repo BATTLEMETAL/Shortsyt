@@ -1029,12 +1029,31 @@ def metadata_champion_guess(video_path: str) -> str:
     return ""
 
 
+_CLIP_HASH_CACHE: dict[tuple[str, int, int], str] = {}
+_PROCESSED_HASHES_CACHE: dict = {"path": "", "mtime_ns": -1, "size": -1, "raw": {}, "by_name": {}, "by_stem": {}}
+_PUB_LOG_DEDUP_CACHE: dict = {"path": "", "mtime_ns": -1, "size": -1, "items": []}
+
+
 def _clip_hash(video_path: str) -> str:
-    """MD5 hash of first 2MB of clip — fast deduplication check."""
+    """MD5 hash of first 2MB of clip — fast deduplication check (cached by path, mtime_ns, size)."""
+    cache_key = None
+    try:
+        st = os.stat(video_path)
+        cache_key = (os.path.abspath(video_path).lower(), int(st.st_mtime_ns), int(st.st_size))
+        cached = _CLIP_HASH_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+    except Exception:
+        pass
     h = hashlib.md5()
     with open(video_path, "rb") as f:
         h.update(f.read(2 * 1024 * 1024))
-    return h.hexdigest()
+    digest = h.hexdigest()
+    if cache_key is not None:
+        if len(_CLIP_HASH_CACHE) > 2048:
+            _CLIP_HASH_CACHE.clear()
+        _CLIP_HASH_CACHE[cache_key] = digest
+    return digest
 
 
 def _extract_clip_stem(filename: str) -> str:
@@ -1048,6 +1067,75 @@ def _extract_clip_stem(filename: str) -> str:
     clean = re.sub(r'_\d+$', '', clean)
     clean = re.sub(r'-trim-\d+$', '', clean)
     return clean.strip()
+
+
+def _load_processed_hashes_cached(processed_path: str) -> tuple[dict, dict, dict]:
+    """Ładuje processed_hashes.json z indeksami name/stem tylko gdy plik zmienił mtime lub rozmiar."""
+    st = os.stat(processed_path)
+    norm_path = os.path.abspath(processed_path).lower()
+    if (
+        _PROCESSED_HASHES_CACHE["path"] == norm_path
+        and _PROCESSED_HASHES_CACHE["mtime_ns"] == st.st_mtime_ns
+        and _PROCESSED_HASHES_CACHE["size"] == st.st_size
+    ):
+        return (
+            _PROCESSED_HASHES_CACHE["raw"],
+            _PROCESSED_HASHES_CACHE["by_name"],
+            _PROCESSED_HASHES_CACHE["by_stem"],
+        )
+    with open(processed_path, "r", encoding="utf-8") as f:
+        processed = json.load(f)
+    by_name: dict = {}
+    by_stem: dict = {}
+    if isinstance(processed, dict):
+        for entry in processed.values():
+            if not isinstance(entry, dict):
+                continue
+            entry_src = str(entry.get("source") or "").lower()
+            entry_stem = str(entry.get("stem") or "").lower() or _extract_clip_stem(entry_src).lower()
+            if entry_src and entry_src not in by_name:
+                by_name[entry_src] = entry
+            if entry_stem and len(entry_stem) >= 6 and entry_stem not in by_stem:
+                by_stem[entry_stem] = entry
+    _PROCESSED_HASHES_CACHE.update({
+        "path": norm_path,
+        "mtime_ns": st.st_mtime_ns,
+        "size": st.st_size,
+        "raw": processed if isinstance(processed, dict) else {},
+        "by_name": by_name,
+        "by_stem": by_stem,
+    })
+    return _PROCESSED_HASHES_CACHE["raw"], by_name, by_stem
+
+
+def _load_published_log_cached(pub_path: str) -> list[tuple[dict, str, str, str]]:
+    """Ładuje i parsuje published_videos.jsonl tylko gdy plik zmienił mtime lub rozmiar."""
+    st = os.stat(pub_path)
+    norm_path = os.path.abspath(pub_path).lower()
+    if (
+        _PUB_LOG_DEDUP_CACHE["path"] == norm_path
+        and _PUB_LOG_DEDUP_CACHE["mtime_ns"] == st.st_mtime_ns
+        and _PUB_LOG_DEDUP_CACHE["size"] == st.st_size
+    ):
+        return _PUB_LOG_DEDUP_CACHE["items"]
+    items: list[tuple[dict, str, str, str]] = []
+    with open(pub_path, "r", encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            if not s:
+                continue
+            item = json.loads(s)
+            pub_source = os.path.basename(item.get("source_path", "")).lower()
+            thumb = str(item.get("thumbnail") or "").lower()
+            title = str(item.get("title") or "").lower()
+            items.append((item, pub_source, thumb, title))
+    _PUB_LOG_DEDUP_CACHE.update({
+        "path": norm_path,
+        "mtime_ns": st.st_mtime_ns,
+        "size": st.st_size,
+        "items": items,
+    })
+    return items
 
 
 def check_duplicate_clip(source_path: str, original_path: str = None) -> tuple:
@@ -1081,43 +1169,35 @@ def check_duplicate_clip(source_path: str, original_path: str = None) -> tuple:
             except Exception:
                 pass
 
-    # 1. Sprawdz processed_hashes.json
+    # 1. Sprawdz processed_hashes.json (O(1) lookup z cache)
     if os.path.exists(processed_path):
         try:
-            with open(processed_path, "r", encoding="utf-8") as f:
-                processed = json.load(f)
+            processed, by_name, by_stem = _load_processed_hashes_cached(processed_path)
             for h in hashes_to_check:
                 if h in processed:
                     return True, f"MD5 Hash Match ({h[:8]}...)", processed[h]
 
-            for entry_hash, entry in processed.items():
-                entry_src = entry.get("source", "").lower()
-                entry_stem = entry.get("stem", "").lower() or _extract_clip_stem(entry_src).lower()
-                if entry_src and entry_src in filenames_to_check:
+            for fn in filenames_to_check:
+                if fn in by_name:
+                    entry = by_name[fn]
                     return True, f"Identyczna nazwa pliku ({entry.get('source')})", entry
-                if entry_stem and entry_stem in stems_to_check and len(entry_stem) >= 6:
-                    return True, f"Ten sam mecz / rdzeń nagrania ({entry.get('source', entry_stem)})", entry
+            for st in stems_to_check:
+                if len(st) >= 6 and st in by_stem:
+                    entry = by_stem[st]
+                    return True, f"Ten sam mecz / rdzeń nagrania ({entry.get('source', st)})", entry
         except Exception as e:
             log(f"   ⚠️  Blad odczytu processed_hashes.json: {e}")
 
-    # 2. Sprawdz published_videos.jsonl
+    # 2. Sprawdz published_videos.jsonl (cache po mtime_ns + size)
     if os.path.exists(pub_path):
         try:
-            with open(pub_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    item = json.loads(line.strip())
-                    # Bezpośrednia weryfikacja source_path (chroni przed publikacją tego samego pliku)
-                    pub_source = os.path.basename(item.get("source_path", "")).lower()
-                    if pub_source and (pub_source in filenames_to_check or any(s in pub_source for s in stems_to_check if len(s) >= 8)):
-                        return True, f"Plik źródłowy był już opublikowany ({pub_source})", item
+            for item, pub_source, thumb, title in _load_published_log_cached(pub_path):
+                if pub_source and (pub_source in filenames_to_check or any(s in pub_source for s in stems_to_check if len(s) >= 8)):
+                    return True, f"Plik źródłowy był już opublikowany ({pub_source})", item
 
-                    thumb = item.get("thumbnail", "").lower()
-                    title = item.get("title", "").lower()
-                    for stem in stems_to_check:
-                        if stem and len(stem) >= 8 and (stem in thumb or stem in title):
-                            return True, f"Wpis w historii publikacji ({item.get('title')})", item
+                for stem in stems_to_check:
+                    if stem and len(stem) >= 8 and (stem in thumb or stem in title):
+                        return True, f"Wpis w historii publikacji ({item.get('title')})", item
         except Exception:
             pass
 
