@@ -14,12 +14,13 @@ import concurrent.futures
 import json
 import os
 import re
+import sys
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
@@ -27,8 +28,15 @@ import numpy as np
 LOL_AGENT_DIR = Path(__file__).resolve().parent
 OVERNIGHT_DIR = LOL_AGENT_DIR / "overnight_batches"
 LATEST_BATCH_FILE = OVERNIGHT_DIR / "latest_batch.json"
+DISMISSED_CLIPS_FILE = OVERNIGHT_DIR / "dismissed_clips.json"
+PUBLISHED_VIDEOS_FILE = LOL_AGENT_DIR / "published_videos.jsonl"
 SCAN_CACHE_FILE = LOL_AGENT_DIR / "overnight_scan_cache.json"
 SCAN_CACHE_SCHEMA_VERSION = 7
+MAX_UNACCEPTED_OVERNIGHT_RENDERS = 2
+
+_DEFAULT_PROD_OVERNIGHT_DIR = LOL_AGENT_DIR / "overnight_batches"
+_DEFAULT_PROD_DISMISSED_CLIPS = _DEFAULT_PROD_OVERNIGHT_DIR / "dismissed_clips.json"
+_DEFAULT_PROD_PUBLISHED_FILE = LOL_AGENT_DIR / "published_videos.jsonl"
 
 MONTAGE_PRESETS = ("compare_all_3", "auto_fallback", "arena_wide", "beat_velocity", "story_raw_pov")
 VIRAL_STYLE_ORDER = ("ARENA_WIDE", "BEAT_VELOCITY", "STORY_RAW_POV")
@@ -199,6 +207,448 @@ def _save_scan_cache(cache_data: Dict[str, Any]) -> None:
 
 def _cache_key_for(path: str, size_bytes: int, mtime_sec: float) -> str:
     return f"{Path(path).resolve()}|{int(size_bytes)}|{int(mtime_sec)}|{SCAN_CACHE_SCHEMA_VERSION}"
+
+
+def _is_blocked_test_path(path: Path, default_path: Path) -> bool:
+    """Blokuje operacje na plikach produkcyjnych w trakcie pytest, dopóki test nie podmieniał ścieżki."""
+    try:
+        return bool(os.environ.get("PYTEST_CURRENT_TEST")) and Path(path).resolve() == Path(default_path).resolve()
+    except Exception:
+        return False
+
+
+def _load_dismissed_clips_from(path: Path) -> Dict[str, Dict[str, Any]]:
+    if _is_blocked_test_path(path, _DEFAULT_PROD_DISMISSED_CLIPS) or not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            clips = raw.get("clips") if isinstance(raw.get("clips"), dict) else raw
+            return {
+                str(k).strip().lower(): dict(v)
+                for k, v in clips.items()
+                if str(k).strip() and isinstance(v, dict)
+            }
+    except Exception as exc:
+        print(f"[Overnight] [WARN] Błąd odczytu DISMISSED_CLIPS_FILE ({path}): {exc}")
+    return {}
+
+
+def load_dismissed_clips() -> Dict[str, Dict[str, Any]]:
+    """Zwraca mapę odrzuconych/wykluczonych powtórzeń nocnych indeksowaną po nazwie pliku (lower)."""
+    return _load_dismissed_clips_from(Path(DISMISSED_CLIPS_FILE))
+
+
+def load_dismissed_clip_keys() -> Set[str]:
+    """Zwraca zbiór nazw plików (lower) trwale wykluczonych po niezaakceptowanych powtórzeniach."""
+    return set(load_dismissed_clips().keys())
+
+
+def _save_dismissed_clips(data: Dict[str, Dict[str, Any]], path: Optional[Path] = None) -> None:
+    target = Path(path) if path is not None else Path(DISMISSED_CLIPS_FILE)
+    if _is_blocked_test_path(target, _DEFAULT_PROD_DISMISSED_CLIPS):
+        return
+    try:
+        payload = {
+            "schema_version": 1,
+            "updated_at": _now_iso(),
+            "clips": {str(k).strip().lower(): v for k, v in sorted(data.items())},
+        }
+        _atomic_write_text(target, json.dumps(payload, indent=2, ensure_ascii=False))
+    except Exception as exc:
+        print(f"[Overnight] [WARN] Błąd zapisu DISMISSED_CLIPS_FILE ({target}): {exc}")
+
+
+def _move_file_to_recycle_bin(path: Path) -> Tuple[bool, str]:
+    """Przenosi plik do Kosza Windows (SHFileOperationW + FOF_ALLOWUNDO), bez trwałego kasowania fallbackiem."""
+    p = Path(path)
+    if not p.exists():
+        return False, "missing"
+    if sys.platform != "win32":
+        return False, "non_windows"
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _SHFILEOPSTRUCTW(ctypes.Structure):
+            if ctypes.sizeof(ctypes.c_void_p) == 4:
+                _pack_ = 1
+            _fields_ = [
+                ("hwnd", wintypes.HWND),
+                ("wFunc", wintypes.UINT),
+                ("pFrom", ctypes.POINTER(ctypes.c_wchar)),
+                ("pTo", wintypes.LPCWSTR),
+                ("fFlags", wintypes.WORD),
+                ("fAnyOperationsAborted", wintypes.BOOL),
+                ("hNameMappings", wintypes.LPVOID),
+                ("lpszProgressTitle", wintypes.LPCWSTR),
+            ]
+
+        abs_path = str(p.resolve())
+        pfrom_buf = ctypes.create_unicode_buffer(abs_path + "\0")
+        op = _SHFILEOPSTRUCTW()
+        op.hwnd = None
+        op.wFunc = 3  # FO_DELETE
+        op.pFrom = pfrom_buf
+        op.pTo = None
+        op.fFlags = 0x0040 | 0x0010 | 0x0004 | 0x0400  # ALLOWUNDO | NOCONFIRMATION | SILENT | NOERRORUI
+        op.fAnyOperationsAborted = False
+        op.hNameMappings = None
+        op.lpszProgressTitle = None
+
+        shell32 = ctypes.windll.shell32
+        shell32.SHFileOperationW.argtypes = [ctypes.POINTER(_SHFILEOPSTRUCTW)]
+        shell32.SHFileOperationW.restype = ctypes.c_int
+        rc = int(shell32.SHFileOperationW(ctypes.byref(op)))
+        if rc == 0 and not op.fAnyOperationsAborted and not p.exists():
+            return True, "recycled"
+        return False, f"shfileop_rc_{rc}_aborted_{bool(op.fAnyOperationsAborted)}"
+    except Exception as exc:
+        print(f"[Overnight] [WARN] Błąd przenoszenia do Kosza Windows ({p}): {exc}")
+        return False, str(exc)
+
+
+def _collect_overnight_render_history(overnight_dir: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
+    """
+    Agreguje historię udanych (`render_ok=True`) montaży nocnych per plik źródłowy.
+    Zlicza unikalne `batch_id`, więc 3 warianty `compare_all_3` w jednej paczce liczą się jako 1.
+    """
+    target_dir = Path(overnight_dir) if overnight_dir is not None else Path(OVERNIGHT_DIR)
+    if _is_blocked_test_path(target_dir, _DEFAULT_PROD_OVERNIGHT_DIR) or not target_dir.is_dir():
+        return {}
+
+    history: Dict[str, Dict[str, Any]] = {}
+    for batch_file in sorted(target_dir.glob("batch_*.json")):
+        try:
+            data = json.loads(batch_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"[Overnight] [WARN] Błąd odczytu historii batcha ({batch_file}): {exc}")
+            continue
+        if not isinstance(data, dict):
+            continue
+        batch_id = str(data.get("batch_id") or batch_file.stem).strip()
+        for it in (data.get("items") or []):
+            if not isinstance(it, dict) or not it.get("render_ok"):
+                continue
+            src_name = str(it.get("source_filename") or "").strip()
+            src_path = str(it.get("source_path") or "").strip()
+            src_key = (src_name or (Path(src_path).name if src_path else "")).strip().lower()
+            if not src_key:
+                continue
+
+            entry = history.setdefault(
+                src_key,
+                {
+                    "source_filename": src_name or Path(src_path).name,
+                    "batch_ids": set(),
+                    "output_filenames": set(),
+                    "output_paths": [],
+                    "thumbnail_filenames": set(),
+                    "thumbnail_paths": [],
+                },
+            )
+            entry["batch_ids"].add(batch_id)
+
+            def _record_art(obj: Dict[str, Any]) -> None:
+                ofn = str(obj.get("output_filename") or "").strip()
+                opth = str(obj.get("output_path") or "").strip()
+                if ofn:
+                    entry["output_filenames"].add(ofn.lower())
+                elif opth:
+                    entry["output_filenames"].add(Path(opth).name.lower())
+                if opth and opth not in entry["output_paths"]:
+                    entry["output_paths"].append(opth)
+
+                tfn = str(obj.get("thumbnail_filename") or "").strip()
+                tpth = str(obj.get("thumbnail_path") or "").strip()
+                if tfn:
+                    entry["thumbnail_filenames"].add(tfn.lower())
+                elif tpth:
+                    entry["thumbnail_filenames"].add(Path(tpth).name.lower())
+                if tpth and tpth not in entry["thumbnail_paths"]:
+                    entry["thumbnail_paths"].append(tpth)
+
+            _record_art(it)
+            for alt in (it.get("alternate_renders") or []):
+                if isinstance(alt, dict):
+                    _record_art(alt)
+    return history
+
+
+def _resolve_output_artifact_dirs() -> List[Path]:
+    dirs: List[Path] = []
+    try:
+        try:
+            from lol_agent.api.config import LOL_TEMP_DIR, LOL_OUTPUT_DIR
+        except ImportError:
+            from api.config import LOL_TEMP_DIR, LOL_OUTPUT_DIR  # type: ignore
+        dirs.extend([Path(LOL_TEMP_DIR), Path(LOL_OUTPUT_DIR)])
+    except Exception as exc:
+        print(f"[Overnight] [WARN] Brak ścieżek LOL_TEMP_DIR/LOL_OUTPUT_DIR: {exc}")
+    dirs.append(LOL_AGENT_DIR / "lol_temp")
+    unique: List[Path] = []
+    seen: Set[str] = set()
+    for d in dirs:
+        k = str(d)
+        if k not in seen:
+            seen.add(k)
+            unique.append(d)
+    return unique
+
+
+def _collect_accepted_clip_keys(
+    published_file: Optional[Path] = None,
+    queue_items: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[Set[str], Set[str]]:
+    """Zwraca `(accepted_sources_lower, accepted_outputs_lower)` z `published_videos.jsonl` oraz aktywnej kolejki."""
+    accepted_sources: Set[str] = set()
+    accepted_outputs: Set[str] = set()
+
+    pub_path = Path(published_file) if published_file is not None else Path(PUBLISHED_VIDEOS_FILE)
+    if not _is_blocked_test_path(pub_path, _DEFAULT_PROD_PUBLISHED_FILE) and pub_path.is_file():
+        for line in pub_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception as exc:
+                print(f"[Overnight] [WARN] Uszkodzony wiersz published_videos.jsonl: {exc}")
+                continue
+            if not isinstance(rec, dict):
+                continue
+            for key in ("source_path", "source_filename"):
+                val = str(rec.get(key) or "").strip()
+                if val:
+                    accepted_sources.add(Path(val).name.lower())
+            for key in ("video_path", "output_filename"):
+                val = str(rec.get(key) or "").strip()
+                if val:
+                    accepted_outputs.add(Path(val).name.lower())
+
+    q_list = queue_items
+    if q_list is None:
+        try:
+            try:
+                from lol_agent import scheduled_queue as _sq
+            except ImportError:
+                import scheduled_queue as _sq  # type: ignore
+            default_q = LOL_AGENT_DIR.parent / "accounts" / "scheduled_social_queue.json"
+            if not _is_blocked_test_path(Path(_sq.QUEUE_FILE), default_q):
+                q_list = _sq._load_queue()
+            else:
+                q_list = []
+        except Exception as exc:
+            print(f"[Overnight] [WARN] Błąd odczytu kolejki przy ochronie zaakceptowanych klipów: {exc}")
+            q_list = []
+
+    out_dirs = _resolve_output_artifact_dirs()
+    active_statuses = {"pending", "processing", "published", "published_to_inbox"}
+    for q_it in (q_list or []):
+        if not isinstance(q_it, dict) or str(q_it.get("status") or "") not in active_statuses:
+            continue
+        sp = str(q_it.get("source_path") or "").strip()
+        if sp:
+            accepted_sources.add(Path(sp).name.lower())
+        vp = str(q_it.get("video_path") or "").strip()
+        if vp:
+            vp_path = Path(vp)
+            accepted_outputs.add(vp_path.name.lower())
+            meta_candidates = [
+                vp_path.with_suffix(".meta.json"),
+                Path(str(vp_path) + ".meta.json"),
+            ]
+            for d in out_dirs:
+                meta_candidates.append(d / f"{vp_path.stem}.meta.json")
+            for mp in meta_candidates:
+                if mp.is_file():
+                    try:
+                        m = json.loads(mp.read_text(encoding="utf-8"))
+                        if isinstance(m, dict):
+                            for key in ("source_path", "source_filename"):
+                                sval = str(m.get(key) or "").strip()
+                                if sval:
+                                    accepted_sources.add(Path(sval).name.lower())
+                    except Exception as exc:
+                        print(f"[Overnight] [WARN] Błąd odczytu meta dla kolejki ({mp}): {exc}")
+
+    return accepted_sources, accepted_outputs
+
+
+def _remove_unaccepted_rendered_artifacts(
+    history_entry: Dict[str, Any],
+    accepted_outputs: Set[str],
+) -> List[str]:
+    """Usuwa stare niezaakceptowane rendery `short_overnight_*.mp4`, ich `.meta.json` i nieużywane miniaturki."""
+    removed: List[str] = []
+    removed_set: Set[str] = set()
+    accepted_stems = {Path(o).stem.lower() for o in accepted_outputs if o}
+    search_dirs = _resolve_output_artifact_dirs()
+
+    candidate_mp4s: List[Path] = []
+    for op in (history_entry.get("output_paths") or []):
+        if op:
+            p = Path(op)
+            candidate_mp4s.append(p)
+            if p.parent not in search_dirs:
+                search_dirs.append(p.parent)
+    for ofn in (history_entry.get("output_filenames") or []):
+        for d in search_dirs:
+            candidate_mp4s.append(d / ofn)
+
+    seen_files: Set[str] = set()
+    for mp4_path in candidate_mp4s:
+        try:
+            key = str(mp4_path.resolve()).lower()
+        except Exception:
+            key = str(mp4_path).lower()
+        if key in seen_files:
+            continue
+        seen_files.add(key)
+
+        name_l = mp4_path.name.lower()
+        if not name_l.startswith("short_overnight_") or name_l in accepted_outputs:
+            continue
+        if "viral_vault" in {part.lower() for part in mp4_path.parts}:
+            continue
+        for target in (
+            mp4_path,
+            mp4_path.with_suffix(".meta.json"),
+            Path(str(mp4_path) + ".meta.json"),
+        ):
+            if target.is_file():
+                try:
+                    target.unlink()
+                    label = target.name
+                    if label not in removed_set:
+                        removed_set.add(label)
+                        removed.append(label)
+                except Exception as exc:
+                    print(f"[Overnight] [WARN] Nie udało się usunąć starego artefaktu ({target}): {exc}")
+
+    thumb_dirs = _thumb_search_dirs() + search_dirs
+    candidate_thumbs: List[Path] = [Path(tp) for tp in (history_entry.get("thumbnail_paths") or []) if tp]
+    for tfn in (history_entry.get("thumbnail_filenames") or []):
+        for td in thumb_dirs:
+            candidate_thumbs.append(td / tfn)
+
+    for tp in candidate_thumbs:
+        stem_l = tp.stem.lower()
+        if any(st and st in stem_l for st in accepted_stems):
+            continue
+        if "viral_vault" in {part.lower() for part in tp.parts}:
+            continue
+        if tp.is_file():
+            try:
+                tp.unlink()
+                if tp.name not in removed_set:
+                    removed_set.add(tp.name)
+                    removed.append(tp.name)
+            except Exception as exc:
+                print(f"[Overnight] [WARN] Nie udało się usunąć miniaturki ({tp}): {exc}")
+
+    return removed
+
+
+def prune_unaccepted_repeat_clip(
+    cl: Dict[str, Any],
+    history_entry: Dict[str, Any],
+    dismissed_map: Dict[str, Dict[str, Any]],
+    accepted_outputs: Set[str],
+) -> Dict[str, Any]:
+    """
+    Usuwa stare niezaakceptowane rendery klipu, przenosi plik źródłowy z Outplayed do Kosza Windows,
+    dopisuje wpis do `dismissed_map` oraz rejestruje odrzucenie w `user_learning_memory`.
+    """
+    src_path_str = str(cl.get("path") or "").strip()
+    src_name = str(cl.get("filename") or (Path(src_path_str).name if src_path_str else "")).strip()
+    src_key = src_name.lower()
+
+    removed_outputs = _remove_unaccepted_rendered_artifacts(history_entry, accepted_outputs)
+    recycled, recycle_status = (
+        _move_file_to_recycle_bin(Path(src_path_str)) if src_path_str else (False, "missing")
+    )
+
+    batch_ids_sorted = sorted(str(b) for b in (history_entry.get("batch_ids") or set()))
+    entry = {
+        "source_filename": src_name,
+        "source_path": src_path_str,
+        "batch_ids": batch_ids_sorted,
+        "render_count": len(batch_ids_sorted),
+        "dismissed_at": _now_iso(),
+        "source_recycled": recycled,
+        "recycle_status": recycle_status,
+        "removed_outputs": removed_outputs,
+        "is_favorite": bool(cl.get("is_favorite", False)),
+        "reason": "unaccepted_repeat_2x",
+    }
+    if src_key:
+        dismissed_map[src_key] = entry
+
+    try:
+        try:
+            from lol_agent.user_learning_memory import record_render_rejected
+        except ImportError:
+            from user_learning_memory import record_render_rejected  # type: ignore
+        record_render_rejected(
+            src_name or src_key,
+            reason=f"Auto-wykluczenie po {len(batch_ids_sorted)} niezaakceptowanych montażach nocnych ({', '.join(batch_ids_sorted)})",
+            qa_details=["unaccepted_repeat_2x"],
+        )
+    except Exception as exc:
+        print(f"[Overnight] [WARN] Błąd zapisu odrzucenia w user_learning_memory ({src_name}): {exc}")
+
+    return entry
+
+
+def find_unaccepted_repeat_candidates(
+    folder: Optional[str] = None,
+    max_unaccepted_renders: int = MAX_UNACCEPTED_OVERNIGHT_RENDERS,
+    overnight_dir: Optional[Path] = None,
+    published_file: Optional[Path] = None,
+    dismissed_file: Optional[Path] = None,
+    queue_items: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Funkcja read-only zwracająca klipy obecnie kwalifikujące się do auto-pruningu
+    (>= `max_unaccepted_renders` udanych montaży w osobnych paczkach bez publikacji ani kolejki).
+    """
+    try:
+        from lol_agent.api.routers.clips import scan_available_clips
+    except ImportError:
+        from api.routers.clips import scan_available_clips  # type: ignore
+
+    all_clips = scan_available_clips(folder)
+    history = _collect_overnight_render_history(overnight_dir)
+    accepted_sources, accepted_outputs = _collect_accepted_clip_keys(published_file, queue_items)
+    dismissed_map = _load_dismissed_clips_from(
+        Path(dismissed_file) if dismissed_file is not None else Path(DISMISSED_CLIPS_FILE)
+    )
+    threshold = max(1, int(max_unaccepted_renders))
+    candidates: List[Dict[str, Any]] = []
+    for cl in all_clips:
+        src_name = str(cl.get("filename") or Path(str(cl.get("path") or "")).name).strip()
+        src_key = src_name.lower()
+        hist = history.get(src_key)
+        if not hist:
+            continue
+        is_accepted = (
+            bool(cl.get("already_published"))
+            or src_key in accepted_sources
+            or any(o in accepted_outputs for o in hist.get("output_filenames", set()))
+        )
+        if is_accepted or src_key in dismissed_map:
+            continue
+        batch_ids = sorted(str(b) for b in hist.get("batch_ids", set()))
+        if len(batch_ids) >= threshold:
+            candidates.append({
+                "source_filename": src_name,
+                "source_path": str(cl.get("path") or ""),
+                "is_favorite": bool(cl.get("is_favorite", False)),
+                "batch_count": len(batch_ids),
+                "batch_ids": batch_ids,
+                "output_filenames": sorted(hist.get("output_filenames", set())),
+            })
+    return candidates
 
 
 def _check_trailing_survival(video_path: str, clip_end: float, fps: float) -> bool:
@@ -1015,29 +1465,79 @@ def scan_and_rank_all_clips(
     champion_name: Optional[str] = "Katarina",
     tier_filter: str = "auto",
     only_channel_champion: bool = True,
+    skip_dismissed_repeats: bool = True,
+    auto_prune_unaccepted_repeats: bool = False,
+    max_unaccepted_renders: int = MAX_UNACCEPTED_OVERNIGHT_RENDERS,
 ) -> Dict[str, Any]:
     """
     Skanuje wszystkie nagrania w folderze, filtruje wstępnie wg telemetrii Riot Outplayed,
-    odfiltrowuje opublikowane oraz przeciętne klipy i zwraca Top N kandydatów o najwyższym `hype_score`.
+    odfiltrowuje opublikowane, powtórzone niezaakceptowane oraz przeciętne klipy i zwraca Top N kandydatów o najwyższym `hype_score`.
     """
     try:
-        from lol_agent.api.routers.clips import scan_available_clips
+        from lol_agent.api.routers.clips import invalidate_clips_cache, scan_available_clips
     except ImportError:
-        from api.routers.clips import scan_available_clips  # type: ignore
+        from api.routers.clips import invalidate_clips_cache, scan_available_clips  # type: ignore
 
     all_clips = scan_available_clips(folder)
     total_found = len(all_clips)
     skipped_published = 0
+    skipped_dismissed = 0
+    pruned_unaccepted_repeats = 0
+    pruned_clip_filenames: List[str] = []
     champ_ok_pool: List[Dict[str, Any]] = []
     pre_rejected: List[Dict[str, Any]] = []
     req_champ = str(champion_name or "").strip().lower()
     tf_key = str(tier_filter or "auto").strip().lower()
     min_rank = TIER_FILTER_MIN_RANK.get(tf_key, -1)
 
+    render_history = _collect_overnight_render_history() if skip_dismissed_repeats else {}
+    accepted_sources, accepted_outputs = (
+        _collect_accepted_clip_keys() if (skip_dismissed_repeats or render_history) else (set(), set())
+    )
+    dismissed_map = load_dismissed_clips() if skip_dismissed_repeats else {}
+    dismissed_dirty = False
+    repeat_threshold = max(1, int(max_unaccepted_renders))
+
     for cl in all_clips:
-        if skip_published and cl.get("already_published"):
-            skipped_published += 1
+        src_name = str(cl.get("filename") or Path(str(cl.get("path") or "")).name).strip()
+        src_key = src_name.lower()
+        hist = render_history.get(src_key)
+        is_accepted = (
+            bool(cl.get("already_published"))
+            or src_key in accepted_sources
+            or bool(hist and any(o in accepted_outputs for o in hist.get("output_filenames", set())))
+        )
+        if is_accepted:
+            if skip_published:
+                skipped_published += 1
+                continue
+        elif skip_dismissed_repeats and src_key in dismissed_map:
+            skipped_dismissed += 1
+            pre_rejected.append(
+                _make_prerejected_entry(
+                    cl,
+                    "REJECT_DISMISSED_REPEAT",
+                    "Wykluczony automatycznie po wcześniejszych niezaakceptowanych montażach nocnych",
+                )
+            )
             continue
+        elif skip_dismissed_repeats and hist and len(hist.get("batch_ids") or set()) >= repeat_threshold:
+            b_cnt = len(hist.get("batch_ids") or set())
+            if auto_prune_unaccepted_repeats:
+                prune_unaccepted_repeat_clip(cl, hist, dismissed_map, accepted_outputs)
+                dismissed_dirty = True
+                pruned_unaccepted_repeats += 1
+                pruned_clip_filenames.append(src_name)
+            skipped_dismissed += 1
+            pre_rejected.append(
+                _make_prerejected_entry(
+                    cl,
+                    "REJECT_UNACCEPTED_REPEAT_2X",
+                    f"Powtórzony {b_cnt}x w paczkach nocnych bez publikacji (wykluczony)",
+                )
+            )
+            continue
+
         cl_champ = str(cl.get("champion") or "").strip()
         if only_channel_champion and req_champ and cl_champ and cl_champ.lower() != req_champ:
             pre_rejected.append(
@@ -1049,6 +1549,13 @@ def scan_and_rank_all_clips(
             )
             continue
         champ_ok_pool.append(cl)
+
+    if dismissed_dirty:
+        _save_dismissed_clips(dismissed_map)
+        try:
+            invalidate_clips_cache()
+        except Exception as exc:
+            print(f"[Overnight] [WARN] Błąd inwalidacji cache klipów po pruningu: {exc}")
 
     # Policz ile unikalnych klipów (bez duplikatów _0/_1) to potwierdzone multikille (>= Double)
     multikill_base_keys: set[str] = set()
@@ -1198,6 +1705,9 @@ def scan_and_rank_all_clips(
         "folder": folder or "Outplayed + Medal",
         "total_clips_found": total_found,
         "skipped_published": skipped_published,
+        "skipped_dismissed": skipped_dismissed,
+        "pruned_unaccepted_repeats": pruned_unaccepted_repeats,
+        "pruned_clip_filenames": pruned_clip_filenames,
         "scanned_unpublished": len(results),
         "qualified_count": len(qualified),
         "rejected_count": len(rejected),
@@ -1713,6 +2223,9 @@ def _build_batch_manifest(
         "scan_stats": {
             "total_clips_found": scan_res.get("total_clips_found", 0),
             "skipped_published": scan_res.get("skipped_published", 0),
+            "skipped_dismissed": scan_res.get("skipped_dismissed", 0),
+            "pruned_unaccepted_repeats": scan_res.get("pruned_unaccepted_repeats", 0),
+            "pruned_clip_filenames": scan_res.get("pruned_clip_filenames") or [],
             "scanned_unpublished": scan_res.get("scanned_unpublished", 0),
             "qualified_count": scan_res.get("qualified_count", 0),
             "rejected_count": scan_res.get("rejected_count", 0),
@@ -2520,12 +3033,17 @@ def run_overnight_batch(
         champion_name=champion_name,
         tier_filter=tier_filter,
         only_channel_champion=only_channel_champion,
+        skip_dismissed_repeats=True,
+        auto_prune_unaccepted_repeats=bool(skip_published),
+        max_unaccepted_renders=MAX_UNACCEPTED_OVERNIGHT_RENDERS,
     )
     if _OVERNIGHT_CANCEL.is_set():
         _emit_status(status="stopped", phase="Anulowano podczas skanu", finished_at=_now_iso())
         return {"batch_id": batch_id, "status": "stopped", "scan_stats": scan_res, "items": []}
 
     selected = list(scan_res.get("selected") or [])
+    pruned_n = int(scan_res.get("pruned_unaccepted_repeats") or 0)
+    pruned_note = f", usunięto {pruned_n} niezaakceptowanych powtórzeń 2x" if pruned_n > 0 else ""
     _emit_status(
         status="rendering",
         phase=f"Wybrano {len(selected)} kandydatów ({preset})",
@@ -2537,8 +3055,8 @@ def run_overnight_batch(
         selected_count=len(selected),
         log=(
             f"Skan gotowy: {scan_res['scanned_unpublished']} nieopublikowanych -> "
-            f"{scan_res['qualified_count']} mocnych, {scan_res['rejected_count']} odrzuconych przeciętnych, "
-            f"wybrano {len(selected)} (preset={preset})."
+            f"{scan_res['qualified_count']} mocnych, {scan_res['rejected_count']} odrzuconych przeciętnych"
+            f"{pruned_note}, wybrano {len(selected)} (preset={preset})."
         ),
     )
 

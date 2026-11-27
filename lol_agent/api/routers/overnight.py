@@ -1,6 +1,7 @@
 """
 Shortsyt API — Router: Tryb Nocny (Overnight Batch Top 5 + Rekomendacja Synapsy)
 """
+from pathlib import Path
 from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -91,9 +92,11 @@ def overnight_catalog(
 ):
     """Zwraca katalog klipów pogrupowany wg tierów Riot API, ulubionych, bohaterów i meczów."""
     all_clips = scan_available_clips(folder)
+    dismissed_keys = _ob.load_dismissed_clip_keys()
     filtered = [
         c for c in all_clips
         if not (skip_published and c.get("already_published"))
+        and str(c.get("filename") or Path(str(c.get("path") or "")).name).strip().lower() not in dismissed_keys
     ]
     if champion_name and champion_name.strip():
         req_ch = champion_name.strip().lower()
@@ -109,6 +112,7 @@ def overnight_catalog(
     summary["all_champions_summary"] = summarize_clip_catalog(all_clips)
     summary["requested_champion"] = champion_name or ""
     summary["skip_published"] = skip_published
+    summary["dismissed_count"] = len(dismissed_keys)
     return summary
 
 
