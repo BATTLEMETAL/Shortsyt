@@ -3,10 +3,10 @@
   "service": "Shortsyt Studio Daemon",
   "brand": "FlikCut Studio",
   "version": "2.6.0-production",
-  "last_updated": "2026-11-25T14:13:05.816294+00:00",
-  "total_views": 557013,
-  "total_engagement": 3152,
-  "total_published_videos": 321,
+  "last_updated": "2026-11-27T19:50:07.723193+00:00",
+  "total_views": 560035,
+  "total_engagement": 3170,
+  "total_published_videos": 326,
   "average_view_duration_pct": 108.8,
   "hardware_acceleration": "NVIDIA NVENC H.264 / AV1",
   "render_speed_multiplier": "8.4x realtime (< 12s per short)",
@@ -16,10 +16,10 @@
       "name": "YouTube Shorts",
       "status": "Connected & Publishing",
       "handle": "@Dwannellenga",
-      "views": 515886,
-      "videos_count": 236,
-      "share_pct": 92.6,
-      "engagement": 2790,
+      "views": 518999,
+      "videos_count": 241,
+      "share_pct": 92.7,
+      "engagement": 2809,
       "auto_thumbnails": true
     },
     "tiktok": {
@@ -36,10 +36,10 @@
       "name": "Instagram Reels",
       "status": "Graph API Connected",
       "handle": "@dwannellenga",
-      "views": 10908,
+      "views": 10817,
       "videos_count": 25,
-      "share_pct": 2.0,
-      "engagement": 14,
+      "share_pct": 1.9,
+      "engagement": 13,
       "auto_thumbnails": true
     },
     "facebook": {
@@ -54,15 +54,6 @@
     }
   },
   "top_videos": [
-    {
-      "platform": "youtube",
-      "title": "They Grouped For Free 💀 #shorts #leagueoflegends #lol",
-      "views": 7064,
-      "likes": 23,
-      "comments": 1,
-      "url": "https://www.youtube.com/shorts/4Fyn2vIfQv8",
-      "timestamp": "2026-11-20T20:30:08Z"
-    },
     {
       "platform": "tiktok",
       "title": "SOLO BOLO - EGO CHECKED",
@@ -93,11 +84,20 @@
     {
       "platform": "instagram",
       "title": "POV: When Enemy Thinks 5v1 Is Free ⚡",
-      "views": 2186,
+      "views": 2187,
       "likes": 1,
       "comments": 0,
       "url": "https://www.instagram.com/reel/DgIBKf0ARnm/",
       "timestamp": "2026-11-24T13:03:50+0000"
+    },
+    {
+      "platform": "youtube",
+      "title": "Greedy 2v1 Punished In 2 Seconds 💀 #shorts #leagueoflegends #lol",
+      "views": 2050,
+      "likes": 7,
+      "comments": 1,
+      "url": "https://www.youtube.com/shorts/lulo0qPvKtE",
+      "timestamp": "2026-11-25T21:00:05Z"
     },
     {
       "platform": "instagram",
@@ -109,7 +109,35 @@
       "timestamp": "2026-11-22T07:02:49+0000"
     }
   ],
-  "scheduled_queue": [],
-  "recent_published": [],
-  "remote_tunnel_updated_at": "2026-11-25T15:15:33.253959"
+  "scheduled_queue": [
+    {
+      "id": "instagram_1795743062347",
+      "platform": "instagram",
+      "scheduled_time": "2026-11-27T21:00:00Z",
+      "caption_snippet": "Wait For The Second Reset Under Turret ⚡\nGreedy chase or clean bait? Drop y...",
+      "has_thumbnail": true
+    },
+    {
+      "id": "facebook_1795743062348",
+      "platform": "facebook",
+      "scheduled_time": "2026-11-27T21:00:00Z",
+      "caption_snippet": "Wait For The Second Reset Under Turret ⚡\nGreedy chase by the enemy or clean...",
+      "has_thumbnail": true
+    },
+    {
+      "id": "tiktok_1795743062380",
+      "platform": "tiktok",
+      "scheduled_time": "2026-11-27T21:00:00Z",
+      "caption_snippet": "Wait For The Second Reset Under Turret ⚡...",
+      "has_thumbnail": true
+    },
+    {
+      "id": "instagram_1795743096290",
+      "platform": "instagram",
+      "scheduled_time": "2026-11-28T08:00:00Z",
+      "caption_snippet": "Enemy Asked If I Was Smurfing After This 🔥\nGreedy chase or clean bait? Drop...",
+      "has_thumbnail": true
+    }
+  ],
+  "recent_published": []
 }
