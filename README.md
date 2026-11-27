@@ -1,12 +1,12 @@
 # Flikcut Studio (Shortsyt) — Autonomous Local-GPU Video & Multi-Platform Publishing Engine
 
 [![CI](https://github.com/BATTLEMETAL/Shortsyt/actions/workflows/ci.yml/badge.svg)](https://github.com/BATTLEMETAL/Shortsyt/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-430%20Passed%20(pytest)-brightgreen)](.)
+[![Tests](https://img.shields.io/badge/Tests-461%20Passed%20(pytest)-brightgreen)](.)
 [![Local LLM](https://img.shields.io/badge/Synapsa-Qwen2.5--7B%20QLoRA%20(4--bit%20GPU)-8A2BE2)](.)
 [![Vision & Render](https://img.shields.io/badge/Pipeline-OpenCV%20%2B%20FFmpeg%20NVENC-5C3EE8)](.)
 [![Backend](https://img.shields.io/badge/Backend-FastAPI%20%2B%20SQLite%20WAL-009688)](.)
 [![Desktop](https://img.shields.io/badge/Desktop-Electron%2032%20%2B%20React%2018%20%2B%20TS-47848F)](.)
-[![Production Views](https://img.shields.io/badge/Production-515K%2B%20Views%20(230%2B%20Shorts)-FF0000)](https://www.youtube.com/@dwannellenga471/shorts)
+[![Production Views](https://img.shields.io/badge/Production-560K%2B%20Views%20(241%20YT%20Shorts)-FF0000)](https://www.youtube.com/@dwannellenga471/shorts)
 
 > **End-to-end autonomous 9:16 & 16:9 video engineering, local LLM inference, and multi-platform distribution system.** Designed to run 100% locally on consumer GPU hardware (RTX 3060 12 GB VRAM) with zero paid cloud API dependency in the core generation path.
 
@@ -17,11 +17,12 @@
 | Metric | Production Result |
 |---|---|
 | **Production Channel** | [Dwannellenga (@dwannellenga471)](https://www.youtube.com/@dwannellenga471/shorts) |
-| **Scale & Reach** | **230+ Published Shorts** · **515K+ Total Views** |
-| **30-Day Retention (YT Analytics API)** | **97.4% Average Percentage Viewed** · **17.3% Swiped Away** |
-| **48h Post-Publish Reality Gate** | **213 Audited Videos** (`66.2%` `FIT_CONFIRMED` via RWI composite score) |
-| **Automated Test Suite** | **430 Passing `pytest` Tests** (`117` engine + `313` backend & integration) |
+| **Scale & Reach** | **241 Published YT Shorts** · **518K+ YouTube Views** (**560K+ Omnichannel** across 326 posts) |
+| **30-Day Retention (YT Analytics API v2)** | **108.2% Average Percentage Viewed** · **48.5% Engaged View Rate** (16.1% median Swiped Away) |
+| **48h Post-Publish Reality Gate** | **216 Audited Videos** (`67.1%` `FIT_CONFIRMED` via RWI composite score) |
+| **Automated Test Suite** | **461 Passing `pytest` Tests** (`148` engine + `313` backend & integration) |
 | **Inference & Render Cost** | **$0 Cloud API Cost** (`Qwen2.5-7B-4bit QLoRA v2` + `FFmpeg NVENC`) |
+| **Desktop & API Performance** | **57.5 kB Initial JS Chunk** (`-91%` via `React.lazy` + `manualChunks`) · **6–121 ms** warm API endpoints |
 
 ---
 
@@ -38,6 +39,7 @@
 ### 3. Computer Vision Smart Camera & Unified FFmpeg Timeline (`lol_agent/smart_camera.py`, `lol_agent/lol_timeline.py`, `lol_agent/lol_editor.py`)
 - **1080p HP-Bar Tracking & Kinematic Smoothing:** Color-space isolation of player health bars with dynamic dash/teleport snapping, combat-centroid fallback during occlusion, and kill-banner stabilization for crisp `1080x1920 @ 60fps` vertical crops.
 - **Unified Timeline Engine & Pre-Flight Quality Validator (`lol_agent/lol_quality_validator.py`):** Replaces naive scalar quality heuristics with explicit failure assertions (`center_blocked_kills`, `camera_peak_step > 220px`, `intro_too_long`, OCR kill visibility, `11–15s` pacing bounds) and hardware-accelerated NVENC encoding.
+- **Overnight `compare_all_3` Batch Selector (`lol_agent/synapsa_overnight_batch.py`):** Renders 3 competing montage styles per highlight with strict pre-flight defect gating (`publish_recommended`) and automatic fallback switching before queuing or manual review.
 - **16:9 Long-Form Compilations (`lol_agent/lol_longform_montage.py`, `lol_agent/commercial_montage.py`):** Automated multi-clip highlight compilations with chapter markers, hero thumbnails, and beat-aligned transitions.
 
 ### 4. 48h Reality Gate & Empirical Bayes Learning (`lol_agent/lol_performance_tracker.py`, `lol_agent/learning_engine.py`)
@@ -96,7 +98,7 @@ flowchart LR
 ├── lol_agent/                  # Core Python AI, CV, rendering & learning engine
 │   ├── api/                    # FastAPI server, JWT auth, modular APIRouters & job runner
 │   ├── autonomous/             # Clip watcher & autonomous pre-render evaluator
-│   ├── engine_tests/           # 117 standalone engine, watchability & learning unit tests
+│   ├── engine_tests/           # 148 standalone engine, watchability & learning unit tests
 │   ├── game_profiles/          # Modular game & commercial-ad detection profiles
 │   ├── metadata_profiles/      # Channel-specific SEO & narrative copy profiles
 │   ├── outplayed_db.py         # Chromium IndexedDB V8 binary log decoder
@@ -108,7 +110,7 @@ flowchart LR
 │   └── state_db.py             # SQLite WAL + OS file-locking persistence layer
 ├── shortsyt-desktop/           # Electron 32 + React 18 + TypeScript Studio UI
 │   ├── electron/               # Main process & preload bridge
-│   └── src/                    # Analytics, Clip Browser, Compilations, Niche Research & Calendar
+│   └── src/                    # Modular screens/ + components/{analytics,outputs,settings}/
 ├── scripts/                    # CLI telemetry reports & OAuth helpers
 ├── tests/                      # 313 pytest unit & FastAPI integration tests
 ├── docs/                       # Static showcase & OAuth verification pages
@@ -127,7 +129,7 @@ python -m venv venv313
 .\venv313\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Run full automated test suites (430 tests total)
+# Run full automated test suites (461 tests total)
 python -m pytest lol_agent/engine_tests/ --noconftest -q
 python -m pytest tests/ -q
 
