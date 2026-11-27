@@ -71,8 +71,8 @@ export default function NicheResearch() {
         setBlueprint(detail.blueprint);
         await refreshMediaUrls(detail.blueprint);
       }
-    } catch {
-      // Backend może być w trakcie restartu
+    } catch (err) {
+      console.warn('[NicheResearch] Błąd ładowania historii researchu:', err);
     }
   };
 

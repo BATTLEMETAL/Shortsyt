@@ -132,8 +132,8 @@ export default function FeedbackTuning() {
             setProfile(clean);
             profileRef.current = clean;
           }
-        } catch {
-          // ignore
+        } catch (err) {
+          console.warn('[FeedbackTuning] Błąd odczytu electronStore:', err);
         }
       } else {
         const stored = localStorage.getItem('tuning_profile');
@@ -143,8 +143,8 @@ export default function FeedbackTuning() {
             const clean = sanitizeProfile(parsed);
             setProfile(clean);
             profileRef.current = clean;
-          } catch {
-            // ignore
+          } catch (err) {
+            console.warn('[FeedbackTuning] Błąd parsowania localStorage tuning_profile:', err);
           }
         }
       }

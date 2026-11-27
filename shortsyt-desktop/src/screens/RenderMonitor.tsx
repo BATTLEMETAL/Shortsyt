@@ -61,6 +61,8 @@ export default function RenderMonitor() {
   };
 
   const logsContainerRef = useRef<HTMLDivElement>(null);
+  const inFlightRef = useRef<boolean>(false);
+  const isRunningRef = useRef<boolean>(false);
 
   const handleSelectVariant = (variant: 'A' | 'B') => {
     setSelectedVariant(variant);
@@ -72,8 +74,11 @@ export default function RenderMonitor() {
   };
 
   const fetchStatus = async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     try {
       const st = await apiGetStatus();
+      isRunningRef.current = st.status === 'running';
       setPipelineState(st);
 
       if (st.status === 'done' && st.output_path && !videoUrl) {
@@ -85,8 +90,8 @@ export default function RenderMonitor() {
         try {
           const tUrl = await apiGetThumbnailUrl(thumbFilename);
           setThumbUrl(tUrl);
-        } catch {
-          // thumb URL fallback
+        } catch (err) {
+          console.warn('[RenderMonitor] Błąd pobierania URL miniaturki:', err);
         }
 
         if (st.title) setTitle(st.title);
@@ -94,14 +99,45 @@ export default function RenderMonitor() {
         if (st.pinned_comment) setPinnedComment(st.pinned_comment);
       }
     } catch (err) {
+      isRunningRef.current = false;
       console.error(err);
+    } finally {
+      inFlightRef.current = false;
     }
   };
 
   useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 1500);
-    return () => clearInterval(interval);
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleNext = () => {
+      if (!active) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(tick, isRunningRef.current ? 1500 : 5000);
+    };
+
+    const tick = async () => {
+      if (!active) return;
+      if (!document.hidden) {
+        await fetchStatus();
+      }
+      scheduleNext();
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden && active) {
+        if (timer) clearTimeout(timer);
+        tick();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    tick();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [videoUrl]);
 
   useEffect(() => {

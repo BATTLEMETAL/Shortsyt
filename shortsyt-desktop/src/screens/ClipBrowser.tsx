@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   apiListClips, apiStartPipeline, apiAutoDetectClip, ClipItem, AutoDetectResult,
   apiStartOvernight, apiGetOvernightStatus, apiStopOvernight, OvernightStatusResponse,
-  apiGetOvernightCatalog, OvernightCatalogResponse
+  apiGetOvernightCatalog, OvernightCatalogResponse, MontagePreset
 } from "../lib/api";
 import {
   Film, UploadCloud, Play, Search, Sliders, Zap, CheckCircle2,
@@ -41,6 +41,7 @@ export default function ClipBrowser() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [clips, setClips] = useState<ClipItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedFolder, setSelectedFolder] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -81,6 +82,7 @@ export default function ClipBrowser() {
   const [overnightSkipPub, setOvernightSkipPub] = useState<boolean>(true);
   const [overnightTierFilter, setOvernightTierFilter] = useState<'auto' | 'all' | 'any_kill' | 'double_plus' | 'triple_plus' | 'quadra_plus'>('auto');
   const [overnightOnlyChannelChamp, setOvernightOnlyChannelChamp] = useState<boolean>(true);
+  const [overnightMontagePreset, setOvernightMontagePreset] = useState<MontagePreset>('compare_all_3');
   const [catalog, setCatalog] = useState<OvernightCatalogResponse | null>(null);
   const [overnightStatus, setOvernightStatus] = useState<OvernightStatusResponse | null>(null);
   const [overnightErr, setOvernightErr] = useState<string | null>(null);
@@ -90,7 +92,9 @@ export default function ClipBrowser() {
     try {
       const st = await apiGetOvernightStatus();
       if (mountedRef.current) setOvernightStatus(st);
-    } catch { }
+    } catch (err) {
+      console.warn('[ClipBrowser] Błąd statusu overnight:', err);
+    }
   };
 
   const fetchCatalog = async (fp?: string) => {
@@ -101,7 +105,9 @@ export default function ClipBrowser() {
         skip_published: overnightSkipPub,
       });
       if (mountedRef.current) setCatalog(cat);
-    } catch { }
+    } catch (err) {
+      console.warn('[ClipBrowser] Błąd katalogu overnight:', err);
+    }
   };
 
   useEffect(() => { fetchOvernightStatus(); }, []);
@@ -131,6 +137,7 @@ export default function ClipBrowser() {
         use_local_ai: true,
         tier_filter: overnightTierFilter,
         only_channel_champion: overnightOnlyChannelChamp,
+        montage_preset: overnightMontagePreset,
       });
       await fetchOvernightStatus();
     } catch (err: any) {
@@ -146,13 +153,23 @@ export default function ClipBrowser() {
     try {
       await apiStopOvernight();
       await fetchOvernightStatus();
-    } catch { }
+    } catch (err) {
+      console.warn('[ClipBrowser] Błąd zatrzymywania overnight:', err);
+    }
   };
 
-  const fetchClips = async (fp?: string) => {
+  const fetchClips = async (fp?: string, refresh = false) => {
     setLoading(true);
-    try { const d = await apiListClips((fp ?? selectedFolder) || undefined); setClips(d); }
-    catch { } finally { setLoading(false); }
+    setLoadError(null);
+    try {
+      const d = await apiListClips((fp ?? selectedFolder) || undefined, refresh);
+      setClips(d);
+    } catch (err: any) {
+      console.warn("[ClipBrowser] fetchClips error:", err);
+      setLoadError(err?.response?.data?.detail || err?.message || "Nie udało się pobrać listy klipów.");
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { fetchClips(); }, []);
 
@@ -229,7 +246,9 @@ export default function ClipBrowser() {
       if (res.combat_segments && res.has_jump_cut) {
         setCombatSegments(res.combat_segments);
       }
-    } catch { } finally { setIsAutoDetecting(false); }
+    } catch (err) {
+      console.warn('[ClipBrowser] Błąd auto-detect klipu:', err);
+    } finally { setIsAutoDetecting(false); }
   };
 
   const openManualModal = (clip: ClipItem) => {
@@ -289,11 +308,23 @@ export default function ClipBrowser() {
           </h1>
           <p className="text-xs text-[#A0A7B1] mt-1">Wrzuc klip — AI robi reszte automatycznie. Opcje reczne dostepne ponizej.</p>
         </div>
-        <button onClick={() => fetchClips()} disabled={loading}
+        <button onClick={() => fetchClips(undefined, true)} disabled={loading}
           className="flex items-center gap-1.5 px-3.5 py-2 fk-cut-sm bg-[#0E0F11] hover:bg-[#17191C] border border-[#272A2F] text-xs font-semibold text-[#A0A7B1] hover:text-[#FFFFFF] transition-colors">
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#C8FF3A]" : ""}`} />Odswiez
         </button>
       </div>
+
+      {loadError && (
+        <div className="p-3 fk-cut-sm bg-red-500/10 border border-red-500/40 text-xs text-red-300 flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2 min-w-0 break-words">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
+            <span>{loadError}</span>
+          </span>
+          <button type="button" onClick={() => fetchClips(undefined, true)} className="px-2.5 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-red-100 font-bold text-[11px] flex-shrink-0">
+            Ponów
+          </button>
+        </div>
+      )}
 
       {/* STREFA 1: AUTO-PIPELINE */}
       <div className="p-5 fk-cut fk-cut bg-[#0E0F11] border-2 border-[#C8FF3A]/50 space-y-4">
@@ -425,6 +456,18 @@ export default function ClipBrowser() {
                   <option value={3}>Top 3 shorty</option>
                   <option value={5}>Top 5 shortów</option>
                 </select>
+                <select
+                  value={overnightMontagePreset}
+                  disabled={isOnRunning}
+                  onChange={e => setOvernightMontagePreset(e.target.value as MontagePreset)}
+                  title="Domyślnie tryb nocny montuje wszystkie 3 style, żeby rano były od razu gotowe bez czekania"
+                  className="px-2.5 py-1.5 rounded-lg bg-[#0E0F11] border border-[#272A2F] text-xs font-bold text-[#C8FF3A] focus:outline-none focus:border-[#C8FF3A]">
+                  <option value="compare_all_3">Wszystkie 3 style gotowe rano (Domyślne)</option>
+                  <option value="auto_fallback">Styl: Auto + Fallback #2</option>
+                  <option value="arena_wide">1. Arena Wide (Szeroki Teamfight)</option>
+                  <option value="beat_velocity">2. Beat Velocity (Phonk + Slow-Mo)</option>
+                  <option value="story_raw_pov">3. Story Raw POV (Banner + Blur)</option>
+                </select>
                 <label className="flex items-center gap-1.5 text-[11px] text-[#A0A7B1] px-2.5 py-1.5 rounded-lg bg-[#0E0F11] border border-[#272A2F] cursor-pointer select-none whitespace-nowrap">
                   <input type="checkbox" checked={overnightOnlyChannelChamp} disabled={isOnRunning} onChange={e => setOvernightOnlyChannelChamp(e.target.checked)} className="accent-[#C8FF3A]" />
                   Tylko {champion || "Katarina"}
@@ -439,7 +482,7 @@ export default function ClipBrowser() {
                   <button onClick={handleStartOvernight}
                     disabled={startingOvernight}
                     className="px-4 py-2 fk-cut-sm bg-[#C8FF3A] hover:bg-[#AEE820] disabled:opacity-50 text-[#050505] font-black text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap">
-                    <Sparkles className="w-3.5 h-3.5" />{startingOvernight ? "Uruchamiam..." : `Zostaw na noc (Montuj ${overnightTopN})`}
+                    <Sparkles className="w-3.5 h-3.5" />{startingOvernight ? "Uruchamiam..." : (overnightMontagePreset === 'compare_all_3' ? `Zostaw na noc (${overnightTopN} × 3 style)` : `Zostaw na noc (Montuj ${overnightTopN})`)}
                   </button>
                 ) : (
                   <button onClick={handleStopOvernight}

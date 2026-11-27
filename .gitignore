@@ -115,6 +115,8 @@ lol_agent/debug_ocr.txt
 lol_agent/output_clips/
 lol_agent/preview_shorts/
 outputs/
+!shortsyt-desktop/src/components/outputs/
+!shortsyt-desktop/src/components/outputs/**
 data/
 _archive/
 

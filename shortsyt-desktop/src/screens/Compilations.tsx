@@ -82,8 +82,8 @@ export default function Compilations() {
           await loadAll();
           await selectComp(st.latest);
         }
-      } catch {
-        // ignore transient poll err
+      } catch (err) {
+        console.warn('[Compilations] Błąd pollingu kompilacji:', err);
       }
     }, 2500);
     return () => clearInterval(t);

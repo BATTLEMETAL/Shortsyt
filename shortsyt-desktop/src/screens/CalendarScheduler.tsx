@@ -67,7 +67,7 @@ export function CalendarScheduler() {
       const res = await apiGetLearningStatus();
       if (res && res.directive) setLearning(res.directive);
     } catch (e) {
-      // silent
+      console.warn('[Calendar] Błąd pobierania statusu uczenia:', e);
     }
   };
 
@@ -132,7 +132,7 @@ export function CalendarScheduler() {
       const clips = await apiListClips();
       setAvailableClips(clips || []);
     } catch (e) {
-      // ignore
+      console.warn('[Calendar] Błąd pobierania listy klipów:', e);
     }
   };
 
@@ -186,7 +186,7 @@ export function CalendarScheduler() {
         setSlotTitle(`${analysis.suggested_title_hook} #Shorts #LeagueOfLegends`);
       }
     } catch (e) {
-      // fallback
+      console.warn('[Calendar] Błąd analizy fraga klipu:', e);
     } finally {
       setAnalyzingFrag(false);
     }

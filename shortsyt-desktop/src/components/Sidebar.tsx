@@ -37,8 +37,8 @@ export default function Sidebar({ backendConnected, pipelineRunning = false }: S
         if (!mounted) return;
         const found = res.accounts.find((a) => a.account_id === res.active_account_id) || res.accounts[0] || null;
         setActiveAccount(found);
-      } catch {
-        // Ignoruj gdy API offline lub brak JWT
+      } catch (err) {
+        console.warn('[Sidebar] Błąd wczytywania aktywnego konta:', err);
       }
     };
     loadActive();

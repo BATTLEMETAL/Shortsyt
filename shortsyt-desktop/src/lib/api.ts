@@ -18,10 +18,15 @@ function getDefaultServerUrl(): string {
   ) {
     return window.location.origin;
   }
-  return 'http://localhost:8765';
+  return 'http://127.0.0.1:8765';
 }
 
 export const DEFAULT_URL = getDefaultServerUrl();
+
+let cachedBaseUrl: string | null = null;
+let cachedToken: string | null | undefined = undefined;
+let cachedClient: { baseURL: string; token: string | null; instance: AxiosInstance } | null = null;
+let loginPromise: Promise<string | null> | null = null;
 
 // Electron Store wrapper with localStorage fallback for web dev
 interface ElectronStoreBridge {
@@ -54,7 +59,12 @@ async function getStoreValue<T = any>(key: string, defaultValue: T = null as any
     }
   }
   const item = localStorage.getItem(key);
-  return item !== null ? JSON.parse(item) : defaultValue;
+  if (item === null) return defaultValue;
+  try {
+    return JSON.parse(item);
+  } catch {
+    return defaultValue;
+  }
 }
 
 async function setStoreValue(key: string, value: any): Promise<void> {
@@ -84,26 +94,64 @@ export async function getServerUrl(): Promise<string> {
   ) {
     return window.location.origin;
   }
+  if (cachedBaseUrl !== null) {
+    return cachedBaseUrl;
+  }
   const stored = await getStoreValue(SERVER_URL_KEY, DEFAULT_URL);
-  return stored || DEFAULT_URL;
+  cachedBaseUrl = stored || DEFAULT_URL;
+  return cachedBaseUrl;
 }
 
 export async function setServerUrl(url: string): Promise<void> {
   const cleanUrl = url.trim().replace(/\/$/, '');
+  cachedBaseUrl = cleanUrl || DEFAULT_URL;
+  cachedClient = null;
   await setStoreValue(SERVER_URL_KEY, cleanUrl);
 }
 
 export async function getJwtToken(): Promise<string | null> {
-  return await getStoreValue(JWT_TOKEN_KEY, null);
+  if (cachedToken !== undefined) {
+    return cachedToken;
+  }
+  cachedToken = await getStoreValue(JWT_TOKEN_KEY, null);
+  return cachedToken;
 }
 
 export async function setJwtToken(token: string): Promise<void> {
+  cachedToken = token;
+  cachedClient = null;
   await setStoreValue(JWT_TOKEN_KEY, token);
 }
 
 export async function clearJwtToken(): Promise<void> {
+  cachedToken = null;
+  cachedClient = null;
   await deleteStoreValue(JWT_TOKEN_KEY);
   await deleteStoreValue('api_password');
+}
+
+async function ensureAutoLogin(baseURL: string): Promise<string | null> {
+  if (loginPromise) {
+    return loginPromise;
+  }
+  loginPromise = (async () => {
+    try {
+      const storedPwd = await getStoreValue<string>('api_password');
+      const password = storedPwd || 'shortsyt2026';
+      const res = await axios.post(`${baseURL}/auth/login`, { password }, { timeout: 4000 });
+      const newToken = res.data?.access_token as string | undefined;
+      if (newToken) {
+        await setJwtToken(newToken);
+        return newToken;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      loginPromise = null;
+    }
+  })();
+  return loginPromise;
 }
 
 // ── Axios instance factory ───────────────────────────────────────────────────
@@ -112,21 +160,12 @@ export async function createClient(): Promise<AxiosInstance> {
   const baseURL = await getServerUrl();
   let token = await getJwtToken();
 
-  // If no token exists, attempt auto-login with stored or default API password
   if (!token) {
-    try {
-      const storedPwd = await getStoreValue<string>('api_password');
-      const password = storedPwd || 'shortsyt2026';
-      const res = await axios.post(`${baseURL}/auth/login`, { password }, { timeout: 4000 });
-      if (res.data?.access_token) {
-        token = res.data.access_token;
-        if (token) {
-          await setJwtToken(token);
-        }
-      }
-    } catch {
-      // fallback without token if server unavailable or password changed
-    }
+    token = await ensureAutoLogin(baseURL);
+  }
+
+  if (cachedClient && cachedClient.baseURL === baseURL && cachedClient.token === (token ?? null)) {
+    return cachedClient.instance;
   }
 
   const instance = axios.create({
@@ -144,25 +183,19 @@ export async function createClient(): Promise<AxiosInstance> {
       const originalRequest = error.config;
       if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
         originalRequest._retry = true;
-        try {
-          const storedPwd = await getStoreValue<string>('api_password');
-          const password = storedPwd || 'shortsyt2026';
-          const res = await axios.post(`${baseURL}/auth/login`, { password }, { timeout: 4000 });
-          if (res.data?.access_token) {
-            const newToken = res.data.access_token;
-            await setJwtToken(newToken);
-            originalRequest.headers = originalRequest.headers || {};
-            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
-            return axios(originalRequest);
-          }
-        } catch {
-          await clearJwtToken();
+        const freshToken = await ensureAutoLogin(baseURL);
+        if (freshToken) {
+          originalRequest.headers = originalRequest.headers || {};
+          originalRequest.headers['Authorization'] = `Bearer ${freshToken}`;
+          return axios(originalRequest);
         }
+        await clearJwtToken();
       }
       return Promise.reject(error);
     }
   );
 
+  cachedClient = { baseURL, token: token ?? null, instance };
   return instance;
 }
 
@@ -293,9 +326,13 @@ export interface AutoDetectResult {
   has_jump_cut?: boolean;
 }
 
-export async function apiListClips(folder?: string): Promise<ClipItem[]> {
+export async function apiListClips(folder?: string, refresh = false): Promise<ClipItem[]> {
   const client = await createClient();
-  const url = folder ? `/clips?folder=${encodeURIComponent(folder)}` : '/clips';
+  const params = new URLSearchParams();
+  if (folder) params.set('folder', folder);
+  if (refresh) params.set('refresh', 'true');
+  const qs = params.toString();
+  const url = qs ? `/clips?${qs}` : '/clips';
   const res = await client.get(url);
   return res.data.clips || [];
 }
@@ -664,7 +701,7 @@ export interface FragAnalysis {
   suggested_badge_color: string;
 }
 
-export async function apiGetCalendarSlots(startDate?: string, days: number = 14, forceRefresh: boolean = false): Promise<{ slots: CalendarSlot[]; days: number; total: number; peak_hours_cet?: string[]; social_queue_summary?: { total: number; pending: number; published: number; failed: number } }> {
+export async function apiGetCalendarSlots(startDate?: string, days: number = 14, forceRefresh: boolean = false): Promise<{ slots: CalendarSlot[]; days: number; total: number; peak_hours_cet?: string[]; social_queue_summary?: { total: number; pending: number; published: number; published_to_inbox?: number; failed: number } }> {
   const client = await createClient();
   const params: any = { days };
   if (startDate) params.start_date = startDate;
@@ -1099,6 +1136,7 @@ export interface MultiPublishRequest {
   tiktok_brand_organic?: boolean;
   tiktok_branded_content?: boolean;
   tiktok_post_mode?: 'direct' | 'inbox';
+  force_publish?: boolean;
 }
 
 export interface SocialQueueItem {
@@ -1109,7 +1147,7 @@ export interface SocialQueueItem {
   publish_at: string;
   thumbnail_path?: string | null;
   peak_moment?: number | null;
-  status: 'pending' | 'published' | 'failed' | string;
+  status: 'pending' | 'published' | 'published_to_inbox' | 'failed' | string;
   created_at?: string;
   published_at?: string;
   error?: string;
@@ -1117,7 +1155,7 @@ export interface SocialQueueItem {
   result?: Record<string, any>;
 }
 
-export async function apiGetSocialQueue(): Promise<{ items: SocialQueueItem[]; summary: { total: number; pending: number; published: number; failed: number } }> {
+export async function apiGetSocialQueue(): Promise<{ items: SocialQueueItem[]; summary: { total: number; pending: number; published: number; published_to_inbox?: number; failed: number } }> {
   const client = await createClient();
   const res = await client.get('/social/queue');
   return res.data;
@@ -1324,6 +1362,53 @@ export async function apiReplyToComment(parentId: string, text: string): Promise
 
 // ── Tryb Nocny („Opcja Nocna”: Skan -> Top 5 -> Rekomendacja Synapsy) ──────
 
+export type MontagePreset =
+  | 'auto_fallback'
+  | 'arena_wide'
+  | 'beat_velocity'
+  | 'story_raw_pov'
+  | 'compare_all_3';
+
+export type ViralMontageStyle = 'ARENA_WIDE' | 'BEAT_VELOCITY' | 'STORY_RAW_POV';
+
+export const VIRAL_STYLE_OPTIONS: {
+  id: ViralMontageStyle;
+  label: string;
+  shortLabel: string;
+  badgeCls: string;
+}[] = [
+  { id: 'ARENA_WIDE', label: 'Arena Wide', shortLabel: '1. Arena Wide', badgeCls: 'bg-sky-500/20 border-sky-400/40 text-sky-200' },
+  { id: 'BEAT_VELOCITY', label: 'Beat Velocity', shortLabel: '2. Beat Velocity', badgeCls: 'bg-fuchsia-500/20 border-fuchsia-400/40 text-fuchsia-200' },
+  { id: 'STORY_RAW_POV', label: 'Story Raw POV', shortLabel: '3. Story POV', badgeCls: 'bg-slate-200/15 border-slate-300/40 text-slate-100' },
+];
+
+export interface OvernightVariantSummary {
+  montage_style: string;
+  output_filename: string;
+  output_path?: string | null;
+  thumbnail_path?: string | null;
+  thumbnail_filename?: string | null;
+  title?: string;
+  hook_text?: string;
+  duration_s?: number | null;
+  final_score?: number | null;
+  watchability_score?: number | null;
+  qa_score?: number | null;
+  camera_peak_step_px?: number | null;
+  first_kill_out_sec?: number | null;
+  longest_gap_out_sec?: number | null;
+  player_visible_ratio?: number | null;
+  player_edge_clip_ratio?: number | null;
+  has_critical_defect?: boolean;
+  synapsa_comment_pl?: string;
+  publish_recommended?: boolean;
+  publish_block_reasons?: string[];
+  defects?: string[];
+  render_ok?: boolean;
+  file_exists?: boolean;
+  is_selected?: boolean;
+}
+
 export interface OvernightStartRequest {
   folder?: string;
   top_n?: number;
@@ -1333,6 +1418,7 @@ export interface OvernightStartRequest {
   use_local_ai?: boolean;
   tier_filter?: 'auto' | 'all' | 'any_kill' | 'double_plus' | 'triple_plus' | 'quadra_plus';
   only_channel_champion?: boolean;
+  montage_preset?: MontagePreset;
 }
 
 export interface OvernightStatusResponse {
@@ -1383,6 +1469,11 @@ export interface OvernightShortItem {
   match_kda?: string;
   title: string;
   hook_text?: string;
+  montage_style?: string;
+  fallback_triggered?: boolean;
+  fallback_from_style?: string | null;
+  duration_s?: number | null;
+  alternate_renders?: OvernightVariantSummary[];
   hype_score: number;
   watchability_score?: number;
   qa_score: number;
@@ -1413,6 +1504,7 @@ export interface OvernightBatchManifest {
   champion_name: string;
   tier_filter?: string;
   only_channel_champion?: boolean;
+  montage_preset?: MontagePreset;
   rank: string;
   folder: string;
   started_at: string;
@@ -1462,10 +1554,26 @@ export async function apiStartOvernight(params: OvernightStartRequest): Promise<
   top_n: number;
   tier_filter?: string;
   only_channel_champion?: boolean;
+  montage_preset?: MontagePreset;
   auto_publish: boolean;
 }> {
   const client = await createClient();
   const res = await client.post('/overnight/start', params);
+  return res.data;
+}
+
+export async function apiRestyleOvernightShort(params: {
+  output_filename: string;
+  target_style: ViralMontageStyle;
+}): Promise<{
+  status: string;
+  target_style: ViralMontageStyle;
+  item: OvernightShortItem;
+  variant: OvernightVariantSummary;
+  batch_updated: boolean;
+}> {
+  const client = await createClient();
+  const res = await client.post('/overnight/restyle', params, { timeout: 600000 });
   return res.data;
 }
 

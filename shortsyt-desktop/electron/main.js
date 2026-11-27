@@ -4,13 +4,29 @@ const http = require('http');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
-// File logger to diagnose startup
-const logPath = path.join(path.resolve(__dirname, '../..'), 'electron_debug.log');
+// File logger in Electron userData with >1MB rotation (no stray log inside repo / .asar)
+function getLogPath() {
+  try {
+    return path.join(app.getPath('userData'), 'electron_debug.log');
+  } catch (_) {
+    return path.join(require('os').tmpdir(), 'flikcut_electron_debug.log');
+  }
+}
+
 function logDebug(msg) {
   try {
+    const logPath = getLogPath();
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size > 1024 * 1024) {
+      fs.renameSync(logPath, `${logPath}.old`);
+    }
     fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
   } catch (_) {}
 }
+
+function isSafeExternalUrl(url) {
+  return typeof url === 'string' && /^https?:\/\//i.test(url.trim());
+}
+
 logDebug('--- Electron main process starting ---');
 
 process.on('uncaughtException', (err) => {
@@ -32,12 +48,26 @@ const store = new Store({
 
 let mainWindow = null;
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 let backendProcess = null;
 const isDev = process.env.NODE_ENV === 'development';
 
 function isViteRunning(port = 5173) {
   return new Promise((resolve) => {
-    const req = http.get(`http://localhost:${port}`, (res) => {
+    const req = http.get(`http://127.0.0.1:${port}`, (res) => {
+      res.resume();
       resolve(res.statusCode === 200 || res.statusCode === 304);
     });
     req.on('error', () => resolve(false));
@@ -51,6 +81,7 @@ function isViteRunning(port = 5173) {
 function isBackendRunning(port = 8765) {
   return new Promise((resolve) => {
     const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
+      res.resume();
       resolve(res.statusCode === 200);
     });
     req.on('error', () => resolve(false));
@@ -76,7 +107,6 @@ async function ensureBackendRunning() {
     path.resolve(__dirname, '../../venv313/Scripts/python.exe'),
     path.resolve(__dirname, '../../../venv313/Scripts/python.exe'),
     path.resolve(__dirname, '../../../../venv313/Scripts/python.exe'),
-    path.join(process.env.USERPROFILE || '', 'PycharmProjects', 'shortsyt', 'venv313', 'Scripts', 'python.exe'),
   ];
 
   let pythonCmd = 'python';
@@ -164,12 +194,12 @@ async function createWindow() {
     }
   }, 1200);
 
-  const viteUp = await isViteRunning(5173);
+  const viteUp = isDev ? await isViteRunning(5173) : false;
   logDebug(`isViteRunning: ${viteUp}, isDev: ${isDev}`);
 
   if (isDev && viteUp) {
-    logDebug('Loading http://localhost:5173');
-    mainWindow.loadURL('http://localhost:5173');
+    logDebug('Loading http://127.0.0.1:5173');
+    mainWindow.loadURL('http://127.0.0.1:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     const indexPath = path.join(__dirname, '../dist/index.html');
@@ -181,7 +211,9 @@ async function createWindow() {
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (isSafeExternalUrl(url)) {
+      shell.openExternal(url);
+    }
     return { action: 'deny' };
   });
 
@@ -215,6 +247,7 @@ ipcMain.handle('app-version', () => {
 });
 
 ipcMain.handle('open-external', (event, url) => {
+  if (!isSafeExternalUrl(url)) return false;
   return shell.openExternal(url);
 });
 
@@ -245,6 +278,7 @@ ipcMain.handle('select-directory', async () => {
 
 // ── App Lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return;
   createWindow();
 
   app.on('activate', () => {

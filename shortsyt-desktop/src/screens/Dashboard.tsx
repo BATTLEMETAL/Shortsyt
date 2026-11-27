@@ -10,9 +10,13 @@ import {
   apiGetOutputUrl,
   apiGetBackendBaseUrl,
   apiGetSocialAnalytics,
+  apiRestyleOvernightShort,
+  VIRAL_STYLE_OPTIONS,
   OvernightBatchManifest,
   OvernightStatusResponse,
+  OvernightVariantSummary,
   PipelineStateResponse,
+  ViralMontageStyle,
   YtTokenStatusResponse,
 } from '../lib/api';
 import StatusBadge, { PipelineStatusType } from '../components/StatusBadge';
@@ -76,14 +80,20 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
   const [latestBatch, setLatestBatch] = useState<OvernightBatchManifest | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [previewFilename, setPreviewFilename] = useState<string | null>(null);
-  const [backendUrl, setBackendUrl] = useState<string>('http://localhost:8765');
+  const [backendUrl, setBackendUrl] = useState<string>('http://127.0.0.1:8765');
   const [brokenThumbs, setBrokenThumbs] = useState<Record<string, boolean>>({});
   const [thumbVersion, setThumbVersion] = useState<number>(() => Date.now());
   const [ttTopTags, setTtTopTags] = useState<string[]>([]);
+  const [selectedVariantByCard, setSelectedVariantByCard] = useState<Record<string, string>>({});
+  const [restyleBusyFor, setRestyleBusyFor] = useState<string | null>(null);
+  const [restyleError, setRestyleError] = useState<string | null>(null);
 
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef<boolean>(true);
   const lastLoadedBatchIdRef = useRef<string | null>(null);
+  const inFlightRef = useRef<boolean>(false);
+  const lastYtProbeTsRef = useRef<number>(0);
+  const isActiveRef = useRef<boolean>(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -97,11 +107,51 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
         setPreviewVideoUrl(url);
         setPreviewFilename(filename);
       }
-    } catch { }
+    } catch (err) {
+      console.warn('[Dashboard] Błąd podglądu klipu:', err);
+    }
   };
 
-  // Fetch all dashboard data
-  const fetchData = async (silent = false) => {
+  const handleRestyleOvernight = async (
+    outputFilename: string,
+    targetStyle: ViralMontageStyle,
+    cardKey?: string,
+  ) => {
+    const busyKey = cardKey || outputFilename;
+    setRestyleBusyFor(`${busyKey}:${targetStyle}`);
+    setRestyleError(null);
+    try {
+      const res = await apiRestyleOvernightShort({
+        output_filename: outputFilename,
+        target_style: targetStyle,
+      });
+      const latestRes = await apiGetLatestOvernight();
+      if (mountedRef.current && latestRes?.batch) {
+        setLatestBatch(latestRes.batch);
+        setBrokenThumbs({});
+        setThumbVersion(Date.now());
+        lastLoadedBatchIdRef.current = latestRes.batch.batch_id;
+      }
+      if (mountedRef.current && cardKey && res?.item?.output_filename) {
+        setSelectedVariantByCard(prev => ({ ...prev, [cardKey]: res.item.output_filename }));
+      }
+      if (mountedRef.current && res?.item?.output_filename && res.item.render_ok) {
+        handlePreviewShort(res.item.output_filename);
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || String(err);
+      if (mountedRef.current) {
+        setRestyleError(`Nie udało się przerenderować (${targetStyle}): ${msg}`);
+      }
+    } finally {
+      if (mountedRef.current) setRestyleBusyFor(null);
+    }
+  };
+
+  // Fetch all dashboard data (in-flight guard, parallel calls, 60s YT token throttle)
+  const fetchData = async (silent = false, forceTokenProbe = false) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     if (!silent && mountedRef.current) setIsRefreshing(true);
     try {
       // 1. Health check
@@ -110,57 +160,68 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
       setBackendOk(health.ok);
 
       if (health.ok) {
-        // 2. Pipeline status
-        try {
-          const st = await apiGetStatus();
-          if (!mountedRef.current) return;
+        const nowMs = Date.now();
+        const shouldProbeYt = forceTokenProbe || !silent || (nowMs - lastYtProbeTsRef.current >= 60000);
+        const [statusRes, ytRes, overnightRes] = await Promise.allSettled([
+          apiGetStatus(),
+          shouldProbeYt ? apiGetYtTokenStatus() : Promise.resolve(null),
+          apiGetOvernightStatus(),
+        ]);
+        if (!mountedRef.current) return;
+
+        let pipeActive = false;
+        let onActive = false;
+
+        if (statusRes.status === 'fulfilled') {
+          const st = statusRes.value;
+          pipeActive = st.status === 'running';
           setPipelineState(st);
           if (onStatusChange) onStatusChange(st.status as PipelineStatusType, true);
-        } catch {
-          // If auth or status fails
         }
 
-        // 3. YouTube token status
-        try {
-          const yt = await apiGetYtTokenStatus();
-          if (mountedRef.current) setYtStatus(yt);
-        } catch {
-          // YT status fetch error
+        if (ytRes.status === 'fulfilled' && ytRes.value) {
+          lastYtProbeTsRef.current = Date.now();
+          setYtStatus(ytRes.value);
         }
 
-        // 4. Overnight status & ready batch showcase
-        try {
-          const onSt = await apiGetOvernightStatus();
-          if (!mountedRef.current) return;
+        if (overnightRes.status === 'fulfilled') {
+          const onSt = overnightRes.value;
+          onActive = Boolean(onSt?.status && ['scanning', 'rendering', 'evaluating'].includes(onSt.status));
           setOvernightStatus(onSt);
           const shouldLoadLatest =
             !silent ||
             lastLoadedBatchIdRef.current === null ||
-            (onSt.batch_id && onSt.status === 'done' && onSt.batch_id !== lastLoadedBatchIdRef.current);
+            (onSt.batch_id && ['done', 'stopped'].includes(onSt.status) && onSt.batch_id !== lastLoadedBatchIdRef.current);
           if (shouldLoadLatest) {
-            const latestRes = await apiGetLatestOvernight();
-            if (mountedRef.current && latestRes?.batch) {
-              setLatestBatch(latestRes.batch);
-              setBrokenThumbs({});
-              setThumbVersion(Date.now());
-              lastLoadedBatchIdRef.current = latestRes.batch.batch_id;
+            try {
+              const latestRes = await apiGetLatestOvernight();
+              if (mountedRef.current && latestRes?.batch) {
+                setLatestBatch(latestRes.batch);
+                setBrokenThumbs({});
+                setThumbVersion(Date.now());
+                lastLoadedBatchIdRef.current = latestRes.batch.batch_id;
+              }
+            } catch (err) {
+              console.warn('[Dashboard] Błąd ładowania najnowszego batcha:', err);
             }
           }
-        } catch {
-          // Overnight endpoints optional
         }
+        isActiveRef.current = pipeActive || onActive;
       } else {
+        isActiveRef.current = false;
         if (onStatusChange) onStatusChange('idle', false);
       }
     } catch {
+      isActiveRef.current = false;
       if (mountedRef.current) setBackendOk(false);
       if (onStatusChange) onStatusChange('idle', false);
     } finally {
+      inFlightRef.current = false;
       if (!silent && mountedRef.current) setIsRefreshing(false);
     }
   };
 
-  // Initial load
+  // Initial load + adaptive polling (2s active / 6s idle, paused when tab hidden)
   useEffect(() => {
     apiGetBackendBaseUrl().then((u) => {
       if (mountedRef.current && u) setBackendUrl(u.replace(/\/$/, ''));
@@ -173,16 +234,38 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
         }
       })
       .catch(() => {});
-    fetchData();
-  }, []);
 
-  // Polling /status and /health co 1.5s
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchData(true);
-    }, 1500);
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    return () => clearInterval(interval);
+    const scheduleNext = () => {
+      if (!active) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(tick, isActiveRef.current ? 2000 : 6000);
+    };
+
+    const tick = async () => {
+      if (!active) return;
+      if (!document.hidden) {
+        await fetchData(true);
+      }
+      scheduleNext();
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden && active) {
+        if (timer) clearTimeout(timer);
+        tick();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    fetchData(false, true).finally(scheduleNext);
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
 
   // Auto scroll logs to bottom when new logs arrive
@@ -316,6 +399,19 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
             </div>
           )}
 
+          {restyleError && (
+            <div className="p-2.5 fk-cut-sm bg-red-500/15 border border-red-500/40 text-xs text-red-200 flex items-center justify-between gap-2">
+              <span className="min-w-0 break-words">{restyleError}</span>
+              <button
+                type="button"
+                onClick={() => setRestyleError(null)}
+                className="text-[11px] font-bold px-2 py-0.5 rounded bg-red-500/20 hover:bg-red-500/30"
+              >
+                Zamknij
+              </button>
+            </div>
+          )}
+
           {previewVideoUrl && (
             <div className="p-3 fk-cut-sm bg-[#050505] border border-[#C8FF3A]/50 space-y-2">
               <div className="flex items-center justify-between text-xs">
@@ -337,12 +433,38 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {latestBatch.items.map(item => {
               const isWinner = item.overnight_rank === 1 && item.verdict === 'PICK_WINNER';
-              const isPlayingThis = previewFilename === item.output_filename;
-              const thumbParts = item.thumbnail_path ? item.thumbnail_path.split(/[\\/]/).filter(Boolean) : [];
-              const thumbName = item.thumbnail_filename || (thumbParts.length > 0 ? thumbParts[thumbParts.length - 1] : null);
-              const thumbUrl = thumbName && !brokenThumbs[item.output_filename]
+              const rawAlts: OvernightVariantSummary[] = Array.isArray(item.alternate_renders) ? item.alternate_renders : [];
+              const selectedAltFn = selectedVariantByCard[item.output_filename];
+              const activeAlt: OvernightVariantSummary | undefined =
+                rawAlts.find(a => a.output_filename === selectedAltFn && a.render_ok !== false)
+                ?? rawAlts.find(a => a.output_filename === item.output_filename);
+
+              const activeFilename = activeAlt?.output_filename || item.output_filename;
+              const activeStyle = activeAlt?.montage_style || item.montage_style;
+              const activeStyleMeta = VIRAL_STYLE_OPTIONS.find(o => o.id === activeStyle);
+              const activeFinalScore = activeAlt?.final_score ?? item.final_score;
+              const activeWatchScore = activeAlt?.watchability_score ?? item.watchability_score;
+              const activeQaScore = activeAlt?.qa_score ?? item.qa_score;
+              const activePubRec = activeAlt?.publish_recommended ?? item.publish_recommended;
+              const activeBlockReasons = activeAlt?.publish_block_reasons ?? item.publish_block_reasons;
+              const activeComment = activeAlt?.synapsa_comment_pl || item.synapsa_comment_pl;
+              const activeTitle = activeAlt?.title || item.title || activeFilename;
+              const activeFileExists = activeAlt?.file_exists !== undefined ? activeAlt.file_exists : item.file_exists;
+              const activeThumbPath = activeAlt?.thumbnail_path ?? item.thumbnail_path;
+              const isPlayingThis = previewFilename === activeFilename;
+              const thumbParts = activeThumbPath ? activeThumbPath.split(/[\\/]/).filter(Boolean) : [];
+              const thumbName =
+                activeAlt?.thumbnail_filename ||
+                item.thumbnail_filename ||
+                (thumbParts.length > 0 ? thumbParts[thumbParts.length - 1] : null);
+              const thumbUrl = thumbName && !brokenThumbs[activeFilename]
                 ? `${backendUrl}/thumbnails/${encodeURIComponent(thumbName)}?v=${thumbVersion}`
                 : null;
+              const readyStyleCount = VIRAL_STYLE_OPTIONS.filter(opt => {
+                const matchAlt = rawAlts.find(a => a.montage_style === opt.id && a.render_ok !== false && a.file_exists !== false);
+                return Boolean(matchAlt || (item.montage_style === opt.id && item.file_exists !== false));
+              }).length;
+
               return (
                 <div
                   key={item.output_filename}
@@ -362,20 +484,20 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
                             <img
                               src={thumbUrl}
                               alt={`Miniaturka ${item.champion_name}`}
-                              onError={() => setBrokenThumbs(prev => ({ ...prev, [item.output_filename]: true }))}
+                              onError={() => setBrokenThumbs(prev => ({ ...prev, [activeFilename]: true }))}
                               onClick={() => {
-                                if (item.thumbnail_path && window.electronApp?.openPath) {
-                                  window.electronApp.openPath(item.thumbnail_path);
-                                } else if (item.render_ok) {
-                                  handlePreviewShort(item.output_filename);
+                                if (activeThumbPath && window.electronApp?.openPath) {
+                                  window.electronApp.openPath(activeThumbPath);
+                                } else if (item.render_ok && activeFileExists !== false) {
+                                  handlePreviewShort(activeFilename);
                                 }
                               }}
                               className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform"
                             />
-                            {item.thumbnail_path && (
+                            {activeThumbPath && (
                               <button
                                 type="button"
-                                onClick={() => window.electronApp?.showItemInFolder?.(item.thumbnail_path!)}
+                                onClick={() => window.electronApp?.showItemInFolder?.(activeThumbPath)}
                                 title="Pokaż miniaturkę w folderze"
                                 className="absolute bottom-1 right-1 p-1 rounded bg-black/75 hover:bg-[#C8FF3A] text-white hover:text-black transition-colors"
                               >
@@ -405,7 +527,12 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
                         >
                           {isWinner ? '⭐ REKOMENDACJA #1' : `#${item.overnight_rank} • ${item.verdict}`}
                         </span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {activeStyleMeta && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-bold ${activeStyleMeta.badgeCls}`}>
+                              {activeStyleMeta.label}
+                            </span>
+                          )}
                           {item.is_favorite && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/20 border border-amber-400/40 text-amber-300 font-bold flex items-center gap-0.5">
                               <Star className="w-2.5 h-2.5 fill-current" />Ulubiony
@@ -420,9 +547,9 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
                               ✅ {(item.published_platforms || []).length > 0 ? item.published_platforms!.join('+').toUpperCase() : 'OPUBL./KOLEJKA'}
                             </span>
                           )}
-                          {item.publish_recommended === false && (
+                          {activePubRec === false && (
                             <span
-                              title={(item.publish_block_reasons || []).join(', ')}
+                              title={(activeBlockReasons || []).join(', ')}
                               className="text-[10px] px-1.5 py-0.5 rounded bg-[#FE2C55]/20 border border-[#FE2C55]/50 text-[#FF7A96] font-bold"
                             >
                               🚫 ODRADZANE DO PUBLIKACJI
@@ -435,7 +562,7 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
                       </div>
 
                       <div className="text-xs font-bold text-[#FFFFFF] break-words">
-                        {(item.title || item.output_filename).replace(/#\S+/g, '').replace(/\s{2,}/g, ' ').trim() || item.output_filename}
+                        {activeTitle.replace(/#\S+/g, '').replace(/\s{2,}/g, ' ').trim() || activeFilename}
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-mono">
                         <span className="px-1.5 py-0.5 rounded bg-[#E62117]/15 border border-[#E62117]/30 text-[#FF8A80]">
@@ -450,46 +577,100 @@ export default function Dashboard({ onStatusChange }: DashboardProps) {
                       </div>
 
                       <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-mono">
-                        <span className="px-1.5 py-0.5 rounded bg-[#0E0F11] border border-[#272A2F] text-[#C8FF3A]">Final {item.final_score}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-[#0E0F11] border border-[#272A2F] text-[#C8FF3A]">Final {activeFinalScore}</span>
                         <span className="px-1.5 py-0.5 rounded bg-[#0E0F11] border border-[#272A2F] text-[#A0A7B1]">Hype {item.hype_score}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-[#0E0F11] border border-[#272A2F] text-[#A0A7B1]">Watch {item.watchability_score ?? '?'}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-[#0E0F11] border border-[#272A2F] text-[#A0A7B1]">QA {item.qa_score}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-[#0E0F11] border border-[#272A2F] text-[#A0A7B1]">Watch {activeWatchScore ?? '?'}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-[#0E0F11] border border-[#272A2F] text-[#A0A7B1]">QA {activeQaScore}</span>
                       </div>
 
-                      <p className="text-[11px] text-[#A0A7B1] break-words [overflow-wrap:anywhere]">{item.synapsa_comment_pl}</p>
+                      <p className="text-[11px] text-[#A0A7B1] break-words [overflow-wrap:anywhere]">{activeComment}</p>
                     </div>
                   </div>
 
                   {item.render_ok && (
-                    <div className="flex items-center gap-2 pt-2 border-t border-white/5">
-                      {item.file_exists !== false && (
+                    <div className="space-y-2 pt-2 border-t border-white/5">
+                      <div className="flex items-center gap-2">
+                        {activeFileExists !== false && (
+                          <button
+                            onClick={() => handlePreviewShort(activeFilename)}
+                            className="px-3 py-1.5 rounded-lg bg-[#272A2F] hover:bg-[#32363D] text-xs font-semibold text-[#FFFFFF] flex items-center gap-1.5"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" />Odtwórz
+                          </button>
+                        )}
                         <button
-                          onClick={() => handlePreviewShort(item.output_filename)}
-                          className="px-3 py-1.5 rounded-lg bg-[#272A2F] hover:bg-[#32363D] text-xs font-semibold text-[#FFFFFF] flex items-center gap-1.5"
+                          disabled={Boolean(item.already_published && !item.can_retry_publish)}
+                          onClick={() => navigate('/outputs', { state: { publishFilename: activeFilename } })}
+                          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 disabled:opacity-55 disabled:cursor-not-allowed ${
+                            item.can_retry_publish
+                              ? 'bg-amber-400 hover:bg-amber-300 text-[#050505]'
+                              : item.already_published
+                              ? 'bg-[#17191C] text-[#2ECC71] border border-[#2ECC71]/40'
+                              : isWinner
+                              ? 'bg-[#C8FF3A] hover:bg-[#AEE820] text-[#050505]'
+                              : 'bg-[#17191C] hover:bg-[#272A2F] text-[#C8FF3A] border border-[#C8FF3A]/40'
+                          }`}
                         >
-                          <Play className="w-3.5 h-3.5 fill-current" />Odtwórz
-                        </button>
-                      )}
-                      <button
-                        disabled={Boolean(item.already_published && !item.can_retry_publish)}
-                        onClick={() => navigate('/outputs', { state: { publishFilename: item.output_filename } })}
-                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 disabled:opacity-55 disabled:cursor-not-allowed ${
-                          item.can_retry_publish
-                            ? 'bg-amber-400 hover:bg-amber-300 text-[#050505]'
+                          <Share2 className="w-3.5 h-3.5" />
+                          {item.can_retry_publish
+                            ? `Wrzuć ponownie (brak: ${(item.missing_platforms || []).map(p => p.toUpperCase()).join('+') || 'YT'})`
                             : item.already_published
-                            ? 'bg-[#17191C] text-[#2ECC71] border border-[#2ECC71]/40'
-                            : isWinner
-                            ? 'bg-[#C8FF3A] hover:bg-[#AEE820] text-[#050505]'
-                            : 'bg-[#17191C] hover:bg-[#272A2F] text-[#C8FF3A] border border-[#C8FF3A]/40'
-                        }`}
-                      >
-                        <Share2 className="w-3.5 h-3.5" />
-                        {item.can_retry_publish
-                          ? `Wrzuć ponownie (brak: ${(item.missing_platforms || []).map(p => p.toUpperCase()).join('+') || 'YT'})`
-                          : item.already_published
-                          ? 'Już w kolejce / opublikowano'
-                          : 'Wybierz i Opublikuj'}
-                      </button>
+                            ? 'Już w kolejce / opublikowano'
+                            : 'Wybierz i Opublikuj'}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-[9px] font-bold uppercase text-[#686E78] mr-1">
+                          GOTOWE STYLE ({readyStyleCount}/3):
+                        </span>
+                        {VIRAL_STYLE_OPTIONS.map(opt => {
+                          const readyAlt = rawAlts.find(a => a.montage_style === opt.id && a.render_ok !== false && a.file_exists !== false);
+                          const readyFn = readyAlt?.output_filename || (item.montage_style === opt.id && item.file_exists !== false ? item.output_filename : undefined);
+                          const isReady = Boolean(readyFn);
+                          const isActiveStyle = activeStyle === opt.id;
+                          const isBusyThis = restyleBusyFor === `${item.output_filename}:${opt.id}`;
+                          const altEntry = rawAlts.find(a => a.montage_style === opt.id);
+                          const readyScore = altEntry?.final_score ?? (item.montage_style === opt.id ? item.final_score : undefined);
+                          const readyPub = altEntry?.publish_recommended ?? (item.montage_style === opt.id ? item.publish_recommended : undefined);
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              disabled={Boolean(restyleBusyFor) || (isActiveStyle && isReady)}
+                              onClick={() => {
+                                if (isReady && readyFn) {
+                                  setSelectedVariantByCard(prev => ({ ...prev, [item.output_filename]: readyFn }));
+                                } else {
+                                  handleRestyleOvernight(activeFilename, opt.id, item.output_filename);
+                                }
+                              }}
+                              title={isReady
+                                ? `Gotowy wariant ${opt.label} (Final=${readyScore ?? '?'}) — kliknij aby przełączyć od razu bez renderu`
+                                : `Brak pliku na dysku — kliknij aby wyrenderować styl ${opt.label}`}
+                              className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors flex items-center gap-1 disabled:cursor-not-allowed ${
+                                isActiveStyle
+                                  ? 'bg-[#C8FF3A]/20 border-[#C8FF3A] text-[#C8FF3A]'
+                                  : isReady
+                                  ? 'bg-[#111418] hover:bg-[#1B2026] border-emerald-500/35 text-emerald-200'
+                                  : 'bg-[#0E0F11] hover:bg-[#1C1F24] border-[#272A2F] text-[#8E95A0] disabled:opacity-45'
+                              }`}
+                            >
+                              {isBusyThis ? (
+                                <Loader2 className="w-2.5 h-2.5 animate-spin text-[#C8FF3A]" />
+                              ) : isReady ? (
+                                <span className={readyPub === true ? 'text-emerald-400' : 'text-amber-300'}>✓</span>
+                              ) : (
+                                <span className="text-[#686E78]">↻</span>
+                              )}
+                              <span>{opt.shortLabel}</span>
+                              {typeof readyScore === 'number' && (
+                                <span className="text-[9px] opacity-80 font-mono">• {Math.round(readyScore)}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
