@@ -12,7 +12,7 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 import requests
 
@@ -58,8 +58,85 @@ def _write_cache(cache_path: Path, data: Dict[str, Any]) -> None:
         print(f"⚠️ Nie udało się zapisać cache {cache_path.name}: {e}")
 
 
+def _paginate_graph_edges(
+    url: str,
+    params: Dict[str, Any],
+    max_items: int = 200,
+    timeout: int = 12,
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """Iteruje po stronach Meta Graph API (paging.next) do limitu max_items."""
+    items: List[Dict[str, Any]] = []
+    next_url: Optional[str] = url
+    next_params: Optional[Dict[str, Any]] = params
+
+    while next_url and len(items) < max_items:
+        try:
+            resp = requests.get(next_url, params=next_params, timeout=timeout).json()
+        except Exception as exc:
+            err_msg = f"Wyjątek paginacji Graph API: {exc}"
+            print(f"[SocialAnalytics] [WARN] {err_msg}")
+            return items, err_msg
+
+        if "error" in resp:
+            err_obj = resp.get("error") or {}
+            err_msg = err_obj.get("message") or str(err_obj)
+            print(f"[SocialAnalytics] [WARN] Błąd paginacji Graph API: {err_msg}")
+            return items, err_msg
+
+        batch = resp.get("data") or []
+        if not batch:
+            break
+        remaining = max_items - len(items)
+        items.extend(batch[:remaining])
+        next_url = (resp.get("paging") or {}).get("next")
+        next_params = None
+
+    return items, None
+
+
+def _parse_ig_insights_rows(ins_resp: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    """Wyciąga metryki /insights z odpowiedzi Graph API v21.0 dla Instagram Reel/Media."""
+    parsed: Dict[str, Optional[float]] = {
+        "views": 0,
+        "reach": 0,
+        "saved": 0,
+        "shares": 0,
+        "interactions": None,
+        "avg_watch_time_ms": None,
+        "total_watch_time_ms": None,
+        "skip_rate_pct": None,
+    }
+    for row in ins_resp.get("data", []):
+        metric_name = row.get("name")
+        val = None
+        if row.get("values"):
+            val = row["values"][0].get("value")
+        elif row.get("total_value"):
+            val = row["total_value"].get("value")
+        if val is None:
+            continue
+
+        if metric_name == "views":
+            parsed["views"] = int(val)
+        elif metric_name == "reach":
+            parsed["reach"] = int(val)
+        elif metric_name == "saved":
+            parsed["saved"] = int(val)
+        elif metric_name == "shares":
+            parsed["shares"] = int(val)
+        elif metric_name == "total_interactions":
+            parsed["interactions"] = int(val)
+        elif metric_name == "ig_reels_avg_watch_time":
+            parsed["avg_watch_time_ms"] = int(val)
+        elif metric_name == "ig_reels_video_view_total_time":
+            parsed["total_watch_time_ms"] = int(val)
+        elif metric_name == "reels_skip_rate":
+            parsed["skip_rate_pct"] = round(float(val), 2)
+    return parsed
+
+
 def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
-    """Pobiera rzeczywiste statystyki profilu i Rolek z Instagram Graph API."""
+    """Pobiera rzeczywiste statystyki profilu i wszystkich Rolek z Instagram Graph API v21.0 (z paginacją)."""
     if not force_refresh:
         cached = _read_cache(IG_CACHE_FILE)
         if cached:
@@ -75,19 +152,29 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             "total_likes": 0,
             "total_comments": 0,
             "total_interactions": 0,
+            "total_saved": 0,
+            "total_shares": 0,
+            "avg_watch_time_s": None,
+            "avg_skip_rate_pct": None,
+            "insights_errors": 0,
+            "media_count_mismatch": False,
             "reels": []
         }
 
     try:
         token_info = json.loads(IG_TOKEN_FILE.read_text(encoding="utf-8"))
         access_token = token_info.get("access_token")
-        ig_id = token_info.get("instagram_business_account_id") or "17841473819182842"
+        ig_id = (
+            token_info.get("instagram_business_account_id")
+            or token_info.get("instagram_account_id")
+            or "17841473819182842"
+        )
 
         # 1. Pobierz profil Instagram Business
         prof_res = requests.get(
             f"https://graph.facebook.com/v21.0/{ig_id}",
             params={
-                "fields": "username,name,followers_count,follows_count,media_count,profile_picture_url,media{id,caption,like_count,comments_count,permalink,timestamp,media_type}",
+                "fields": "username,name,followers_count,follows_count,media_count,profile_picture_url",
                 "access_token": access_token
             },
             timeout=12
@@ -95,7 +182,6 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
 
         if "error" in prof_res:
             err_msg = prof_res["error"].get("message", "Błąd Instagram API")
-            # fallback do cache jeśli istnieje
             if IG_CACHE_FILE.exists():
                 try:
                     return json.loads(IG_CACHE_FILE.read_text(encoding="utf-8"))
@@ -107,62 +193,99 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
         name = prof_res.get("name", "Dwannellenga")
         followers = prof_res.get("followers_count", 0)
         follows = prof_res.get("follows_count", 0)
-        media_count = prof_res.get("media_count", 0)
+        media_count = int(prof_res.get("media_count", 0) or 0)
         profile_pic = prof_res.get("profile_picture_url", "")
 
-        raw_media = prof_res.get("media", {}).get("data", [])
-        reels: List[Dict[str, Any]] = []
+        # 2. Pobierz wszystkie media z pełną paginacją
+        raw_media, ig_page_err = _paginate_graph_edges(
+            f"https://graph.facebook.com/v21.0/{ig_id}/media",
+            params={
+                "fields": "id,caption,like_count,comments_count,permalink,timestamp,media_type,media_product_type",
+                "limit": 50,
+                "access_token": access_token,
+            },
+            max_items=200,
+            timeout=12,
+        )
 
+        reels: List[Dict[str, Any]] = []
         total_views = 0
         total_reach = 0
         total_likes = 0
         total_comments = 0
         total_interactions = 0
+        total_saved = 0
+        total_shares = 0
+        insights_errors = 0
+        watch_times_s: List[float] = []
+        skip_rates: List[float] = []
 
         for m in raw_media:
             m_id = m.get("id")
             caption = m.get("caption", "")
-            likes = int(m.get("like_count", 0))
-            comments = int(m.get("comments_count", 0))
+            likes = int(m.get("like_count", 0) or 0)
+            comments = int(m.get("comments_count", 0) or 0)
             permalink = m.get("permalink", f"https://www.instagram.com/reel/{m_id}/")
             ts = m.get("timestamp", "")
+            m_type = str(m.get("media_type") or "").upper()
+            m_prod = str(m.get("media_product_type") or "").upper()
+            is_reel = m_type in ("VIDEO", "REELS") or m_prod == "REELS" or not m_type
 
             views = 0
             reach = 0
             saved = 0
             shares = 0
             interactions = likes + comments
+            avg_watch_time_ms: Optional[int] = None
+            avg_watch_time_s: Optional[float] = None
+            total_watch_time_ms: Optional[int] = None
+            skip_rate_pct: Optional[float] = None
 
-            # Pobierz szczegółowe statystyki z /insights
+            base_metrics = "views,reach,saved,shares,total_interactions"
+            ext_metrics = (
+                "views,reach,saved,shares,total_interactions,"
+                "ig_reels_avg_watch_time,ig_reels_video_view_total_time,reels_skip_rate"
+            )
             try:
+                req_metric = ext_metrics if is_reel else base_metrics
                 ins_resp = requests.get(
                     f"https://graph.facebook.com/v21.0/{m_id}/insights",
-                    params={
-                        "metric": "views,reach,saved,shares,total_interactions",
-                        "access_token": access_token
-                    },
-                    timeout=8
+                    params={"metric": req_metric, "access_token": access_token},
+                    timeout=8,
                 ).json()
+                if "error" in ins_resp and req_metric != base_metrics:
+                    err_ext = (ins_resp.get("error") or {}).get("message", "Błąd rozszerzonych metryk IG")
+                    print(f"[SocialAnalytics] [WARN] Rozszerzone insights IG ({m_id}): {err_ext} — fallback bazowy")
+                    ins_resp = requests.get(
+                        f"https://graph.facebook.com/v21.0/{m_id}/insights",
+                        params={"metric": base_metrics, "access_token": access_token},
+                        timeout=8,
+                    ).json()
 
-                for row in ins_resp.get("data", []):
-                    metric_name = row.get("name")
-                    val = 0
-                    if row.get("values"):
-                        val = int(row["values"][0].get("value", 0))
-                    elif row.get("total_value"):
-                        val = int(row["total_value"].get("value", 0))
-
-                    if metric_name == "views":
-                        views = val
-                    elif metric_name == "reach":
-                        reach = val
-                    elif metric_name == "saved":
-                        saved = val
-                    elif metric_name == "shares":
-                        shares = val
-                    elif metric_name == "total_interactions" and val > 0:
-                        interactions = val
+                if "error" in ins_resp:
+                    insights_errors += 1
+                    err_ins = (ins_resp.get("error") or {}).get("message", "Błąd insights IG")
+                    print(f"[SocialAnalytics] [WARN] Błąd insights IG ({m_id}): {err_ins}")
+                else:
+                    parsed = _parse_ig_insights_rows(ins_resp)
+                    views = int(parsed["views"] or 0)
+                    reach = int(parsed["reach"] or 0)
+                    saved = int(parsed["saved"] or 0)
+                    shares = int(parsed["shares"] or 0)
+                    if parsed["interactions"] is not None:
+                        interactions = max(int(parsed["interactions"]), likes + comments) if int(parsed["interactions"]) > 0 else (likes + comments)
+                    if parsed["avg_watch_time_ms"] is not None:
+                        avg_watch_time_ms = int(parsed["avg_watch_time_ms"])
+                        if avg_watch_time_ms > 0:
+                            avg_watch_time_s = round(avg_watch_time_ms / 1000.0, 2)
+                            watch_times_s.append(avg_watch_time_s)
+                    if parsed["total_watch_time_ms"] is not None:
+                        total_watch_time_ms = int(parsed["total_watch_time_ms"])
+                    if parsed["skip_rate_pct"] is not None:
+                        skip_rate_pct = float(parsed["skip_rate_pct"])
+                        skip_rates.append(skip_rate_pct)
             except Exception as exc:
+                insights_errors += 1
                 print(f"[SocialAnalytics] [WARN] Błąd insights IG ({m_id}): {exc}")
 
             total_views += views
@@ -170,6 +293,8 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             total_likes += likes
             total_comments += comments
             total_interactions += interactions
+            total_saved += saved
+            total_shares += shares
 
             reels.append({
                 "id": m_id,
@@ -177,6 +302,8 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                 "caption": caption,
                 "url": permalink,
                 "timestamp": ts,
+                "media_type": m_type or None,
+                "media_product_type": m_prod or None,
                 "views": views,
                 "reach": reach,
                 "likes": likes,
@@ -184,7 +311,11 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                 "saved": saved,
                 "shares": shares,
                 "interactions": interactions,
-                "engagement_rate": round((interactions / max(views, 1)) * 100, 2)
+                "engagement_rate": round((interactions / max(views, 1)) * 100, 2),
+                "avg_watch_time_ms": avg_watch_time_ms,
+                "avg_watch_time_s": avg_watch_time_s,
+                "total_watch_time_ms": total_watch_time_ms,
+                "skip_rate_pct": skip_rate_pct,
             })
 
         avg_views = int(total_views / max(len(reels), 1))
@@ -206,7 +337,14 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             "total_likes": total_likes,
             "total_comments": total_comments,
             "total_interactions": total_interactions,
+            "total_saved": total_saved,
+            "total_shares": total_shares,
             "avg_views": avg_views,
+            "avg_watch_time_s": round(sum(watch_times_s) / len(watch_times_s), 2) if watch_times_s else None,
+            "avg_skip_rate_pct": round(sum(skip_rates) / len(skip_rates), 2) if skip_rates else None,
+            "insights_errors": insights_errors,
+            "media_count_mismatch": bool(media_count and len(reels) != media_count),
+            "pagination_error": ig_page_err,
             "top_reels": sorted(reels, key=lambda x: x["views"], reverse=True)[:5],
             "reels": reels
         }
@@ -225,7 +363,7 @@ def get_instagram_analytics(force_refresh: bool = False) -> Dict[str, Any]:
 
 
 def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
-    """Pobiera rzeczywiste statystyki fanpage'a i wideo z Facebook Graph API."""
+    """Pobiera rzeczywiste statystyki fanpage'a i wszystkich wideo z Facebook Graph API v21.0 (z paginacją)."""
     if not force_refresh:
         cached = _read_cache(FB_CACHE_FILE)
         if cached:
@@ -237,8 +375,10 @@ def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             "message": "Brak połączonego konta Facebook. Wklej token w Ustawieniach.",
             "page": None,
             "total_views": 0,
+            "total_likes": 0,
             "total_reactions": 0,
             "total_comments": 0,
+            "has_read_insights_permission": False,
             "videos": []
         }
 
@@ -246,12 +386,22 @@ def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
         token_info = json.loads(FB_TOKEN_FILE.read_text(encoding="utf-8"))
         access_token = token_info.get("access_token")
         page_id = token_info.get("page_id") or "1398423656686108"
+        scopes = token_info.get("scopes") or token_info.get("permissions") or []
+        has_read_insights = "read_insights" in scopes
+        metrics_limitation = (
+            None
+            if has_read_insights
+            else (
+                "Brak uprawnienia read_insights w tokenie Facebook Page — Graph API zwraca wyłącznie "
+                "podstawowe pola wideo (views, likes.summary, comments.summary) bez video_insights."
+            )
+        )
 
-        # 1. Pobierz dane Fanpage'a i listę wideo
+        # 1. Pobierz dane Fanpage'a
         page_res = requests.get(
             f"https://graph.facebook.com/v21.0/{page_id}",
             params={
-                "fields": "name,followers_count,fan_count,picture,videos{id,description,permalink_url,created_time,views}",
+                "fields": "name,followers_count,fan_count,picture",
                 "access_token": access_token
             },
             timeout=12
@@ -271,41 +421,38 @@ def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
         fan_count = page_res.get("fan_count", 0)
         picture_url = page_res.get("picture", {}).get("data", {}).get("url", "")
 
-        raw_videos = page_res.get("videos", {}).get("data", [])
-        videos: List[Dict[str, Any]] = []
+        # 2. Pobierz wszystkie wideo z paginacją i działającymi polami v21.0 (bez nieistniejącego 'reactions')
+        raw_videos, fb_page_err = _paginate_graph_edges(
+            f"https://graph.facebook.com/v21.0/{page_id}/videos",
+            params={
+                "fields": "id,description,permalink_url,created_time,length,views,likes.summary(true),comments.summary(true)",
+                "limit": 50,
+                "access_token": access_token,
+            },
+            max_items=200,
+            timeout=12,
+        )
 
+        videos: List[Dict[str, Any]] = []
         total_views = 0
-        total_reactions = 0
+        total_likes = 0
         total_comments = 0
 
         for v in raw_videos:
             v_id = v.get("id")
             desc = v.get("description", "")
-            views = int(v.get("views", 0))
-            perm = v.get("permalink_url", f"/reel/{v_id}/")
+            views = int(v.get("views", 0) or 0)
+            perm = v.get("permalink_url") or f"/reel/{v_id}/"
             if perm.startswith("/"):
                 perm = f"https://www.facebook.com{perm}"
             created_time = v.get("created_time", "")
-
-            # Zapytaj o reakcje i komentarze dla wideo
-            reactions = 0
-            comments = 0
-            try:
-                stat_res = requests.get(
-                    f"https://graph.facebook.com/v21.0/{v_id}",
-                    params={
-                        "fields": "reactions.summary(true),comments.summary(true)",
-                        "access_token": access_token
-                    },
-                    timeout=6
-                ).json()
-                reactions = stat_res.get("reactions", {}).get("summary", {}).get("total_count", 0)
-                comments = stat_res.get("comments", {}).get("summary", {}).get("total_count", 0)
-            except Exception as exc:
-                print(f"[SocialAnalytics] [WARN] Błąd metryk FB ({v_id}): {exc}")
+            length_raw = v.get("length")
+            length_s = round(float(length_raw), 2) if length_raw is not None else None
+            likes = int((v.get("likes") or {}).get("summary", {}).get("total_count", 0) or 0)
+            comments = int((v.get("comments") or {}).get("summary", {}).get("total_count", 0) or 0)
 
             total_views += views
-            total_reactions += reactions
+            total_likes += likes
             total_comments += comments
 
             videos.append({
@@ -314,10 +461,12 @@ def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
                 "description": desc,
                 "url": perm,
                 "timestamp": created_time,
+                "length_s": length_s,
                 "views": views,
-                "reactions": reactions,
+                "likes": likes,
+                "reactions": likes,
                 "comments": comments,
-                "engagement": reactions + comments
+                "engagement": likes + comments
             })
 
         avg_views = int(total_views / max(len(videos), 1))
@@ -334,9 +483,13 @@ def get_facebook_analytics(force_refresh: bool = False) -> Dict[str, Any]:
             },
             "count": len(videos),
             "total_views": total_views,
-            "total_reactions": total_reactions,
+            "total_likes": total_likes,
+            "total_reactions": total_likes,
             "total_comments": total_comments,
             "avg_views": avg_views,
+            "has_read_insights_permission": has_read_insights,
+            "metrics_limitation": metrics_limitation,
+            "pagination_error": fb_page_err,
             "top_videos": sorted(videos, key=lambda x: x["views"], reverse=True)[:5],
             "videos": videos
         }

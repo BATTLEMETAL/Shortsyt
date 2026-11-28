@@ -369,7 +369,11 @@ def upload_facebook_reel(
             timeout=10
         )
         if info_resp.status_code == 200:
-            post_url = info_resp.json().get("permalink_url") or post_url
+            raw_perm = info_resp.json().get("permalink_url") or ""
+            if raw_perm.startswith("/"):
+                raw_perm = f"https://www.facebook.com{raw_perm}"
+            if raw_perm:
+                post_url = raw_perm
     except Exception:
         pass
 

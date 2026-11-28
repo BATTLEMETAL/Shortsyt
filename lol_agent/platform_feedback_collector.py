@@ -46,8 +46,13 @@ IG_TOKEN_FILE = ACCOUNTS_DIR / "instagram_token.json"
 FB_TOKEN_FILE = ACCOUNTS_DIR / "facebook_token.json"
 TT_TOKEN_FILE = ACCOUNTS_DIR / "tiktok_token.json"
 
-GRAPH_API_VERSION = "v19.0"
+GRAPH_API_VERSION = "v21.0"
 GRAPH_API_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
+
+try:
+    from lol_agent.social_analytics import _parse_ig_insights_rows as _shared_parse_ig_insights
+except ImportError:
+    from social_analytics import _parse_ig_insights_rows as _shared_parse_ig_insights  # type: ignore
 
 
 # ─── YouTube Metrics Fetcher ──────────────────────────────────────────────────
@@ -139,8 +144,68 @@ def fetch_youtube_video_metrics(video_id: str) -> Optional[Dict[str, Any]]:
 
 # ─── Instagram Metrics Fetcher ────────────────────────────────────────────────
 
+def _extract_ig_insights(media_id: str, token: str, timeout: int = 10) -> Dict[str, Any]:
+    """Pobiera metryki IG Insights v21.0 z bezpiecznym fallbackiem z metryk rozszerzonych do bazowych."""
+    base_metric = "views,reach,saved,shares,total_interactions"
+    ext_metric = (
+        "views,reach,saved,shares,total_interactions,"
+        "ig_reels_avg_watch_time,ig_reels_video_view_total_time,reels_skip_rate"
+    )
+    ins_url = f"{GRAPH_API_BASE}/{media_id}/insights"
+    empty_res: Dict[str, Any] = {
+        "views": 0,
+        "reach": 0,
+        "saved": 0,
+        "shares": 0,
+        "total_interactions": 0,
+        "avg_watch_time_ms": None,
+        "avg_watch_time_s": None,
+        "total_watch_time_ms": None,
+        "skip_rate_pct": None,
+        "insights_ok": False,
+    }
+    try:
+        ins_resp = requests.get(
+            ins_url,
+            params={"metric": ext_metric, "access_token": token},
+            timeout=timeout,
+        ).json()
+        if "error" in ins_resp:
+            err_ext = (ins_resp.get("error") or {}).get("message", "Błąd rozszerzonych insights IG")
+            print(f"⚠️ [Feedback Loop] Rozszerzone insights IG ({media_id}) odrzucone: {err_ext} — fallback bazowy.")
+            ins_resp = requests.get(
+                ins_url,
+                params={"metric": base_metric, "access_token": token},
+                timeout=timeout,
+            ).json()
+
+        if "error" in ins_resp:
+            err_base = (ins_resp.get("error") or {}).get("message", "Błąd insights IG")
+            print(f"⚠️ [Feedback Loop] Błąd insights IG ({media_id}): {err_base}")
+            return empty_res
+
+        parsed = _shared_parse_ig_insights(ins_resp)
+        avg_wt_ms = int(parsed["avg_watch_time_ms"]) if parsed["avg_watch_time_ms"] is not None else None
+        avg_wt_s = round(avg_wt_ms / 1000.0, 2) if avg_wt_ms and avg_wt_ms > 0 else None
+        return {
+            "views": int(parsed["views"] or 0),
+            "reach": int(parsed["reach"] or 0),
+            "saved": int(parsed["saved"] or 0),
+            "shares": int(parsed["shares"] or 0),
+            "total_interactions": int(parsed["interactions"] or 0),
+            "avg_watch_time_ms": avg_wt_ms,
+            "avg_watch_time_s": avg_wt_s,
+            "total_watch_time_ms": int(parsed["total_watch_time_ms"]) if parsed["total_watch_time_ms"] is not None else None,
+            "skip_rate_pct": float(parsed["skip_rate_pct"]) if parsed["skip_rate_pct"] is not None else None,
+            "insights_ok": True,
+        }
+    except Exception as exc:
+        print(f"⚠️ [Feedback Loop] Wyjątek insights IG ({media_id}): {exc}")
+        return empty_res
+
+
 def fetch_instagram_reel_metrics(media_id: str) -> Optional[Dict[str, Any]]:
-    """Pobiera zasięg, wyświetlenia i interakcje dla Reels z Instagram Graph API."""
+    """Pobiera zasięg, wyświetlenia, retencję i interakcje dla Reels z Instagram Graph API v21.0."""
     if not IG_TOKEN_FILE.exists():
         return None
 
@@ -150,51 +215,49 @@ def fetch_instagram_reel_metrics(media_id: str) -> Optional[Dict[str, Any]]:
         if not token:
             return None
 
-        # 1. Podstawowe liczniki (likes, comments)
+        # 1. Podstawowe liczniki i opis (likes, comments, caption)
         media_url = f"{GRAPH_API_BASE}/{media_id}"
         m_resp = requests.get(
             media_url,
-            params={"fields": "like_count,comments_count,permalink,caption", "access_token": token},
-            timeout=10
+            params={
+                "fields": "like_count,comments_count,permalink,caption,timestamp,media_type,media_product_type",
+                "access_token": token,
+            },
+            timeout=10,
         ).json()
+        if "error" in m_resp:
+            err_msg = (m_resp.get("error") or {}).get("message", str(m_resp["error"]))
+            print(f"⚠️ [Feedback Loop] Błąd API IG dla {media_id}: {err_msg}")
+            return None
 
-        likes = int(m_resp.get("like_count", 0))
-        comments = int(m_resp.get("comments_count", 0))
+        likes = int(m_resp.get("like_count", 0) or 0)
+        comments = int(m_resp.get("comments_count", 0) or 0)
 
-        # 2. Insights (reach, interactions, plays)
-        reach = 0
-        total_interactions = 0
-        plays = 0
-        try:
-            ins_url = f"{GRAPH_API_BASE}/{media_id}/insights"
-            ins_resp = requests.get(
-                ins_url,
-                params={"metric": "reach,total_interactions,plays,likes,shares,saved", "access_token": token},
-                timeout=10
-            ).json()
-
-            for item in ins_resp.get("data", []):
-                val = item.get("values", [{}])[0].get("value", 0) if item.get("values") else item.get("total_value", {}).get("value", 0)
-                name = item.get("name")
-                if name == "reach":
-                    reach = int(val)
-                elif name == "total_interactions":
-                    total_interactions = int(val)
-                elif name == "plays":
-                    plays = int(val)
-        except Exception:
-            pass
+        # 2. Insights v21.0 (views, reach, saved, shares, watch time, skip rate)
+        ins = _extract_ig_insights(media_id, token, timeout=10)
+        views = int(ins["views"])
+        total_interactions = int(ins["total_interactions"]) if ins["insights_ok"] else (likes + comments)
+        if ins["insights_ok"] and total_interactions == 0 and (likes + comments) > 0:
+            total_interactions = likes + comments
 
         return {
             "platform": "instagram",
             "media_id": media_id,
             "permalink": m_resp.get("permalink", ""),
+            "caption": m_resp.get("caption", ""),
             "likes": likes,
             "comments": comments,
-            "reach": reach,
+            "views": views,
+            "plays": views,
+            "reach": int(ins["reach"]),
+            "saved": int(ins["saved"]),
+            "shares": int(ins["shares"]),
             "total_interactions": total_interactions,
-            "plays": plays,
-            "fetched_at": datetime.now(timezone.utc).isoformat()
+            "avg_watch_time_s": ins["avg_watch_time_s"],
+            "total_watch_time_ms": ins["total_watch_time_ms"],
+            "skip_rate_pct": ins["skip_rate_pct"],
+            "insights_ok": bool(ins["insights_ok"]),
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         print(f"⚠️ Błąd pobierania metryk IG dla {media_id}: {e}")
@@ -204,7 +267,7 @@ def fetch_instagram_reel_metrics(media_id: str) -> Optional[Dict[str, Any]]:
 # ─── Facebook Metrics Fetcher ─────────────────────────────────────────────────
 
 def fetch_facebook_reel_metrics(video_id: str) -> Optional[Dict[str, Any]]:
-    """Pobiera wyświetlenia, reakcje i udostępnienia dla posta na Facebook Page."""
+    """Pobiera wyświetlenia, polubienia i komentarze posta/rolki z Facebook Graph API v21.0."""
     if not FB_TOKEN_FILE.exists():
         return None
 
@@ -214,33 +277,46 @@ def fetch_facebook_reel_metrics(video_id: str) -> Optional[Dict[str, Any]]:
         if not token:
             return None
 
+        scopes = data.get("scopes") or data.get("permissions") or []
+        has_read_insights = "read_insights" in scopes
+
         url = f"{GRAPH_API_BASE}/{video_id}"
         resp = requests.get(
             url,
             params={
-                "fields": "views,description,permalink_url,reactions.summary(true),comments.summary(true),shares",
-                "access_token": token
+                "fields": "views,description,permalink_url,created_time,length,likes.summary(true),comments.summary(true)",
+                "access_token": token,
             },
-            timeout=10
+            timeout=10,
         ).json()
 
         if "error" in resp:
+            err_msg = (resp.get("error") or {}).get("message", str(resp["error"]))
+            print(f"⚠️ [Feedback Loop] Błąd API FB dla {video_id}: {err_msg}")
             return None
 
-        reactions = resp.get("reactions", {}).get("summary", {}).get("total_count", 0)
-        comments = resp.get("comments", {}).get("summary", {}).get("total_count", 0)
-        shares = resp.get("shares", {}).get("count", 0)
-        views = int(resp.get("views", 0))
+        likes = int((resp.get("likes") or {}).get("summary", {}).get("total_count", 0) or 0)
+        comments = int((resp.get("comments") or {}).get("summary", {}).get("total_count", 0) or 0)
+        views = int(resp.get("views", 0) or 0)
+        length_raw = resp.get("length")
+        length_s = round(float(length_raw), 2) if length_raw is not None else None
+        perm = str(resp.get("permalink_url") or f"/reel/{video_id}/")
+        if perm.startswith("/"):
+            perm = f"https://www.facebook.com{perm}"
 
         return {
             "platform": "facebook",
             "video_id": video_id,
-            "permalink_url": resp.get("permalink_url", ""),
+            "permalink_url": perm,
+            "description": resp.get("description", ""),
+            "length_s": length_s,
             "views": views,
-            "reactions": reactions,
+            "likes": likes,
+            "reactions": likes,
             "comments": comments,
-            "shares": shares,
-            "fetched_at": datetime.now(timezone.utc).isoformat()
+            "shares": 0,
+            "has_read_insights_permission": has_read_insights,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         print(f"⚠️ Błąd pobierania metryk FB dla {video_id}: {e}")
@@ -382,27 +458,115 @@ def ingest_youtube_metric(metric: Dict[str, Any], action_type: str, pub_ts: Opti
     _update_learning_file("learning_youtube.json", _updater)
 
 
+def _aggregate_hashtag_stats(entries: List[Dict[str, Any]], text_field: str) -> Dict[str, Dict[str, Any]]:
+    """Wyciąga statystyki skuteczności #tagów z wpisów metryk IG lub FB."""
+    acc: Dict[str, Dict[str, float]] = {}
+    for entry in entries:
+        txt = str((entry or {}).get(text_field) or "")
+        tags = {m.lower() for m in re.findall(r"#([A-Za-z0-9_]+)", txt)}
+        if not tags:
+            continue
+        views_v = int(entry.get("views") or entry.get("plays") or 0)
+        reach_v = int(entry.get("reach") or 0)
+        for tag in tags:
+            bucket = acc.setdefault(tag, {"count": 0.0, "views_sum": 0.0, "reach_sum": 0.0})
+            bucket["count"] += 1.0
+            bucket["views_sum"] += views_v
+            bucket["reach_sum"] += reach_v
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for tag, st in sorted(acc.items(), key=lambda kv: (kv[1]["views_sum"] / max(1.0, kv[1]["count"]), kv[1]["count"]), reverse=True)[:30]:
+        cnt = int(st["count"])
+        out[tag] = {
+            "count": cnt,
+            "avg_views": round(st["views_sum"] / max(1, cnt), 1),
+            "avg_reach": round(st["reach_sum"] / max(1, cnt), 1),
+        }
+    return out
+
+
+def _first_caption_line(text: Any) -> str:
+    line = str(text or "").strip().splitlines()[0].strip() if str(text or "").strip() else ""
+    return line[:100]
+
+
 def ingest_instagram_metric(metric: Dict[str, Any], action_type: str, pub_ts: Optional[str] = None) -> None:
-    """Aktualizuje learning_instagram.json o zasięgi i interakcje Reels (z deduplikacją po media_id)."""
+    """Aktualizuje learning_instagram.json o zasięgi, retencję, hooki i tagi Reels (z deduplikacją po media_id)."""
     def _updater(data: Dict[str, Any]) -> Dict[str, Any]:
         mid = str(metric.get("media_id") or "").strip()
+        views_now = int(metric.get("views") or metric.get("plays") or 0)
+        reach_now = int(metric.get("reach") or 0)
         seen_media = data.setdefault("seen_media", {})
         is_repeat = bool(mid and mid in seen_media)
         if not is_repeat:
             data["videos_analysed"] = data.get("videos_analysed", 0) + 1
+
+        if metric.get("insights_ok") or reach_now > 0 or views_now > 0:
+            data.pop("_warning", None)
+            data["_description"] = "Instagram Reels learning state (Graph API v21.0 + instagram_manage_insights aktywne)."
+
         entries = data.setdefault("metrics_collected", {}).setdefault("entries", [])
         if mid:
             entries = [e for e in entries if str((e or {}).get("media_id") or "").strip() != mid]
             seen_media[mid] = datetime.now(timezone.utc).isoformat()
         entries.append(metric)
-        data["metrics_collected"]["entries"] = entries[-20:]  # Ostatnie 20
+        entries = entries[-30:]
+        data["metrics_collected"]["entries"] = entries
+
+        # Agregacja retencji i oglądalności
+        wt_vals = [float(e["avg_watch_time_s"]) for e in entries if isinstance(e, dict) and e.get("avg_watch_time_s") is not None]
+        skip_vals = [float(e["skip_rate_pct"]) for e in entries if isinstance(e, dict) and e.get("skip_rate_pct") is not None]
+        views_vals = [int(e.get("views") or e.get("plays") or 0) for e in entries if isinstance(e, dict)]
+        reach_vals = [int(e.get("reach") or 0) for e in entries if isinstance(e, dict)]
+        samples_with_ins = sum(1 for e in entries if isinstance(e, dict) and (e.get("insights_ok") or int(e.get("reach") or 0) > 0 or int(e.get("views") or 0) > 0))
+        data["retention_summary"] = {
+            "avg_watch_time_s": round(sum(wt_vals) / len(wt_vals), 2) if wt_vals else None,
+            "avg_skip_rate_pct": round(sum(skip_vals) / len(skip_vals), 2) if skip_vals else None,
+            "avg_views": round(sum(views_vals) / max(1, len(views_vals)), 1),
+            "avg_reach": round(sum(reach_vals) / max(1, len(reach_vals)), 1),
+            "samples_with_insights": samples_with_ins,
+        }
+
+        # Hooki z pierwszej linii caption
+        hook_rows = []
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            hook = _first_caption_line(e.get("caption"))
+            if not hook:
+                continue
+            hook_rows.append({
+                "media_id": e.get("media_id"),
+                "hook": hook,
+                "views": int(e.get("views") or e.get("plays") or 0),
+                "reach": int(e.get("reach") or 0),
+                "avg_watch_time_s": e.get("avg_watch_time_s"),
+                "skip_rate_pct": e.get("skip_rate_pct"),
+            })
+        hook_rows.sort(key=lambda r: (r["views"], r["reach"]), reverse=True)
+        hook_lens = [len(r["hook"]) for r in hook_rows]
+        cp = data.setdefault("caption_patterns", {})
+        cp["top_hooks"] = hook_rows[:5]
+        cp["worst_hooks"] = list(reversed(hook_rows[-5:])) if len(hook_rows) >= 2 else []
+        cp["avg_hook_length"] = round(sum(hook_lens) / len(hook_lens), 1) if hook_lens else None
+
+        # Hasztagi
+        data.setdefault("hashtag_performance", {})["by_tag"] = _aggregate_hashtag_stats(entries, "caption")
+
+        # Wagi akcji (raz na nowy media_id)
+        if action_type and not is_repeat:
+            weights = data.setdefault("action_type_weights", {})
+            cur = float(weights.get(action_type.lower(), 1.0))
+            if views_now >= 400:
+                weights[action_type.lower()] = round(min(2.0, cur + 0.05), 3)
+
         return data
 
     _update_learning_file("learning_instagram.json", _updater)
 
 
 def ingest_facebook_metric(metric: Dict[str, Any], action_type: str, pub_ts: Optional[str] = None) -> None:
-    """Aktualizuje learning_facebook.json o reakcje, komentarze i godziny (z deduplikacją po video_id)."""
+    """Aktualizuje learning_facebook.json o wyświetlenia, polubienia, wzorce postów i godziny (z deduplikacją)."""
     def _updater(data: Dict[str, Any]) -> Dict[str, Any]:
         fbid = str(metric.get("video_id") or "").strip()
         views = int(metric.get("views", 0) or 0)
@@ -411,13 +575,40 @@ def ingest_facebook_metric(metric: Dict[str, Any], action_type: str, pub_ts: Opt
         is_repeat = bool(fbid and isinstance(prev_seen, dict))
         delta_views = max(0, views - int(prev_seen.get("views", 0))) if is_repeat else views
 
+        if metric.get("has_read_insights_permission"):
+            data.pop("_warning", None)
+            data["_description"] = "Facebook Page Reels learning state (Graph API v21.0 + read_insights aktywne)."
+        else:
+            data["_description"] = "Facebook Page Reels learning state (Graph API v21.0: views, likes, comments aktywne)."
+            data["_warning"] = (
+                "Token Facebook Page nie zawiera read_insights — zbierane są podstawowe metryki "
+                "wideo (views, likes, comments) bez video_insights."
+            )
+
         if not is_repeat:
             data["videos_analysed"] = data.get("videos_analysed", 0) + 1
         entries = data.setdefault("metrics_collected", {}).setdefault("entries", [])
         if fbid:
             entries = [e for e in entries if str((e or {}).get("video_id") or "").strip() != fbid]
         entries.append(metric)
-        data["metrics_collected"]["entries"] = entries[-20:]
+        entries = entries[-30:]
+        data["metrics_collected"]["entries"] = entries
+
+        post_rows = []
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            title_line = _first_caption_line(e.get("description"))
+            post_rows.append({
+                "video_id": e.get("video_id"),
+                "title": title_line or f"Facebook Reel #{e.get('video_id')}",
+                "views": int(e.get("views") or 0),
+                "reactions": int(e.get("reactions") or e.get("likes") or 0),
+                "comments": int(e.get("comments") or 0),
+            })
+        post_rows.sort(key=lambda r: (r["views"], r["reactions"]), reverse=True)
+        data.setdefault("post_patterns", {})["top_posts"] = post_rows[:5]
+        data.setdefault("hashtag_performance", {})["by_tag"] = _aggregate_hashtag_stats(entries, "description")
 
         if pub_ts:
             try:
@@ -458,6 +649,42 @@ def ingest_facebook_metric(metric: Dict[str, Any], action_type: str, pub_ts: Opt
     _update_learning_file("learning_facebook.json", _updater)
 
 
+def _infer_action_type_from_queue_item(item: Dict[str, Any]) -> str:
+    """Wyznacza action_type dla wpisu kolejki z extra, pliku .meta.json lub nazwy wideo."""
+    extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
+    act = str(extra.get("action_type") or "").strip()
+    if act:
+        return act
+
+    vp_raw = str(item.get("video_path") or "").strip()
+    if vp_raw:
+        vp = Path(vp_raw)
+        meta_p = vp.with_suffix(".meta.json")
+        if meta_p.is_file():
+            try:
+                meta = json.loads(meta_p.read_text(encoding="utf-8"))
+                meta_act = str(meta.get("action_type") or "").strip()
+                if meta_act:
+                    return meta_act
+            except Exception as exc:
+                print(f"⚠️ [Feedback Loop] Błąd odczytu {meta_p.name}: {exc}")
+        stem_low = vp.stem.lower()
+        for token, mapped in (
+            ("pentakill", "pentakill"),
+            ("penta", "pentakill"),
+            ("quadrakill", "quadrakill"),
+            ("quadra", "quadrakill"),
+            ("triple", "triple"),
+            ("double", "double"),
+            ("solo_bolo", "solo_bolo"),
+            ("clutch", "clutch"),
+        ):
+            if token in stem_low:
+                return mapped
+
+    return "outplay"
+
+
 def _load_queue_social_entries(
     queue_file: Optional[Path],
     seen_ig_ids: set,
@@ -483,8 +710,7 @@ def _load_queue_social_entries(
     for it in published:
         plat = str(it.get("platform") or "").lower()
         res = it.get("result") if isinstance(it.get("result"), dict) else {}
-        extra = it.get("extra") if isinstance(it.get("extra"), dict) else {}
-        action_type = str(extra.get("action_type") or "outplay")
+        action_type = _infer_action_type_from_queue_item(it)
         pub_ts = it.get("published_at") or it.get("publish_at")
 
         if plat == "instagram" and len(ig_entries) < max_videos:
@@ -575,7 +801,7 @@ def collect_all_platform_metrics(max_videos: int = 15) -> Dict[str, Any]:
             if ig_metric:
                 ingest_instagram_metric(ig_metric, action_type, pub_ts=pub_ts)
                 report["instagram_updated"] += 1
-                print(f"   📸 IG [{ig_id}]: reach={ig_metric['reach']}, likes={ig_metric['likes']}")
+                print(f"   📸 IG [{ig_id}]: views={ig_metric.get('views', 0)}, reach={ig_metric.get('reach', 0)}, likes={ig_metric.get('likes', 0)}")
 
         # 3. Facebook (z logu)
         fb_id = item.get("facebook_video_id")
@@ -584,7 +810,7 @@ def collect_all_platform_metrics(max_videos: int = 15) -> Dict[str, Any]:
             if fb_metric:
                 ingest_facebook_metric(fb_metric, action_type, pub_ts=pub_ts)
                 report["facebook_updated"] += 1
-                print(f"   📘 FB [{fb_id}]: views={fb_metric['views']}, reactions={fb_metric['reactions']}")
+                print(f"   📘 FB [{fb_id}]: views={fb_metric.get('views', 0)}, reactions={fb_metric.get('reactions', 0)}")
 
         # 4. TikTok
         tt_id = item.get("tiktok_publish_id")
@@ -599,14 +825,14 @@ def collect_all_platform_metrics(max_videos: int = 15) -> Dict[str, Any]:
         if ig_metric:
             ingest_instagram_metric(ig_metric, q_ig["action_type"], pub_ts=q_ig["timestamp"])
             report["instagram_updated"] += 1
-            print(f"   📸 IG [queue {q_ig['id']}]: reach={ig_metric['reach']}, likes={ig_metric['likes']}")
+            print(f"   📸 IG [queue {q_ig['id']}]: views={ig_metric.get('views', 0)}, reach={ig_metric.get('reach', 0)}, likes={ig_metric.get('likes', 0)}")
 
     for q_fb in queue_fb:
         fb_metric = fetch_facebook_reel_metrics(q_fb["id"])
         if fb_metric:
             ingest_facebook_metric(fb_metric, q_fb["action_type"], pub_ts=q_fb["timestamp"])
             report["facebook_updated"] += 1
-            print(f"   📘 FB [queue {q_fb['id']}]: views={fb_metric['views']}, reactions={fb_metric['reactions']}")
+            print(f"   📘 FB [queue {q_fb['id']}]: views={fb_metric.get('views', 0)}, reactions={fb_metric.get('reactions', 0)}")
 
     print(f"✅ [Feedback Loop] Zakończono! Zaktualizowano bazy learning_states:")
     print(f"   YT: {report['youtube_updated']} | IG: {report['instagram_updated']} | FB: {report['facebook_updated']} | TT: {report['tiktok_queried']}")
