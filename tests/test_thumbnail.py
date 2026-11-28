@@ -50,6 +50,24 @@ def test_find_best_crop_x_centers_on_high_saturation():
     assert 1100 <= center_of_crop <= 1450
 
 
+def test_find_best_crop_x_ignores_center_decoy_and_minimap_for_left_edge_fight():
+    """Walka z paskami HP po lewej stronie (x=220..340) nie może być ściągana na środek ani minimapę."""
+    h, w = 1080, 1920
+    # Kolorowe tło na całej mapie + jaskrawy wabik na środku
+    frame = np.full((h, w, 3), (70, 130, 180), dtype=np.uint8)
+    frame[300:520, 880:1040] = (40, 210, 220)
+    # Minimapa w prawym dolnym rogu (zielone/czerwone ikony poza polem walki)
+    frame[800:1040, 1600:1900] = (30, 220, 40)
+    # Właściwa walka po lewej stronie: zielony pasek gracza + czerwony wroga
+    frame[360:378, 220:320] = (40, 215, 50)
+    frame[410:428, 240:340] = (220, 35, 35)
+
+    crop_w_px = int(h * 0.82 * 9 / 16)
+    best_x = _find_best_crop_x(frame, crop_w_px=crop_w_px, source_w=w)
+    center_of_crop = best_x + crop_w_px / 2.0
+    assert center_of_crop < 450.0, f"Crop ściągnął na środek/minimapę zamiast lewej walki: cx={center_of_crop}, x0={best_x}"
+
+
 def test_apply_cinematic_grade_penta():
     img = Image.new("RGB", (200, 300), color=(100, 100, 100))
     graded = _apply_cinematic_grade(img, "PENTAKILL")

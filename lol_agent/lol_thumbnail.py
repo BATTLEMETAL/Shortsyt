@@ -106,40 +106,80 @@ def _detect_hp_bar_masks(
     return green_mask, gold_mask, red_mask
 
 
+def _build_playfield_mask(h: int, w: int) -> np.ndarray:
+    """Buduje maskę 2D aktywnego pola bitwy bez górnego banera, KDA, czatu i minimapy."""
+    mask = np.zeros((h, w), dtype=bool)
+    mask[int(h * 0.08):int(h * 0.82), :] = True
+    mask[int(h * 0.62):, int(w * 0.78):] = False
+    mask[int(h * 0.58):, :int(w * 0.30)] = False
+    mask[:int(h * 0.12), int(w * 0.78):] = False
+    return mask
+
+
+def _sliding_window_and_core(col: np.ndarray, win_w: int) -> tuple[np.ndarray, np.ndarray]:
+    """Liczy sumę w oknie przesuwnym [x, x+win_w] oraz w jego środkowej połowie."""
+    w = len(col)
+    win_sum = np.convolve(col, np.ones(win_w, dtype=float), mode="valid")
+    core_w = max(1, win_w // 2)
+    pad = (win_w - core_w) // 2
+    trail = win_w - pad - core_w
+    end_idx = w - trail if trail > 0 else w
+    core_sum = np.convolve(col[pad:end_idx], np.ones(core_w, dtype=float), mode="valid")
+    return win_sum, core_sum
+
+
+def _norm_profile(arr: np.ndarray) -> np.ndarray:
+    """Normalizuje wektor wyników do [0, 1] bez dzielenia przez zero."""
+    return arr / max(float(arr.max()), 1e-6)
+
+
 def _find_best_crop_x(img_rgb: np.ndarray, crop_w_px: int, source_w: int = 1920) -> int:
-    """Wyszukuje centrum akcji/walki w klatce (priorytet: paski HP bohaterów + nasycenie VFX)."""
+    """Wyszukuje okno 9:16 o najsilniejszym skupieniu pasków HP i efektów VFX na polu bitwy."""
     from PIL import Image as PilImage
+
+    h, w = img_rgb.shape[:2]
+    win_w = max(1, min(int(crop_w_px), w))
+    if w <= win_w:
+        return 0
+
+    play_mask = _build_playfield_mask(h, w)
     img_pil = PilImage.fromarray(img_rgb)
     hsv = np.array(img_pil.convert("HSV"))
     sat = hsv[:, :, 1].astype(float)
-    h = sat.shape[0]
-    cutoff = int(h * 0.82)
-    sat[cutoff:, :] = 0  # wyklucz dolny HUD
+    vfx_col = (sat * (sat > 120) * play_mask).sum(axis=0)
 
-    kernel = np.ones(31) / 31
-    col_sat = np.convolve(sat.sum(axis=0), kernel, mode="same")
-    total = col_sat.sum()
-    if total > 0:
-        cx_sat = int((col_sat * np.arange(len(col_sat))).sum() / total)
-    else:
-        cx_sat = source_w // 2
+    green_m, gold_m, red_m = _detect_hp_bar_masks(img_rgb, is_bgr=False)
+    green_m = green_m & play_mask
+    red_m = red_m & play_mask
+    gold_m = gold_m & play_mask
+    hp_col = (
+        green_m.astype(float) * 4.0
+        + red_m.astype(float) * 2.5
+        + gold_m.astype(float) * 1.2
+    ).sum(axis=0)
 
-    top_rgb = img_rgb[:cutoff, :, :]
-    if top_rgb.size > 0:
-        green_m, gold_m, red_m = _detect_hp_bar_masks(top_rgb, is_bgr=False)
-        hp_col = np.convolve((green_m | gold_m | red_m).sum(axis=0).astype(float), kernel, mode="same")
-        hp_total = float(hp_col.sum())
-    else:
-        hp_col = np.zeros(source_w, dtype=float)
-        hp_total = 0.0
+    hp_win, hp_core = _sliding_window_and_core(hp_col, win_w)
+    vfx_win, vfx_core = _sliding_window_and_core(vfx_col, win_w)
+    center_tiebreak = 1.0 - np.abs(
+        (np.arange(len(hp_win), dtype=float) + win_w / 2.0) - w / 2.0
+    ) / max(w / 2.0, 1.0)
 
-    if hp_total >= 25.0:
-        cx_hp = int((hp_col * np.arange(len(hp_col))).sum() / hp_total)
-        cx_blended = int(0.60 * cx_hp + 0.25 * cx_sat + 0.15 * (source_w // 2))
+    if float(hp_col.sum()) >= 25.0:
+        score = (
+            0.55 * _norm_profile(hp_core)
+            + 0.30 * _norm_profile(hp_win)
+            + 0.14 * _norm_profile(vfx_win)
+            + 0.01 * center_tiebreak
+        )
     else:
-        cx_blended = int(0.70 * cx_sat + 0.30 * (source_w // 2))
-    x = cx_blended - crop_w_px // 2
-    return max(0, min(x, source_w - crop_w_px))
+        score = (
+            0.65 * _norm_profile(vfx_core)
+            + 0.34 * _norm_profile(vfx_win)
+            + 0.01 * center_tiebreak
+        )
+
+    best_x = int(np.argmax(score))
+    return max(0, min(best_x, w - win_w))
 
 
 def _apply_cinematic_grade(img: Image.Image, action: str) -> Image.Image:
@@ -231,11 +271,12 @@ def _find_ranked_hero_frames(
             h, w_fr = fr.shape[:2]
             fr_nohud = fr[:int(h * 0.82), :]
             hsv = cv2.cvtColor(fr_nohud, cv2.COLOR_BGR2HSV)
+            play_mask = _build_playfield_mask(h, w_fr)
 
-            green_mask, gold_mask, red_mask = _detect_hp_bar_masks(fr_nohud, is_bgr=True)
-            green_hp_pts = int(cv2.countNonZero(green_mask.astype(np.uint8)))
-            gold_pts = int(cv2.countNonZero(gold_mask.astype(np.uint8)))
-            red_hp_pts = int(cv2.countNonZero(red_mask.astype(np.uint8)))
+            green_mask, gold_mask, red_mask = _detect_hp_bar_masks(fr, is_bgr=True)
+            green_hp_pts = int(cv2.countNonZero((green_mask & play_mask).astype(np.uint8)))
+            gold_pts = int(cv2.countNonZero((gold_mask & play_mask).astype(np.uint8)))
+            red_hp_pts = int(cv2.countNonZero((red_mask & play_mask).astype(np.uint8)))
 
             # Premia za złotą/kolorową akcję bliżej środka kadru zamiast uciętych krawędzi
             center_roi = fr_nohud[int(h * 0.14):int(h * 0.72), int(w_fr * 0.25):int(w_fr * 0.75)]
@@ -285,11 +326,13 @@ def _find_ranked_hero_frames(
                 hp_bonus += 90.0
             if red_hp_pts >= 20:
                 hp_bonus += 50.0
+            if green_hp_pts >= 20 and red_hp_pts >= 20:
+                hp_bonus += 60.0
             if green_hp_pts < 12 and gold_pts < 12 and red_hp_pts < 12:
                 hp_bonus -= 120.0
 
             proximity_bonus = 0.0 if max_candidates <= 1 else max(0.0, 25.0 - abs(float(t) - center_t) * 4.0)
-            score = vfx_score + center_vfx + (150.0 if gold_pts >= 10 else 0.0) + hp_bonus + proximity_bonus - popup_penalty
+            score = vfx_score + center_vfx + (45.0 if gold_pts >= 10 else 0.0) + hp_bonus + proximity_bonus - popup_penalty
             scored.append((score, float(t)))
 
         if not scored:
@@ -549,10 +592,9 @@ def generate_thumbnail(
         raw_w, raw_h = raw.size
         if raw_w > raw_h:
             hud_cutoff = int(raw_h * 0.82)
-            raw_no_hud = raw.crop((0, 0, raw_w, hud_cutoff))
             crop_h_no_hud = hud_cutoff
             crop_w_px = int(crop_h_no_hud * 9 / 16)
-            arr = np.array(raw_no_hud)
+            arr = np.array(raw)
             best_x = _find_best_crop_x(arr, crop_w_px, source_w=raw_w)
             crop_top = 0
             crop_bottom = hud_cutoff

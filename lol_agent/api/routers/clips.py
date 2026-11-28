@@ -762,11 +762,13 @@ def regenerate_output_thumbnail(
     src_path = meta.get("source_path") or (overnight_item or {}).get("source_path")
     has_clean_src = bool(src_path and Path(str(src_path)).is_file())
     if has_clean_src:
-        src_peak = (
-            float(peak_moment)
-            if peak_moment is not None
-            else (float(clip_start or 0.0) + float(thumb_time))
-        )
+        if peak_moment is not None:
+            if clip_start is not None and float(peak_moment) <= float(clip_start) + 1.0:
+                src_peak = float(clip_start) + max(2.0, min(dur_s * 0.45, max(2.0, dur_s - 2.0)))
+            else:
+                src_peak = float(peak_moment)
+        else:
+            src_peak = float(clip_start or 0.0) + float(thumb_time)
     else:
         src_peak = None
     try:

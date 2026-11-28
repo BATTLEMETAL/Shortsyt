@@ -654,14 +654,13 @@ def run_pipeline(
             # Etykieta: typ akcji (PENTAKILL, TRIPLE KILL itp) - czysty, bez hook sloganow
             action_label = analysis["action_type"].upper().replace("_", " ")
 
-            # Klatka: +1.5s po ostatnim killu → baner "TRIPLE KILL" / "PENTAKILL" zawsze widoczny
-            # Kill feed trzyma się ~2s na ekranie, +1.5s zawsze go złapie
+            # Klatka: tuż przed / w trakcie ostatniego killa, aby hero-frame złapał kulminację walki z paskami HP
             peaks_list = analysis.get("peaks", [])
             if peaks_list:
                 last_peak_abs_t = peaks_list[-1][0]           # absolutny czas w source clip
                 last_peak_in_clip = last_peak_abs_t - analysis["peak_start"]
-                thumb_time = min(last_peak_in_clip + 1.5, analysis.get("clip_duration", 10) - 0.3)
-                source_thumb_t = last_peak_abs_t + 1.5        # +1.5s po killu w oryginale
+                thumb_time = max(0.5, min(last_peak_in_clip - 0.3, analysis.get("clip_duration", 10) - 0.5))
+                source_thumb_t = max(float(analysis["peak_start"]) + 1.0, last_peak_abs_t - 0.3)
             else:
                 thumb_time = min(peak_moment_in_clip + 1.0, analysis.get("clip_duration", 10) - 0.3)
                 source_thumb_t = analysis["peak_start"] + max(0.5, thumb_time)
